@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tower of Hanoi - NovaHub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a; --nav-bg: #1e293b; --text-light: #e2e8f0;
+            --accent: #fbbf24; /* Amber */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-dark); color: var(--text-light); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* Top Navigation */
+        .top-nav { height: 60px; background-color: var(--nav-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 10; flex-shrink: 0;}
+        .back-btn { color: var(--text-light); text-decoration: none; display: flex; align-items: center; cursor: pointer; }
+        .nav-title { font-size: 18px; font-weight: bold; }
+        .action-btn { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;}
+
+        /* Game Info & Status */
+        .game-info { text-align: center; padding: 15px; background: rgba(0,0,0,0.2); }
+        .goal-text { font-size: 16px; font-weight: bold; color: var(--accent); margin-bottom: 8px;}
+        
+        .difficulty-selector { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        .diff-btn { background: var(--nav-bg); color: var(--text-light); border: 1px solid #334155; padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; }
+        .diff-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: bold; }
+
+        .action-log { background: #1e293b; padding: 8px; border-radius: 8px; border: 1px solid #fbbf24; color: #fde68a; font-weight: 600; font-size: 13px; text-align: center; max-width: 320px; margin: 0 auto;}
+
+        /* Game Area */
+        .game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;}
+        
+        .moves-counter { font-size: 20px; font-weight: bold; margin-bottom: 30px; color: #94a3b8; }
+        .moves-counter span { color: white; font-size: 24px; }
+
+        .towers-container { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; max-width: 400px; height: 250px; position: relative; padding-bottom: 20px;}
+        
+        /* Base Platform */
+        .towers-container::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 20px; background: #475569; border-radius: 10px; box-shadow: inset 0 2px 5px rgba(255,255,255,0.2), 0 5px 10px rgba(0,0,0,0.5);}
+
+        /* Individual Peg (Khamba) */
+        .peg-wrap { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; cursor: pointer; z-index: 5;}
+        
+        /* The stick */
+        .peg-wrap::before { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 12px; height: 100%; background: linear-gradient(to right, #64748b, #94a3b8, #64748b); border-radius: 6px 6px 0 0; z-index: 1;}
+
+        /* Disks (Rings) */
+        .disk { height: 25px; border-radius: 12px; margin-bottom: 2px; position: relative; z-index: 10; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 12px; color: rgba(0,0,0,0.5); box-shadow: inset 0 2px 4px rgba(255,255,255,0.4), 0 4px 6px rgba(0,0,0,0.4); transition: transform 0.2s;}
+        
+        /* Selection Animation */
+        .disk.selected { transform: translateY(-15px); box-shadow: 0 0 15px var(--accent), inset 0 2px 4px rgba(255,255,255,0.4); border: 2px solid white; animation: float 1s infinite alternate;}
+        
+        @keyframes float { from { transform: translateY(-15px); } to { transform: translateY(-20px); } }
+
+        /* Disk Sizes & Colors */
+        .disk-1 { width: 35%; background: #fca5a5; } /* Smallest */
+        .disk-2 { width: 50%; background: #fde047; }
+        .disk-3 { width: 65%; background: #6ee7b7; }
+        .disk-4 { width: 80%; background: #93c5fd; }
+        .disk-5 { width: 95%; background: #c084fc; } /* Largest */
+
+        /* Modals */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 50; justify-content: center; align-items: center; padding: 20px; flex-direction: column; }
+        .modal-content { background: var(--nav-bg); padding: 25px; border-radius: 16px; text-align: center; max-width: 350px; border: 1px solid #334155; animation: slideUp 0.3s ease;}
+        @keyframes slideUp { from { transform: translateY(50px); opacity: 0;} to { transform: translateY(0); opacity: 1;} }
+        
+        .modal-title { font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #10b981;}
+        .btn-primary { background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 0 #059669; margin-top: 15px;}
+        .btn-primary:active { transform: translateY(4px); box-shadow: 0 0 0 transparent; }
+
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <a href="mind-games.html" class="back-btn"><span class="material-icons">arrow_back</span></a>
+        <div class="nav-title">Tower of Hanoi</div>
+        <button class="action-btn" onclick="initGame()"><span class="material-icons" style="font-size: 18px;">refresh</span></button>
+    </nav>
+
+    <div class="game-info">
+        <div class="goal-text">Saare rings teesre khambe mein daalo!</div>
+        
+        <div class="difficulty-selector">
+            <button class="diff-btn" id="diff-3" onclick="setDifficulty(3)">3 Rings</button>
+            <button class="diff-btn active" id="diff-4" onclick="setDifficulty(4)">4 Rings</button>
+            <button class="diff-btn" id="diff-5" onclick="setDifficulty(5)">5 Rings</button>
+        </div>
+
+        <!-- Live Action Status -->
+        <div class="action-log" id="status-bar">Game Ready! Pehle khambe par click karein.</div>
+    </div>
+
+    <div class="game-area">
+        <div class="moves-counter">Moves: <span id="move-count">0</span></div>
+
+        <div class="towers-container">
+            <!-- 3 Pegs (Khambe) -->
+            <div class="peg-wrap" id="peg-0" onclick="handlePegClick(0)"></div>
+            <div class="peg-wrap" id="peg-1" onclick="handlePegClick(1)"></div>
+            <div class="peg-wrap" id="peg-2" onclick="handlePegClick(2)"></div>
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div class="modal-overlay" id="win-modal">
+        <div class="modal-content">
+            <span class="material-icons" style="font-size: 60px; color: #10b981; margin-bottom: 10px;">emoji_events</span>
+            <div class="modal-title">Puzzle Solved!</div>
+            <div style="color: #94a3b8; margin-bottom: 15px;">Aapne yeh level <b id="final-moves" style="color: white;">0</b> moves mein complete kiya.</div>
+            <button class="btn-primary" onclick="initGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        let totalDisks = 4; // Default to 4
+        let pegs = [[], [], []];
+        let selectedPeg = null;
+        let moves = 0;
+
+        function setStatus(text, color = "#fde68a", borderColor = "#fbbf24") {
+            const statusBox = document.getElementById('status-bar');
+            statusBox.innerText = text;
+            statusBox.style.color = color;
+            statusBox.style.borderColor = borderColor;
+        }
+
+        function setDifficulty(num) {
+            document.querySelectorAll('.diff-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('diff-' + num).classList.add('active');
+            totalDisks = num;
+            initGame();
+        }
+
+        function initGame() {
+            // Reset state
+            pegs = [[], [], []];
+            // Fill the first peg with disks (largest at bottom to smallest at top)
+            for (let i = totalDisks; i >= 1; i--) {
+                pegs[0].push(i);
+            }
+            selectedPeg = null;
+            moves = 0;
+            
+            document.getElementById('move-count').innerText = moves;
+            document.getElementById('win-modal').style.display = 'none';
+            setStatus("Game Ready! Pehle khambe se ring select karein.");
+            
+            renderPegs();
+        }
+
+        function renderPegs() {
+            for (let i = 0; i < 3; i++) {
+                const pegDiv = document.getElementById(`peg-${i}`);
+                pegDiv.innerHTML = ''; // Clear current disks
+                
+                // Disks in pegs[i] are array from bottom to top
+                // To render correctly in flex column (justify-end), we append them as they are
+                // But wait, flex-direction column with justify-end stacks from TOP to BOTTOM in DOM order
+                // Actually, flex-direction: column-reverse is better, or we loop backwards.
+                // Let's use standard column and loop backwards to place smallest at top.
+                
+                for (let d = pegs[i].length - 1; d >= 0; d--) {
+                    const diskSize = pegs[i][d];
+                    const diskEl = document.createElement('div');
+                    
+                    // Assign class based on size (1 is smallest, 5 is largest)
+                    diskEl.className = `disk disk-${diskSize}`;
+                    
+                    // If this is the top disk of the selected peg, add 'selected' animation
+                    if (selectedPeg === i && d === pegs[i].length - 1) {
+                        diskEl.classList.add('selected');
+                    }
+                    
+                    pegDiv.appendChild(diskEl);
+                }
+            }
+        }
+
+        function handlePegClick(pegIndex) {
+            // Case 1: Nothing is selected yet
+            if (selectedPeg === null) {
+                if (pegs[pegIndex].length > 0) {
+                    selectedPeg = pegIndex;
+                    setStatus("Ring utha li! Ab doosre khambe par click karein.");
+                    renderPegs();
+                } else {
+                    setStatus("⚠️ Yeh khamba khali hai!", "#fca5a5", "#ef4444");
+                }
+            } 
+            // Case 2: A peg is already selected
+            else {
+                // Clicking the same peg deselects it
+                if (selectedPeg === pegIndex) {
+                    selectedPeg = null;
+                    setStatus("Ring wapas rakh di. Nayi select karein.");
+                    renderPegs();
+                    return;
+                }
+
+                // Check move validity
+                const movingDisk = pegs[selectedPeg][pegs[selectedPeg].length - 1];
+                const targetTopDisk = pegs[pegIndex].length > 0 ? pegs[pegIndex][pegs[pegIndex].length - 1] : null;
+
+                // Rule: Target must be empty, OR moving disk must be smaller than target's top disk
+                if (targetTopDisk === null || movingDisk < targetTopDisk) {
+                    // Valid Move
+                    const disk = pegs[selectedPeg].pop();
+                    pegs[pegIndex].push(disk);
+                    moves++;
+                    document.getElementById('move-count').innerText = moves;
+                    selectedPeg = null;
+                    setStatus("Badhiya move! ✅", "#86efac", "#22c55e");
+                    renderPegs();
+                    checkWin();
+                } else {
+                    // Invalid Move
+                    selectedPeg = null;
+                    setStatus("❌ Rule toda! Bada ring chote par nahi aayega.", "#fca5a5", "#ef4444");
+                    renderPegs();
+                }
+            }
+        }
+
+        function checkWin() {
+            // Win condition: All disks moved to the last peg (index 2)
+            if (pegs[2].length === totalDisks) {
+                document.getElementById('final-moves').innerText = moves;
+                document.getElementById('win-modal').style.display = 'flex';
+                setStatus("🏆 GAME COMPLETE! 🏆", "#86efac", "#22c55e");
+            }
+        }
+
+        // Boot
+        initGame();
+    </script>
+    <script type="module" src="universal-chat.js"></script>
+</body>
+</html>

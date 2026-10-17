@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Water Jug Puzzle - NovaHub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a; --nav-bg: #1e293b; --text-light: #e2e8f0;
+            --water-color: rgba(56, 189, 248, 0.8);
+            --water-dark: rgba(2, 132, 199, 0.9);
+            --jug-border: rgba(255, 255, 255, 0.4);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-dark); color: var(--text-light); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* Top Navigation */
+        .top-nav { height: 60px; background-color: var(--nav-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 10; flex-shrink: 0;}
+        .back-btn { color: var(--text-light); text-decoration: none; display: flex; align-items: center; cursor: pointer; }
+        .nav-title { font-size: 18px; font-weight: bold; }
+        .nav-actions { display: flex; gap: 10px; }
+        .action-btn { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;}
+        .hint-btn { background: #eab308; color: #000; }
+
+        /* Game Info & Status */
+        .game-info { text-align: center; padding: 15px; background: rgba(0,0,0,0.2); }
+        .goal-text { font-size: 18px; font-weight: bold; color: #38bdf8; margin-bottom: 5px;}
+        .sub-text { font-size: 13px; color: #94a3b8; margin-bottom: 10px;}
+        
+        /* Action Log (New) */
+        .action-log { background: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #3b82f6; color: #60a5fa; font-weight: 600; font-size: 14px; text-align: center; max-width: 300px; margin: 0 auto;}
+
+        /* Game Area */
+        .game-area { flex: 1; display: flex; justify-content: center; align-items: flex-end; padding: 20px; gap: 30px; position: relative;}
+
+        /* Jug Container */
+        .jug-wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; max-height: 400px; width: 45%; max-width: 150px;}
+        
+        .jug-glass { position: relative; width: 100%; border: 4px solid var(--jug-border); border-top: none; border-radius: 0 0 15px 15px; overflow: hidden; background: rgba(255,255,255,0.05); display: flex; align-items: flex-end; box-shadow: inset 0 -10px 20px rgba(0,0,0,0.5);}
+        
+        /* Specific Jug Sizes */
+        .jug-3l { height: 180px; }
+        .jug-5l { height: 300px; }
+
+        .water { width: 100%; height: 0%; background: linear-gradient(to bottom, var(--water-color), var(--water-dark)); transition: height 0.5s ease-in-out; position: relative;}
+        .water::before { content: ''; position: absolute; top: -5px; left: 0; width: 100%; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%;}
+
+        .jug-label { font-size: 24px; font-weight: 900; position: absolute; width: 100%; text-align: center; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.8); z-index: 5; text-shadow: 1px 1px 2px black;}
+
+        /* Controls */
+        .controls { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 15px;}
+        .btn-ctrl { background: var(--nav-bg); color: var(--text-light); border: 1px solid #334155; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.1s;}
+        .btn-ctrl:active { transform: scale(0.95); background: #334155;}
+        .btn-fill { color: #38bdf8; border-color: #0284c7;}
+        .btn-empty { color: #ef4444; border-color: #b91c1c;}
+        .btn-pour { background: #3b82f6; border-color: #2563eb; color: white;}
+
+        /* Modals */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 50; justify-content: center; align-items: center; padding: 20px; flex-direction: column; }
+        .modal-content { background: var(--nav-bg); padding: 25px; border-radius: 16px; text-align: center; max-width: 350px; border: 1px solid #334155; animation: slideUp 0.3s ease;}
+        @keyframes slideUp { from { transform: translateY(50px); opacity: 0;} to { transform: translateY(0); opacity: 1;} }
+        
+        .modal-title { font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #10b981;}
+        .btn-primary { background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 0 #059669; margin-top: 15px;}
+        
+        .hint-list { text-align: left; font-size: 14px; color: #e2e8f0; line-height: 1.6; margin-top: 10px;}
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <a href="mind-games.html" class="back-btn"><span class="material-icons">arrow_back</span></a>
+        <div class="nav-title">Water Jug</div>
+        <div class="nav-actions">
+            <button class="action-btn hint-btn" onclick="document.getElementById('hint-modal').style.display='flex'"><span class="material-icons" style="font-size: 18px;">lightbulb</span> Hint</button>
+            <button class="action-btn" onclick="resetGame()"><span class="material-icons" style="font-size: 18px;">refresh</span></button>
+        </div>
+    </nav>
+
+    <div class="game-info">
+        <div class="goal-text">🎯 Target: Exactly 4 Liters</div>
+        <div class="sub-text">5L wale jug mein theek 4 Liter paani laana hai.</div>
+        
+        <!-- Live Action Status -->
+        <div class="action-log" id="status-bar">Game Start! Socho kya karna hai...</div>
+    </div>
+
+    <div class="game-area">
+        
+        <!-- 3 Liter Jug -->
+        <div class="jug-wrap">
+            <div class="jug-glass jug-3l">
+                <div class="jug-label" id="lbl-3">0L</div>
+                <div class="water" id="water-3"></div>
+            </div>
+            <div class="controls">
+                <button class="btn-ctrl btn-fill" onclick="fill(3)">+ Pura Bharo</button>
+                <button class="btn-ctrl btn-pour" onclick="pour(3, 5)">Pour ➡️ 5L</button>
+                <button class="btn-ctrl btn-empty" onclick="empty(3)">- Pura Khali</button>
+            </div>
+        </div>
+
+        <!-- 5 Liter Jug -->
+        <div class="jug-wrap">
+            <div class="jug-glass jug-5l">
+                <div class="jug-label" id="lbl-5">0L</div>
+                <div class="water" id="water-5"></div>
+            </div>
+            <div class="controls">
+                <button class="btn-ctrl btn-fill" onclick="fill(5)">+ Pura Bharo</button>
+                <button class="btn-ctrl btn-pour" onclick="pour(5, 3)">Pour ⬅️ 3L</button>
+                <button class="btn-ctrl btn-empty" onclick="empty(5)">- Pura Khali</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Hint Modal -->
+    <div class="modal-overlay" id="hint-modal">
+        <div class="modal-content">
+            <div class="modal-title" style="color: #eab308;">💡 Cheatsheet</div>
+            <p style="color: #94a3b8; font-size: 13px;">Agar aap fas gaye hain, toh yeh steps follow karein:</p>
+            <ol class="hint-list">
+                <li><b>5L</b> wale jug ko poora bharo.</li>
+                <li><b>5L</b> se paani <b>3L</b> wale mein dalo (Ab 5L wale me 2L bachega).</li>
+                <li><b>3L</b> wale ko poora fenk (Empty) do.</li>
+                <li><b>5L</b> wale me bacha hua 2L paani wapas <b>3L</b> wale me daal do.</li>
+                <li>Firse <b>5L</b> wale ko nalke se poora bhar lo.</li>
+                <li>Aakhiri baar: <b>5L</b> wale se <b>3L</b> wale ko bharo. (3L wale mein pehle se 2L tha, toh wo sirf 1L lega).</li>
+                <li style="color: #10b981; font-weight: bold; margin-top: 5px;">BHOOM! 5L wale mein exactly 4L bachega! 🎉</li>
+            </ol>
+            <button class="btn-primary" onclick="document.getElementById('hint-modal').style.display='none'">Got it!</button>
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div class="modal-overlay" id="win-modal">
+        <div class="modal-content">
+            <span class="material-icons" style="font-size: 60px; color: #10b981; margin-bottom: 10px;">verified</span>
+            <div class="modal-title">Mission Passed!</div>
+            <div style="color: #94a3b8; margin-bottom: 15px;">Dimaag toh bahut tez hai aapka! Aapne exactly 4 Liter paani naap liya.</div>
+            <button class="btn-primary" onclick="resetGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const MAX = { 3: 3, 5: 5 };
+        let current = { 3: 0, 5: 0 };
+        let isAnimating = false;
+
+        function setStatus(text) {
+            document.getElementById('status-bar').innerText = text;
+        }
+
+        function updateUI() {
+            document.getElementById('lbl-3').innerText = current[3] + "L";
+            document.getElementById('lbl-5').innerText = current[5] + "L";
+
+            let h3 = (current[3] / MAX[3]) * 100;
+            let h5 = (current[5] / MAX[5]) * 100;
+            
+            document.getElementById('water-3').style.height = h3 + "%";
+            document.getElementById('water-5').style.height = h5 + "%";
+
+            isAnimating = true;
+            setTimeout(() => {
+                isAnimating = false;
+                if(current[5] === 4) {
+                    document.getElementById('win-modal').style.display = 'flex';
+                }
+            }, 550);
+        }
+
+        function fill(jug) {
+            if(isAnimating) return;
+            if(current[jug] === MAX[jug]) {
+                setStatus(`⚠️ ${jug}L wala jug pehle se bhara hai!`);
+                return;
+            }
+            current[jug] = MAX[jug];
+            setStatus(`🚰 Aapne ${jug}L wale jug ko nalke se poora bhar diya.`);
+            updateUI();
+        }
+
+        function empty(jug) {
+            if(isAnimating) return;
+            if(current[jug] === 0) {
+                setStatus(`⚠️ ${jug}L wala jug pehle se khali hai!`);
+                return;
+            }
+            current[jug] = 0;
+            setStatus(`🗑️ Aapne ${jug}L wale jug ka paani fenk diya.`);
+            updateUI();
+        }
+
+        function pour(from, to) {
+            if(isAnimating) return;
+            if(current[from] === 0) {
+                setStatus(`⚠️ ${from}L wale mein paani hi nahi hai daalne ko!`);
+                return;
+            }
+            if(current[to] === MAX[to]) {
+                setStatus(`⚠️ ${to}L wala jug full hai, aur paani nahi aayega!`);
+                return;
+            }
+
+            let spaceInTo = MAX[to] - current[to];
+            let transferAmount = Math.min(current[from], spaceInTo);
+
+            current[from] -= transferAmount;
+            current[to] += transferAmount;
+
+            setStatus(`➡️ ${from}L wale se ${transferAmount}L paani ${to}L wale mein daala.`);
+            updateUI();
+        }
+
+        function resetGame() {
+            current = { 3: 0, 5: 0 };
+            setStatus("Game Reset! Shuru se socho...");
+            document.getElementById('win-modal').style.display = 'none';
+            updateUI();
+        }
+
+        // Init
+        updateUI();
+    </script>
+</body>
+</html>

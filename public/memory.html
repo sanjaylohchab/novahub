@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Memory Match - NovaHub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: #0f172a; color: #e2e8f0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* Top Navigation */
+        .top-nav { height: 56px; background-color: #1e293b; display: flex; align-items: center; padding: 0 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); flex-shrink: 0; z-index: 10;}
+        .back-btn { color: #e2e8f0; text-decoration: none; display: flex; align-items: center; padding: 8px; margin-right: 16px; cursor: pointer; }
+        .nav-title { font-size: 20px; font-weight: bold; flex: 1; }
+        .restart-btn { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .restart-btn:active { background: #2563eb; transform: scale(0.95); }
+
+        /* Main Container */
+        .game-container { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 15px; width: 100%; max-width: 450px; margin: 0 auto; overflow-y: auto;}
+
+        /* Scoreboard */
+        .dashboard { display: flex; justify-content: space-between; width: 100%; max-width: 360px; margin-bottom: 20px; background: #1e293b; padding: 12px 20px; border-radius: 12px; border: 1px solid #334155; flex-shrink: 0;}
+        .dash-item { display: flex; flex-direction: column; align-items: center; }
+        .dash-label { font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase; }
+        .dash-val { font-size: 18px; font-weight: bold; color: #38bdf8; margin-top: 2px; }
+
+        /* Cards Grid */
+        .grid-container { 
+            display: grid; 
+            gap: 10px; 
+            width: 100%; 
+            max-width: 360px; 
+            perspective: 1000px;
+            margin-bottom: 20px;
+        }
+
+        /* Card 3D Flip Setup */
+        .card {
+            background: transparent;
+            border-radius: 10px;
+            cursor: pointer;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.4s ease;
+            aspect-ratio: 1;
+        }
+
+        .card.flipped, .card.matched {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 2px solid #334155;
+        }
+
+        .card-front {
+            background: #1e293b;
+            color: #38bdf8;
+        }
+
+        .card-front .material-icons { font-size: 28px; }
+
+        .card-back {
+            background: #020617;
+            transform: rotateY(180deg);
+            font-size: 28px;
+            border-color: #38bdf8;
+        }
+
+        .card.matched .card-back {
+            background: #065f46;
+            border-color: #10b981;
+            animation: pulse 0.4s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: rotateY(180deg) scale(1); }
+            50% { transform: rotateY(180deg) scale(1.08); }
+            100% { transform: rotateY(180deg) scale(1); }
+        }
+
+        /* Win Overlay */
+        #win-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        #win-modal h2 { font-size: 32px; color: #10b981; margin-bottom: 10px; }
+        .win-stats { font-size: 16px; color: #94a3b8; margin-bottom: 20px; text-align: center; line-height: 1.6; }
+        .btn-next { background: #10b981; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer;}
+        .btn-next:active { background: #059669; transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <a href="index.html" class="back-btn"><span class="material-icons">arrow_back</span></a>
+        <div class="nav-title">Memory Match</div>
+        <button class="restart-btn" onclick="resetGame()"><span class="material-icons" style="font-size: 16px;">refresh</span></button>
+    </nav>
+
+    <div class="game-container">
+        <div class="dashboard">
+            <div class="dash-item">
+                <span class="dash-label">Level</span>
+                <span class="dash-val" id="level-display" style="color:#eab308;">1</span>
+            </div>
+            <div class="dash-item">
+                <span class="dash-label">Moves</span>
+                <span class="dash-val" id="moves-count">0</span>
+            </div>
+            <div class="dash-item">
+                <span class="dash-label">Time</span>
+                <span class="dash-val" id="timer-text">00:00</span>
+            </div>
+            <div class="dash-item">
+                <span class="dash-label">Matched</span>
+                <span class="dash-val" id="matched-count" style="color:#10b981;">0/0</span>
+            </div>
+        </div>
+
+        <div class="grid-container" id="grid">
+            <!-- Cards generated dynamically -->
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div id="win-modal">
+        <h2 id="win-title">Level Cleared! 🎉</h2>
+        <div class="win-stats" id="win-stats-text">
+            Completed in 00:00<br>Total Moves: 0
+        </div>
+        <button class="btn-next" id="next-lvl-btn" onclick="nextLevel()">Next Level</button>
+    </div>
+
+    <script>
+        // Total 16 unique icons for up to 32 cards (16 pairs)
+        const allIcons = ['🚀', '🎮', '🍕', '🐱', '⚽', '🎨', '🎵', '🔥', '🌟', '🍔', '🐶', '🚗', '🎈', '🎸', '🍩', '💎'];
+        
+        // Base Levels 1 to 5
+        const levelsData = [
+            { level: 1, pairs: 6, cols: 3 },  // 12 Cards (3x4 grid)
+            { level: 2, pairs: 8, cols: 4 },  // 16 Cards (4x4 grid)
+            { level: 3, pairs: 10, cols: 4 }, // 20 Cards (4x5 grid)
+            { level: 4, pairs: 12, cols: 4 }, // 24 Cards (4x6 grid)
+            { level: 5, pairs: 15, cols: 5 }  // 30 Cards (5x6 grid)
+        ];
+        
+        // Generate Level 6 to 15 programmatically (Same as level 5, but new shuffle each time)
+        for (let i = 6; i <= 15; i++) {
+            levelsData.push({ level: i, pairs: 15, cols: 5 });
+        }
+
+        let currentLevelIndex = 0;
+        let cardsData = [];
+        let flippedCards = [];
+        let matchedPairs = 0;
+        let moves = 0;
+        let timerInterval = null;
+        let seconds = 0;
+        let isLockBoard = false;
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            seconds = 0;
+            document.getElementById('timer-text').innerText = "00:00";
+            timerInterval = setInterval(() => {
+                seconds++;
+                let m = Math.floor(seconds / 60).toString().padStart(2, '0');
+                let s = (seconds % 60).toString().padStart(2, '0');
+                document.getElementById('timer-text').innerText = `${m}:${s}`;
+            }, 1000);
+        }
+
+        function initGame() {
+            document.getElementById('win-modal').style.display = 'none';
+            let lvl = levelsData[currentLevelIndex];
+            
+            matchedPairs = 0;
+            moves = 0;
+            isLockBoard = false;
+            flippedCards = [];
+            
+            document.getElementById('level-display').innerText = lvl.level + "/15";
+            document.getElementById('moves-count').innerText = moves;
+            document.getElementById('matched-count').innerText = `0/${lvl.pairs}`;
+
+            // Select icons based on level required pairs
+            let selectedIcons = allIcons.slice(0, lvl.pairs);
+            
+            // Duplicate array to make pairs & shuffle. (Math.random() is used to reshuffle every level)
+            cardsData = [...selectedIcons, ...selectedIcons].sort(() => Math.random() - 0.5);
+
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            
+            // Adjust grid columns dynamically
+            grid.style.gridTemplateColumns = `repeat(${lvl.cols}, 1fr)`;
+
+            cardsData.forEach((icon, index) => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.dataset.icon = icon;
+                card.dataset.index = index;
+
+                card.innerHTML = `
+                    <div class="card-face card-front"><span class="material-icons">help_outline</span></div>
+                    <div class="card-face card-back">${icon}</div>
+                `;
+
+                card.addEventListener('click', flipCard);
+                grid.appendChild(card);
+            });
+
+            startTimer();
+        }
+
+        function flipCard() {
+            if (isLockBoard) return;
+            if (this.classList.contains('flipped') || this.classList.contains('matched')) return;
+
+            this.classList.add('flipped');
+            flippedCards.push(this);
+
+            if (flippedCards.length === 2) {
+                moves++;
+                document.getElementById('moves-count').innerText = moves;
+                checkMatch();
+            }
+        }
+
+        function checkMatch() {
+            let [card1, card2] = flippedCards;
+            let isMatch = card1.dataset.icon === card2.dataset.icon;
+
+            if (isMatch) {
+                card1.classList.add('matched');
+                card2.classList.add('matched');
+                matchedPairs++;
+                
+                let totalPairs = levelsData[currentLevelIndex].pairs;
+                document.getElementById('matched-count').innerText = `${matchedPairs}/${totalPairs}`;
+                flippedCards = [];
+
+                if (matchedPairs === totalPairs) {
+                    clearInterval(timerInterval);
+                    setTimeout(showWinScreen, 500);
+                }
+            } else {
+                isLockBoard = true;
+                setTimeout(() => {
+                    card1.classList.remove('flipped');
+                    card2.classList.remove('flipped');
+                    flippedCards = [];
+                    isLockBoard = false;
+                }, 800);
+            }
+        }
+
+        function showWinScreen() {
+            let timeStr = document.getElementById('timer-text').innerText;
+            document.getElementById('win-stats-text').innerHTML = `Completed in <b>${timeStr}</b><br>Total Moves: <b>${moves}</b>`;
+            
+            let isLastLevel = (currentLevelIndex === levelsData.length - 1);
+            
+            if (isLastLevel) {
+                document.getElementById('win-title').innerText = "All 15 Levels Completed! 🏆";
+                document.getElementById('next-lvl-btn').innerText = "Play Again from Level 1";
+            } else {
+                document.getElementById('win-title').innerText = "Level Cleared! 🎉";
+                document.getElementById('next-lvl-btn').innerText = "Next Level ➔";
+            }
+            
+            document.getElementById('win-modal').style.display = 'flex';
+        }
+
+        function nextLevel() {
+            let isLastLevel = (currentLevelIndex === levelsData.length - 1);
+            if (isLastLevel) {
+                currentLevelIndex = 0; // Reset to level 1
+            } else {
+                currentLevelIndex++; // Go to next level
+            }
+            initGame();
+        }
+
+        function resetGame() {
+            // Ask for confirmation if user presses the reset button manually
+            if(confirm("Restart from Level 1?")) {
+                currentLevelIndex = 0;
+                initGame();
+            }
+        }
+
+        // Start Level 1
+        initGame();
+    </script>
+    <script type="module" src="universal-chat.js"></script>
+</body>
+</html>

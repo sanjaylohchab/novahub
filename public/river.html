@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>River Crossing - NovaHub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a; --nav-bg: #1e293b; --text-light: #e2e8f0;
+            --bank-color: #4d7c0f; --river-color: #0284c7; --boat-color: #78350f;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-dark); color: var(--text-light); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* Top Navigation */
+        .top-nav { height: 60px; background-color: var(--nav-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 10; flex-shrink: 0;}
+        .back-btn { color: var(--text-light); text-decoration: none; display: flex; align-items: center; cursor: pointer; }
+        .nav-title { font-size: 18px; font-weight: bold; }
+        .action-btn { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;}
+        
+        /* Game Area Layout (Vertical for Mobile) */
+        .game-area { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        /* Banks and River */
+        .bank { flex: 1; background: var(--bank-color); border-top: 4px solid #3f6212; border-bottom: 4px solid #3f6212; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; padding: 10px; position: relative; }
+        .river { flex: 1.5; background: var(--river-color); position: relative; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 20px rgba(0,0,0,0.3); }
+        
+        /* Characters */
+        .char { font-size: 35px; width: 50px; height: 50px; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.2); border-radius: 10px; cursor: pointer; transition: 0.1s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+        .char:active { transform: scale(0.9); }
+        
+        /* Boat */
+        .boat-container { width: 140px; height: 70px; background: var(--boat-color); border-radius: 10px 10px 40px 40px; position: absolute; transition: top 0.8s ease-in-out; display: flex; justify-content: space-evenly; align-items: center; padding: 5px; border: 3px solid #451a03; box-shadow: 0 10px 15px rgba(0,0,0,0.5);}
+        .boat-left { top: 10px; } /* Near Top Bank */
+        .boat-right { top: calc(100% - 80px); } /* Near Bottom Bank */
+        
+        .boat-spot { width: 45px; height: 45px; border: 2px dashed rgba(255,255,255,0.3); border-radius: 8px; display: flex; justify-content: center; align-items: center; }
+
+        /* Go Button */
+        .go-btn { position: absolute; right: 20px; background: #eab308; color: #000; border: none; width: 60px; height: 60px; border-radius: 50%; font-size: 18px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid #ca8a04; z-index: 5;}
+        .go-btn:active { transform: scale(0.9); }
+
+        /* Modals */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 50; display: flex; justify-content: center; align-items: center; padding: 20px; flex-direction: column; }
+        .modal-content { background: var(--nav-bg); padding: 25px; border-radius: 16px; text-align: center; max-width: 350px; border: 1px solid #334155;}
+        .modal-title { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .modal-desc { font-size: 14px; color: #94a3b8; margin-bottom: 20px; line-height: 1.5; text-align: left;}
+        .btn-primary { background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%;}
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <a href="index.html" class="back-btn"><span class="material-icons">arrow_back</span></a>
+        <div class="nav-title">River Crossing</div>
+        <button class="action-btn" onclick="initGame()"><span class="material-icons" style="font-size: 18px;">refresh</span> Reset</button>
+    </nav>
+
+    <div class="game-area">
+        <!-- Top Bank (Left Side logically) -->
+        <div class="bank" id="bank-top"></div>
+        
+        <!-- River -->
+        <div class="river">
+            <div class="boat-container boat-left" id="boat">
+                <div class="boat-spot" id="boat-spot-0" onclick="moveFromBoat(0)"></div>
+                <div class="boat-spot" id="boat-spot-1" onclick="moveFromBoat(1)"></div>
+            </div>
+            <button class="go-btn" onclick="moveBoat()">GO</button>
+        </div>
+
+        <!-- Bottom Bank (Right Side logically) -->
+        <div class="bank" id="bank-bottom"></div>
+    </div>
+
+    <!-- Instructions Modal -->
+    <div class="modal-overlay" id="intro-modal">
+        <div class="modal-content">
+            <div class="modal-title" style="color: #38bdf8;">🧠 Rules</div>
+            <ul class="modal-desc" style="list-style: none; padding: 0;">
+                <li style="margin-bottom: 8px;">👨 <b>3 Aadmi</b> aur 🦁 <b>3 Sher</b> ko nadi paar karani hai.</li>
+                <li style="margin-bottom: 8px;">⛵ Naav mein max <b>2 log</b> aa sakte hain. Bina kisi ke naav nahi chalegi.</li>
+                <li style="color: #ef4444; font-weight: bold;">⚠️ KHATRA: Agar kisi bhi kinare par Shero ki tadaad Aadmiyon se zyada hui, toh Sher kha jayenge! (Game Over)</li>
+            </ul>
+            <button class="btn-primary" onclick="document.getElementById('intro-modal').style.display='none'">START GAME</button>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div class="modal-overlay" id="result-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-title" id="result-title">Game Over</div>
+            <div class="modal-desc" id="result-desc" style="text-align: center; font-size: 16px;">Shero ne Aadmiyon ko kha liya!</div>
+            <button class="btn-primary" onclick="initGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // Game State
+        let state = {
+            top: { m: 3, l: 3 },    // m = Men (👨), l = Lions (🦁)
+            bottom: { m: 0, l: 0 },
+            boat: [],               // Array to hold characters in boat e.g. ['m', 'l']
+            boatPos: 'top'          // 'top' or 'bottom'
+        };
+
+        let isAnimating = false;
+
+        function initGame() {
+            state = {
+                top: { m: 3, l: 3 },
+                bottom: { m: 0, l: 0 },
+                boat: [],
+                boatPos: 'top'
+            };
+            isAnimating = false;
+            document.getElementById('boat').className = 'boat-container boat-left';
+            document.getElementById('result-modal').style.display = 'none';
+            render();
+        }
+
+        // Render UI based on state
+        function render() {
+            // Render Top Bank
+            let topHTML = '';
+            for(let i=0; i<state.top.m; i++) topHTML += `<div class="char" onclick="moveToBoat('m', 'top')">👨</div>`;
+            for(let i=0; i<state.top.l; i++) topHTML += `<div class="char" onclick="moveToBoat('l', 'top')">🦁</div>`;
+            document.getElementById('bank-top').innerHTML = topHTML || '<span style="opacity:0.3;">Empty</span>';
+
+            // Render Bottom Bank
+            let bottomHTML = '';
+            for(let i=0; i<state.bottom.m; i++) bottomHTML += `<div class="char" onclick="moveToBoat('m', 'bottom')">👨</div>`;
+            for(let i=0; i<state.bottom.l; i++) bottomHTML += `<div class="char" onclick="moveToBoat('l', 'bottom')">🦁</div>`;
+            document.getElementById('bank-bottom').innerHTML = bottomHTML || '<span style="opacity:0.3;">Empty</span>';
+
+            // Render Boat
+            document.getElementById('boat-spot-0').innerHTML = state.boat[0] ? `<div class="char">${state.boat[0] === 'm' ? '👨' : '🦁'}</div>` : '';
+            document.getElementById('boat-spot-1').innerHTML = state.boat[1] ? `<div class="char">${state.boat[1] === 'm' ? '👨' : '🦁'}</div>` : '';
+        }
+
+        function moveToBoat(type, bankClicked) {
+            if(isAnimating) return;
+            // Can only move from the bank where the boat is currently docked
+            if(state.boatPos !== bankClicked) {
+                alert("Naav doosre kinare par hai!");
+                return;
+            }
+            if(state.boat.length >= 2) {
+                alert("Naav full hai! Pehle kisi ko utaaro.");
+                return;
+            }
+
+            // Move from bank to boat
+            state[bankClicked][type]--;
+            state.boat.push(type);
+            render();
+        }
+
+        function moveFromBoat(index) {
+            if(isAnimating) return;
+            if(!state.boat[index]) return;
+
+            let type = state.boat[index];
+            state.boat.splice(index, 1); // Remove from boat
+            state[state.boatPos][type]++; // Add to current bank
+            
+            render();
+        }
+
+        function moveBoat() {
+            if(isAnimating) return;
+            if(state.boat.length === 0) {
+                alert("Naav akele nahi chal sakti! Kam se kam 1 janwar ya aadmi chahiye.");
+                return;
+            }
+
+            isAnimating = true;
+            let boatDiv = document.getElementById('boat');
+            
+            if(state.boatPos === 'top') {
+                boatDiv.className = 'boat-container boat-right';
+                state.boatPos = 'bottom';
+            } else {
+                boatDiv.className = 'boat-container boat-left';
+                state.boatPos = 'top';
+            }
+
+            // Wait for animation to finish before checking win/loss
+            setTimeout(() => {
+                isAnimating = false;
+                checkGameState();
+            }, 800); // matches CSS transition 0.8s
+        }
+
+        function checkGameState() {
+            // Calculate effective counts at each bank (including people in boat at that bank)
+            let topM = state.top.m + (state.boatPos === 'top' ? state.boat.filter(x => x==='m').length : 0);
+            let topL = state.top.l + (state.boatPos === 'top' ? state.boat.filter(x => x==='l').length : 0);
+            
+            let botM = state.bottom.m + (state.boatPos === 'bottom' ? state.boat.filter(x => x==='m').length : 0);
+            let botL = state.bottom.l + (state.boatPos === 'bottom' ? state.boat.filter(x => x==='l').length : 0);
+
+            // Check Win Condition
+            if(botM === 3 && botL === 3) {
+                showResult("🏆 YOU WIN!", "Aapne sabko sahi salamat paar kara diya. Dimaag laga diya bhai!", "#10b981");
+                return;
+            }
+
+            // Check Lose Condition
+            if((topM > 0 && topL > topM) || (botM > 0 && botL > botM)) {
+                showResult("💀 GAME OVER", "Shero ne Aadmiyon ko khaa liya! Dhyan se khelo.", "#ef4444");
+            }
+        }
+
+        function showResult(title, desc, color) {
+            document.getElementById('result-title').innerText = title;
+            document.getElementById('result-title').style.color = color;
+            document.getElementById('result-desc').innerText = desc;
+            document.getElementById('result-modal').style.display = 'flex';
+        }
+
+        // Initialize on load
+        initGame();
+    </script>
+    <script type="module" src="universal-chat.js"></script>
+</body>
+</html>

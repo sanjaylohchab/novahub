@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>NovaMessenger Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/808/808439.png">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"></script>
+    <style>
+        :root {
+            --bg-main: #060b13;
+            --bg-panel: #0d1522;
+            --bg-nav: #131e31;
+            --bg-chat: #080e18;
+            --text-main: #f1f5f9;
+            --text-sub: #94a3b8;
+            --accent: #00a884;
+            --accent-grad: linear-gradient(135deg, #00f2fe 0%, #00a884 100%);
+            --bubble-me: linear-gradient(135deg, #006854 0%, #005041 100%);
+            --bubble-other: #1e293b;
+            --border-col: rgba(255, 255, 255, 0.08);
+        }
+
+        body.light-mode {
+            --bg-main: #f0f2f5; --bg-panel: #ffffff; --bg-nav: #f8fafc; --bg-chat: #efeae2;
+            --text-main: #0f172a; --text-sub: #64748b;
+            --bubble-me: linear-gradient(135deg, #d9fdd3 0%, #bbf7d0 100%);
+            --bubble-other: #ffffff; --border-col: #e2e8f0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+        /* Disguised Toast Banner */
+        #stealth-toast { position: fixed; top: -80px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1.5px solid #00f2fe; color: #fff; padding: 10px 20px; border-radius: 30px; z-index: 10080; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); transition: top 0.35s ease; pointer-events: none; white-space: nowrap; }
+        #stealth-toast.show { top: 16px; }
+
+        /* ============================================================================
+           PREMIUM LOGIN & SIGNUP AUTHENTICATION SCREEN (STRICT 1-CODE = 1-ID)
+           ============================================================================ */
+        #auth-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at top, #16243d 0%, #050911 100%); z-index: 10050; display: flex; justify-content: center; align-items: center; padding: 18px; overflow-y: auto; }
+        .auth-card { background: rgba(17, 27, 43, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 24px; width: 100%; max-width: 390px; padding: 26px 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(0, 242, 254, 0.12); text-align: center; }
+        .auth-logo { width: 64px; height: 64px; border-radius: 20px; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; margin: 0 auto 14px auto; box-shadow: 0 8px 25px rgba(0, 242, 254, 0.4); color: #04121a; }
+        .auth-tabs { display: flex; background: rgba(0,0,0,0.35); border-radius: 14px; padding: 4px; margin: 18px 0; border: 1px solid var(--border-col); }
+        .auth-tab { flex: 1; padding: 10px; border-radius: 10px; font-weight: 700; font-size: 13.5px; color: var(--text-sub); cursor: pointer; transition: 0.2s; }
+        .auth-tab.active { background: var(--accent-grad); color: #04121a; box-shadow: 0 4px 12px rgba(0, 242, 254, 0.3); }
+        .auth-field { text-align: left; margin-bottom: 14px; }
+        .auth-field label { display: block; font-size: 11.5px; font-weight: 700; color: #38bdf8; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .auth-input { width: 100%; background: rgba(8, 13, 23, 0.9); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 12px 14px; border-radius: 12px; font-size: 15px; outline: none; transition: 0.2s; }
+        .auth-input:focus { border-color: #00f2fe; box-shadow: 0 0 12px rgba(0, 242, 254, 0.25); }
+        .auth-btn { width: 100%; background: var(--accent-grad); color: #04121a; border: none; padding: 13px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; margin-top: 6px; box-shadow: 0 6px 20px rgba(0, 242, 254, 0.35); transition: 0.2s; }
+        .auth-btn:active { transform: scale(0.98); }
+        #auth-error-msg { color: #f87171; font-size: 12.5px; font-weight: 600; margin-bottom: 10px; min-height: 18px; }
+
+        /* ============================================================================
+           STEALTH DECOY COVER (WHEN SHIELD 🛡️ IS TAPPED - 3-TAP TITLE TO UNLOCK)
+           ============================================================================ */
+        #cyber-gate-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%); z-index: 10040; display: none; flex-direction: column; padding: 20px; color: #e2e8f0; overflow-y: auto; }
+        .cyber-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 14px; border-bottom: 1px solid rgba(0, 242, 254, 0.2); margin-bottom: 20px; }
+        .cyber-card { background: rgba(30, 41, 59, 0.65); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+        .cyber-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+        .cyber-stat-box { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(0, 242, 254, 0.15); padding: 14px; border-radius: 12px; text-align: center; }
+
+        /* ============================================================================
+           MESSENGER MAIN SHELL & SIDEBAR
+           ============================================================================ */
+        .app-shell { display: flex; width: 100%; height: 100%; position: relative; overflow: hidden; }
+        .sidebar { width: 100%; max-width: 410px; background: var(--bg-panel); border-right: 1px solid var(--border-col); display: flex; flex-direction: column; height: 100%; z-index: 10; }
+        .top-bar { height: 64px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
+        .my-profile-chip { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; overflow: hidden; }
+        .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; color: #04121a; font-weight: 800; background-size: cover; background-position: center; flex-shrink: 0; font-size: 16px; position: relative; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .online-dot { width: 12px; height: 12px; background: #10b981; border: 2px solid var(--bg-panel); border-radius: 50%; position: absolute; bottom: 0; right: 0; }
+        .icon-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.05); display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-sub); transition: 0.2s; text-decoration: none; border: none; }
+        .icon-btn:hover { background: rgba(0, 242, 254, 0.15); color: var(--text-main); }
+
+        /* Messenger Active Friends / Stories Horizontal Bar */
+        .stories-strip { display: flex; gap: 14px; padding: 12px 14px; overflow-x: auto; background: var(--bg-panel); border-bottom: 1px solid var(--border-col); flex-shrink: 0; scrollbar-width: none; }
+        .stories-strip::-webkit-scrollbar { display: none; }
+        .story-bubble { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; width: 58px; flex-shrink: 0; }
+        .story-ring { width: 52px; height: 52px; border-radius: 50%; padding: 2px; background: linear-gradient(135deg, #00f2fe, #a855f7, #ec4899); display: flex; justify-content: center; align-items: center; }
+        .story-ring .avatar { width: 100%; height: 100%; border: 2px solid var(--bg-panel); }
+        .story-name { font-size: 11px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center; font-weight: 600; }
+
+        .nav-tabs { display: flex; background: var(--bg-nav); border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
+        .tab-item { flex: 1; text-align: center; padding: 12px 0; font-size: 13px; font-weight: 800; color: var(--text-sub); cursor: pointer; border-bottom: 3px solid transparent; letter-spacing: 0.5px; }
+        .tab-item.active { color: #00f2fe; border-bottom-color: #00f2fe; }
+
+        .search-bar { padding: 10px 12px; background: var(--bg-panel); display: flex; gap: 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
+        .search-input { flex: 1; background: var(--bg-nav); border: 1px solid var(--border-col); padding: 9px 14px; border-radius: 20px; color: var(--text-main); outline: none; font-size: 13.5px; }
+        .add-friend-btn { background: var(--accent-grad); color: #04121a; border: none; padding: 0 14px; height: 38px; border-radius: 20px; font-weight: 800; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: 5px; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0, 242, 254, 0.25); }
+
+        .list-area { flex: 1; overflow-y: auto; }
+        .empty-inbox { padding: 45px 25px; text-align: center; color: var(--text-sub); font-size: 13.5px; line-height: 1.6; }
+        .chat-item { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--border-col); cursor: pointer; transition: 0.15s; }
+        .chat-item:hover, .chat-item.active { background: rgba(0, 242, 254, 0.08); }
+        .chat-item-info { flex: 1; overflow: hidden; }
+        .chat-item-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .chat-item-name { font-weight: 700; font-size: 15px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+        .chat-item-sub { font-size: 12.5px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mode-badge { background: rgba(0, 242, 254, 0.15); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.35); font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
+
+        /* Right / Full Chat View */
+        .chat-view { flex: 1; display: flex; flex-direction: column; height: 100%; background: var(--bg-chat); position: relative; z-index: 20; }
+        @media (max-width: 768px) {
+            .sidebar { max-width: 100%; }
+            .chat-view { position: fixed; top: 0; left: 0; width: 100%; height: 100%; transform: translateX(100%); transition: transform 0.25s ease; }
+            .chat-view.open { transform: translateX(0); }
+        }
+
+        .chat-header { height: 64px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
+        .chat-header-left { display: flex; align-items: center; gap: 10px; flex: 1; cursor: pointer; overflow: hidden; }
+        .chat-title-name { font-weight: 700; font-size: 15.5px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+        .chat-title-status { font-size: 11.5px; color: #00f2fe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .msgs-container { flex: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 0); background-size: 22px 22px; }
+        .date-pill { align-self: center; background: var(--bg-nav); color: var(--text-sub); font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 12px; margin: 8px 0; border: 1px solid var(--border-col); }
+
+        .msg-wrap { display: flex; flex-direction: column; max-width: 78%; position: relative; margin-bottom: 4px; }
+        .msg-wrap.me { align-self: flex-end; }
+        .msg-wrap.other { align-self: flex-start; }
+
+        .msg-bubble { padding: 8px 12px 6px 12px; border-radius: 16px; font-size: 14px; position: relative; word-wrap: break-word; cursor: pointer; line-height: 1.4; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        .msg-wrap.me .msg-bubble { background: var(--bubble-me); color: var(--text-main); border-bottom-right-radius: 3px; }
+        .msg-wrap.other .msg-bubble { background: var(--bubble-other); color: var(--text-main); border-bottom-left-radius: 3px; }
+
+        .msg-sender { font-size: 11px; font-weight: bold; color: #38bdf8; margin-bottom: 2px; }
+        .msg-quote { background: rgba(0,0,0,0.25); border-left: 3px solid #00f2fe; padding: 4px 8px; border-radius: 6px; font-size: 11.5px; margin-bottom: 5px; }
+        .msg-meta { display: inline-flex; align-items: center; gap: 3px; float: right; margin-left: 8px; margin-top: 3px; font-size: 10px; opacity: 0.8; }
+        .seen-tick { font-size: 14px !important; }
+        .seen-tick.read { color: #00f2fe; opacity: 1; }
+        .msg-reactions { display: flex; gap: 2px; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; padding: 1px 6px; font-size: 12px; width: fit-content; margin-top: -6px; z-index: 2; align-self: flex-end; }
+
+        .msg-media { max-width: 230px; max-height: 240px; border-radius: 12px; display: block; margin-bottom: 3px; }
+        .view-once-pill { display: flex; align-items: center; gap: 6px; background: rgba(0,242,254,0.1); padding: 7px 12px; border-radius: 18px; border: 1px dashed #00f2fe; color: #00f2fe; font-weight: 600; font-size: 12.5px; }
+        .view-once-pill.opened { border-color: var(--text-sub); color: var(--text-sub); background: transparent; font-style: italic; font-weight: normal; }
+
+        .reply-preview-bar { background: var(--bg-nav); padding: 6px 14px; border-top: 1px solid var(--border-col); display: none; justify-content: space-between; align-items: center; font-size: 12px; flex-shrink: 0; }
+        .chat-input-bar { padding: 8px 10px; background: var(--bg-nav); display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--border-col); flex-shrink: 0; }
+        .msg-input { flex: 1; background: var(--bg-panel); border: 1px solid var(--border-col); color: var(--text-main); padding: 10px 14px; border-radius: 22px; outline: none; font-size: 14px; min-width: 0; }
+        .vo-toggle { width: 28px; height: 28px; border-radius: 50%; border: 1.5px dashed var(--text-sub); color: var(--text-sub); font-size: 11.5px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; }
+        .vo-toggle.active { background: #00f2fe; color: #04121a; border-color: #00f2fe; }
+        .circle-btn { width: 38px; height: 38px; border-radius: 50%; background: var(--accent-grad); color: #04121a; border: none; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; }
+        .circle-btn.rec { background: #ef4444; color: #fff; animation: pulse 0.8s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* CONTACT INFO DRAWER */
+        #contact-info-drawer { position: fixed; top: 0; right: 0; width: 100%; max-width: 420px; height: 100%; background: var(--bg-main); z-index: 10010; display: none; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; border-left: 1px solid var(--border-col); box-shadow: -10px 0 35px rgba(0,0,0,0.7); padding-bottom: 60px; }
+        .drawer-header { padding: 14px 16px; background: var(--bg-panel); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
+        .pill-top-btn { background: var(--bg-nav); border: 1px solid var(--border-col); color: var(--text-main); padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 13px; cursor: pointer; }
+        .info-group { background: var(--bg-panel); border-radius: 14px; margin: 10px 14px; border: 1px solid var(--border-col); flex-shrink: 0; }
+        .info-item { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-col); cursor: pointer; font-size: 14px; color: var(--text-main); gap: 10px; }
+        .info-item:last-child { border-bottom: none; }
+        .info-item-left { display: flex; align-items: center; gap: 12px; flex: 1; }
+        .info-item-right { display: flex; align-items: center; gap: 6px; color: var(--text-sub); font-size: 13px; flex-shrink: 0; }
+        .timer-select { background: var(--bg-nav); color: #00f2fe; border: 1px solid var(--border-col); padding: 5px 8px; border-radius: 8px; font-weight: bold; font-size: 12.5px; outline: none; }
+
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #374248; transition: .2s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; }
+        input:checked + .slider { background-color: #00a884; }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* STEALTH CALL HUD */
+        #call-hud { position: fixed; top: 65px; right: 18px; width: 255px; background: rgba(15, 23, 42, 0.96); border: 1.5px solid #00f2fe; border-radius: 16px; z-index: 10020; display: none; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.9); color: #fff; }
+        #call-hud.fullscreen { top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; border-radius: 0 !important; z-index: 10035 !important; }
+        .call-vid-box { position: relative; width: 100%; height: 155px; background: #000; display: none; justify-content: center; align-items: center; }
+        #call-hud.fullscreen .call-vid-box { flex: 1; height: calc(100vh - 65px); }
+        #remote-vid { width: 100%; height: 100%; object-fit: cover; }
+        #local-vid { width: 65px; height: 88px; position: absolute; bottom: 8px; right: 8px; border-radius: 8px; object-fit: cover; border: 1.5px solid #00f2fe; background: #111; z-index: 3; }
+        #call-hud.fullscreen #local-vid { width: 115px; height: 155px; bottom: 16px; right: 16px; }
+        .call-top-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 6px; z-index: 4; }
+        .tool-sq-btn { width: 28px; height: 28px; border-radius: 6px; background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.25); color: white; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .call-bar-bottom { padding: 8px 10px; background: #0f172a; display: flex; justify-content: space-between; align-items: center; }
+        .c-btn { width: 35px; height: 35px; border-radius: 50%; border: none; color: white; display: flex; justify-content: center; align-items: center; cursor: pointer; background: #334155; }
+        .c-btn.loud { background: #0284c7; box-shadow: 0 0 10px #0284c7; }
+        .c-btn.muted { background: #ef4444 !important; box-shadow: 0 0 12px #ef4444; }
+        .c-btn.cut { background: #dc2626; }
+
+        #msg-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10015; display: none; }
+        .react-pill { position: fixed; background: var(--bg-nav); border-radius: 30px; padding: 6px 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 6px 25px rgba(0,0,0,0.7); border: 1px solid var(--border-col); }
+        .react-emo { font-size: 22px; cursor: pointer; }
+        .ctx-menu { position: fixed; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; width: 205px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85); }
+        .ctx-item { padding: 10px 14px; font-size: 13.5px; color: var(--text-main); display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid var(--border-col); }
+
+        emoji-picker { position: fixed; bottom: 70px; right: 20px; width: 320px; height: 290px; z-index: 10025; display: none; border-radius: 12px; }
+        emoji-picker.show { display: block; }
+
+        .modal-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10030; display: none; justify-content: center; align-items: center; padding: 15px; }
+        .modal-card { background: var(--bg-panel); border: 1px solid var(--border-col); border-radius: 16px; width: 100%; max-width: 380px; padding: 18px; max-height: 82vh; overflow-y: auto; color: var(--text-main); }
+
+        #god-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #070000; z-index: 10090; display: none; flex-direction: column; font-family: monospace; color: #f87171; overflow-y: auto; }
+    </style>
+</head>
+<body>
+
+    <div id="stealth-toast"><span class="material-icons" style="color:#00f2fe; font-size:18px;">sports_esports</span> <span id="toast-txt">New high score! Game khelo **</span></div>
+    <audio id="remote-aud" autoplay></audio>
+
+    <!-- ============================================================================
+         1. STRICT LOGIN & SIGNUP AUTHENTICATION SCREEN (1 CODE = 1 UNIQUE ID)
+         ============================================================================ -->
+    <div id="auth-screen">
+        <div class="auth-card">
+            <div class="auth-logo"><span class="material-icons" style="font-size:34px;">bolt</span></div>
+            <h2 style="font-size:21px; font-weight:800; color:#fff;">NovaMessenger Pro</h2>
+            <p style="font-size:12px; color:var(--text-sub); margin-top:3px;">100% Private End-to-End Personal Messenger</p>
+
+            <div class="auth-tabs">
+                <div class="auth-tab active" id="tab-btn-login">🔑 LOGIN</div>
+                <div class="auth-tab" id="tab-btn-signup">✨ SIGN UP (NEW ID)</div>
+            </div>
+
+            <div id="auth-error-msg"></div>
+
+            <div class="auth-field">
+                <label>Unique ID Number / Code</label>
+                <input type="text" id="auth-code" class="auth-input" placeholder="e.g. 7488 or rahul99">
+            </div>
+
+            <div class="auth-field" id="signup-name-field" style="display:none;">
+                <label>Your Display Name</label>
+                <input type="text" id="auth-name" class="auth-input" placeholder="e.g. Rahul Sharma">
+            </div>
+
+            <div class="auth-field">
+                <label>Secret Password / PIN</label>
+                <input type="password" id="auth-pass" class="auth-input" placeholder="Enter your secret password">
+            </div>
+
+            <button class="auth-btn" id="btn-auth-submit">LOGIN TO MY ACCOUNT</button>
+            <div style="margin-top:14px;">
+                <a href="index.html" style="color:var(--text-sub); font-size:12px; text-decoration:none;">⬅ Return to Arcade Games</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================================
+         2. STEALTH DECOY COVER (WHEN SHIELD 🛡️ IS TAPPED - 3-TAP TITLE TO UNLOCK)
+         ============================================================================ -->
+    <div id="cyber-gate-screen">
+        <div class="cyber-header">
+            <div id="cyber-triple-tap" style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px;">
+                <span class="material-icons" style="color:#00f2fe;">memory</span>
+                <strong style="font-size:17px; letter-spacing:1px; color:#fff;">⚡ NOVA-OS v4.2</strong>
+            </div>
+            <a href="index.html" style="color:#94a3b8; text-decoration:none; font-size:13px; background:rgba(255,255,255,0.06); padding:6px 12px; border-radius:16px;">⬅ Arcade Hub</a>
+        </div>
+        <div class="cyber-stat-grid">
+            <div class="cyber-stat-box"><div style="font-size:11px; color:#94a3b8;">PING</div><div style="font-size:22px; font-weight:bold; color:#10b981; margin-top:4px;">14 ms</div></div>
+            <div class="cyber-stat-box"><div style="font-size:11px; color:#94a3b8;">ENGINE</div><div style="font-size:22px; font-weight:bold; color:#00f2fe; margin-top:4px;">120 Hz</div></div>
+        </div>
+        <div class="cyber-card">
+            <div style="font-size:12px; color:#94a3b8; font-weight:bold; margin-bottom:10px;">🏆 Global Season Telemetry</div>
+            <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:#eab308; font-weight:bold;"><span>🥇 1. Cyber_Knight</span><span>14,920 XP</span></div>
+            <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:#cbd5e1;"><span>🥈 2. Ludo_King_99</span><span>12,410 XP</span></div>
+            <div style="display:flex; justify-content:space-between; padding:10px 0; color:#d97706;"><span>🥉 3. Shadow_X</span><span>11,880 XP</span></div>
+        </div>
+    </div>
+
+    <!-- ============================================================================
+         3. FACEBOOK MESSENGER PRO INTERFACE
+         ============================================================================ -->
+    <div class="app-shell">
+        <div class="sidebar">
+            <div class="top-bar">
+                <div class="my-profile-chip" onclick="window.location.href='chat-settings.html'" title="Open Profile & Settings">
+                    <div class="avatar" id="my-top-dp"><span class="material-icons" style="font-size:22px;">person</span><div class="online-dot"></div></div>
+                    <div style="overflow:hidden;">
+                        <div style="font-weight:800; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="my-top-name">Not Logged In</div>
+                        <div style="font-size:11.5px; color:#00f2fe; font-weight:700;" id="my-top-id-tag">ID: ---</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:5px; flex-shrink:0;">
+                    <button class="icon-btn" id="btn-theme-mode" title="Day / Night Mode"><span class="material-icons" style="font-size:19px;">dark_mode</span></button>
+                    <button class="icon-btn" id="btn-panic-now" title="Hide Screen (3-Tap Top-Left to Reopen)"><span class="material-icons" style="font-size:19px; color:#eab308;">shield</span></button>
+                    <a href="chat-settings.html" class="icon-btn" title="Settings"><span class="material-icons" style="font-size:19px;">settings</span></a>
+                    <button class="icon-btn" id="btn-logout-now" title="Logout / Switch Account" style="background:rgba(239,68,68,0.18); color:#f87171;"><span class="material-icons" style="font-size:19px;">logout</span></button>
+                </div>
+            </div>
+
+            <!-- Messenger Horizontal Active Friends & Stories Bar -->
+            <div class="stories-strip" id="messenger-active-strip"></div>
+
+            <div class="nav-tabs">
+                <div class="tab-item active" id="tab-chats">💬 MESSAGES</div>
+                <div class="tab-item" id="tab-status">⭕ STORIES</div>
+            </div>
+
+            <div class="search-bar" id="chats-search-bar">
+                <input type="text" id="pin-search-input" class="search-input" placeholder="Search friends...">
+                <button class="add-friend-btn" id="btn-add-room"><span class="material-icons" style="font-size:18px;">person_add</span> Add ID</button>
+            </div>
+
+            <div class="list-area" id="chats-list-area"></div>
+
+            <div class="list-area" id="status-list-area" style="display:none; padding:12px;">
+                <div class="chat-item" style="border:1px dashed #00f2fe; border-radius:14px; margin-bottom:14px;" id="btn-add-status">
+                    <div class="avatar"><span class="material-icons">add_a_photo</span></div>
+                    <div class="chat-item-info">
+                        <div class="chat-item-name">Add to My Story</div>
+                        <div class="chat-item-sub">Share Photo or Text with your friends</div>
+                    </div>
+                </div>
+                <input type="file" id="status-file-input" accept="image/*" style="display:none;">
+                <div style="font-size:12px; font-weight:bold; color:var(--text-sub); margin-bottom:8px; text-transform:uppercase;">Friends' Stories</div>
+                <div id="stories-feed"></div>
+            </div>
+        </div>
+
+        <!-- CONVERSATION VIEW -->
+        <div class="chat-view" id="chat-view">
+            <div class="chat-header">
+                <div class="chat-header-left" id="open-contact-info">
+                    <button class="icon-btn" id="btn-mobile-back"><span class="material-icons">arrow_back</span></button>
+                    <div class="avatar" id="active-room-dp"><span class="material-icons">person</span></div>
+                    <div style="overflow:hidden;">
+                        <div class="chat-title-name">
+                            <span id="active-room-title">Select a Friend</span>
+                            <span id="active-mode-badge" class="mode-badge" style="display:none;"></span>
+                        </div>
+                        <div class="chat-title-status" id="active-room-status">Tap + Add ID to start private chat</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <button class="icon-btn" id="btn-voice-call" title="Voice Call"><span class="material-icons" style="color:#10b981;">call</span></button>
+                    <button class="icon-btn" id="btn-video-call" title="Video Call"><span class="material-icons" style="color:#00f2fe;">videocam</span></button>
+                </div>
+            </div>
+
+            <div class="msgs-container" id="msgs-container"></div>
+
+            <div class="reply-preview-bar" id="reply-bar">
+                <div style="border-left:3px solid #00f2fe; padding-left:8px; overflow:hidden;">
+                    <div id="reply-title" style="color:#00f2fe; font-weight:bold; font-size:11px;">Replying</div>
+                    <div id="reply-text" style="color:var(--text-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:250px;"></div>
+                </div>
+                <span class="material-icons" style="cursor:pointer; font-size:17px;" id="btn-cancel-reply">close</span>
+            </div>
+
+            <div class="chat-input-bar">
+                <span class="material-icons" id="btn-emoji" style="color:var(--text-sub); cursor:pointer; font-size:23px;">sentiment_satisfied_alt</span>
+                <span class="material-icons" id="btn-attach" style="color:var(--text-sub); cursor:pointer; font-size:23px;">attach_file</span>
+                <input type="file" id="msg-file-input" accept="image/*,video/*" style="display:none;">
+                <div class="vo-toggle" id="btn-vo-toggle" title="1-Time View Media">1</div>
+                <input type="text" id="msg-input" class="msg-input" placeholder="Message...">
+                <button class="circle-btn" id="btn-vn-rec" style="background:#334155; color:#fff;"><span class="material-icons" style="font-size:19px;" id="vn-icon">mic</span></button>
+                <button class="circle-btn" id="btn-send-msg"><span class="material-icons" style="font-size:19px;">send</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTACT INFO DRAWER -->
+    <div id="contact-info-drawer">
+        <div class="drawer-header">
+            <button class="pill-top-btn" id="btn-close-drawer">❮ Back</button>
+            <strong style="font-size:16px;" id="drawer-room-name">Friend Info</strong>
+            <button class="pill-top-btn" id="btn-edit-contact-name">Edit</button>
+        </div>
+
+        <div class="info-group">
+            <div class="info-item" id="di-media">
+                <div class="info-item-left"><span class="material-icons" style="color:#38bdf8;">photo_library</span> <span>Media, photos & videos</span></div>
+                <div class="info-item-right"><span id="di-media-count">0</span> <span class="material-icons" style="font-size:17px;">chevron_right</span></div>
+            </div>
+            <div class="info-item" id="di-storage">
+                <div class="info-item-left"><span class="material-icons" style="color:#10b981;">cleaning_services</span> <span>Clear conversation</span></div>
+                <div class="info-item-right"><span>Clear</span> <span class="material-icons" style="font-size:17px;">chevron_right</span></div>
+            </div>
+            <div class="info-item" id="di-starred">
+                <div class="info-item-left"><span class="material-icons" style="color:#eab308;">star_outline</span> <span>Starred messages</span></div>
+                <div class="info-item-right"><span id="di-star-count">None</span> <span class="material-icons" style="font-size:17px;">chevron_right</span></div>
+            </div>
+        </div>
+
+        <div class="info-group">
+            <div class="info-item" id="di-vib">
+                <div class="info-item-left"><span class="material-icons" style="color:#10b981;">vibration</span> <span>Sound & Vibration Alert</span></div>
+                <div class="info-item-right" id="di-vib-val" style="font-weight:bold; color:#10b981;">ON</div>
+            </div>
+            <div class="info-item" id="di-notif">
+                <div class="info-item-left"><span class="material-icons" style="color:#a855f7;">notifications_active</span> <span>Disguised Alerts (**, ₹₹)</span></div>
+                <div class="info-item-right" id="di-notif-val" style="font-weight:bold; color:#00f2fe;">ON</div>
+            </div>
+        </div>
+
+        <div class="info-group">
+            <div class="info-item">
+                <div class="info-item-left">
+                    <span class="material-icons" style="color:#f59e0b;">timelapse</span>
+                    <div><div>Disappearing messages</div><div style="font-size:11px; color:var(--text-sub);">Auto-delete timer</div></div>
+                </div>
+                <select id="select-vanish-timer" class="timer-select">
+                    <option value="off">Off</option>
+                    <option value="instant">⚡ Instant (After Seen)</option>
+                    <option value="1h">⏱️ 1 Hour</option>
+                    <option value="24h">🕒 24 Hours</option>
+                    <option value="7d">📅 1 Week</option>
+                    <option value="30d">🗓️ 1 Month</option>
+                    <option value="365d">📆 1 Year</option>
+                </select>
+            </div>
+
+            <div class="info-item">
+                <div class="info-item-left">
+                    <span class="material-icons" style="color:#00f2fe;">lock</span>
+                    <div><div>Lock & Hide Chat</div><div style="font-size:11px; color:var(--text-sub);">Type Lock PIN in Search Bar to reveal</div></div>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle-lock-chat"><span class="slider"></span></label>
+            </div>
+
+            <div class="info-item" id="di-enc">
+                <div class="info-item-left">
+                    <span class="material-icons" style="color:#10b981;">enhanced_encryption</span>
+                    <div><div>Secret Encryption Key</div><div style="font-size:11px; color:var(--text-sub);" id="di-enc-sub">Optional cipher password</div></div>
+                </div>
+                <span class="material-icons" style="font-size:17px; color:var(--text-sub);">chevron_right</span>
+            </div>
+        </div>
+
+        <div class="info-group">
+            <div class="info-item" id="di-remove-chat" style="color:#ef4444;">
+                <div class="info-item-left"><span class="material-icons">person_remove</span> <span>Remove Friend from List</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CALL HUD -->
+    <div id="call-hud">
+        <div class="call-vid-box" id="call-vid-box">
+            <video id="remote-vid" autoplay playsinline></video>
+            <video id="local-vid" autoplay playsinline muted></video>
+            <div class="call-top-tools">
+                <div class="tool-sq-btn" id="btn-hide-vid"><span class="material-icons" style="font-size:16px;">visibility_off</span></div>
+                <div class="tool-sq-btn" id="btn-fs-vid"><span class="material-icons" style="font-size:16px;" id="fs-icon">fullscreen</span></div>
+            </div>
+        </div>
+        <div class="call-bar-bottom">
+            <span id="call-status-txt" style="font-size:11.5px; font-weight:bold; color:#cbd5e1;">Audio Sync</span>
+            <div style="display:flex; gap:6px;">
+                <button class="c-btn" id="btn-accept-call" style="background:#10b981; display:none;"><span class="material-icons" style="font-size:17px;">call</span></button>
+                <button class="c-btn" id="btn-spk-call"><span class="material-icons" style="font-size:17px;" id="spk-icon">volume_down</span></button>
+                <button class="c-btn" id="btn-mic-call"><span class="material-icons" style="font-size:17px;" id="mic-icon">mic</span></button>
+                <button class="c-btn cut" id="btn-end-call"><span class="material-icons" style="font-size:17px;">close</span></button>
+            </div>
+        </div>
+    </div>
+
+    <emoji-picker class="dark" id="emoji-picker"></emoji-picker>
+
+    <div id="msg-overlay">
+        <div class="react-pill" id="react-pill">
+            <span class="react-emo" data-emo="👍">👍</span>
+            <span class="react-emo" data-emo="❤️">❤️</span>
+            <span class="react-emo" data-emo="😂">😂</span>
+            <span class="react-emo" data-emo="😮">😮</span>
+            <span class="react-emo" data-emo="😢">😢</span>
+            <span class="react-emo" data-emo="🙏">🙏</span>
+            <span class="react-emo" data-emo="🔥">🔥</span>
+        </div>
+        <div class="ctx-menu" id="ctx-menu">
+            <div class="ctx-item" id="cm-reply"><span class="material-icons" style="font-size:18px;">reply</span> Reply</div>
+            <div class="ctx-item" id="cm-copy"><span class="material-icons" style="font-size:18px;">content_copy</span> Copy</div>
+            <div class="ctx-item" id="cm-info"><span class="material-icons" style="font-size:18px;">info_outline</span> Info</div>
+            <div class="ctx-item" id="cm-star"><span class="material-icons" style="font-size:18px; color:#eab308;">star_outline</span> Star / Unstar</div>
+            <div class="ctx-item" id="cm-edit"><span class="material-icons" style="font-size:18px;">edit</span> Edit</div>
+            <div class="ctx-item" id="cm-seen"><span class="material-icons" style="font-size:18px; color:#00f2fe;">done_all</span> Seen / Unseen</div>
+            <div class="ctx-item" id="cm-del" style="color:#ef4444;"><span class="material-icons" style="font-size:18px;">delete_outline</span> Delete</div>
+        </div>
+    </div>
+
+    <div class="modal-bg" id="generic-modal">
+        <div class="modal-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:8px; margin-bottom:10px;">
+                <strong id="modal-title" style="color:#00f2fe;">Details</strong>
+                <span class="material-icons" style="cursor:pointer;" onclick="document.getElementById('generic-modal').style.display='none'">close</span>
+            </div>
+            <div id="modal-body" style="font-size:13.5px; line-height:1.6;"></div>
+        </div>
+    </div>
+
+    <!-- GOD DASHBOARD (god4499) -->
+    <div id="god-modal">
+        <div style="padding:14px 20px; background:#1f0000; border-bottom:2px solid #ef4444; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10;">
+            <strong>🚨 MASTER GOD OVERRIDE (god4499)</strong>
+            <button onclick="document.getElementById('god-modal').style.display='none'" style="background:#ef4444; color:#fff; border:none; padding:5px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">EXIT</button>
+        </div>
+        <div style="padding:15px;">
+            <div style="border:1px solid #ef4444; padding:12px; border-radius:8px; margin-bottom:14px;">
+                <h4 style="color:#fff; margin-bottom:8px;">👤 All Registered Users (ID & Password)</h4>
+                <div id="god-users-list" style="font-size:12px; color:#fde047;">Loading...</div>
+            </div>
+            <div style="border:1px solid #ef4444; padding:12px; border-radius:8px; margin-bottom:14px;">
+                <h4 style="color:#fff; margin-bottom:8px;">🔑 All Private 1-on-1 Chats</h4>
+                <div id="god-rooms"></div>
+            </div>
+            <div style="border:1px solid #ef4444; padding:12px; border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <h4 style="color:#fff;" id="god-room-title">🕵️ Raw Audit Log</h4>
+                    <div>
+                        <button id="god-purge-btn" style="background:#dc2626; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px;">🧹 Purge Deleted</button>
+                        <button id="god-wipe-btn" style="background:#7f1d1d; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; margin-left:6px;">💣 Wipe Chat</button>
+                    </div>
+                </div>
+                <div id="god-logs" style="max-height:55vh; overflow-y:auto; background:#000; padding:10px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODULAR JS ENGINE -->
+    <script type="module" src="chat-core.js"></script>
+</body>
+</html>

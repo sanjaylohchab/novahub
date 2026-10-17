@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Sudoku</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sudoku.css">
+</head>
+<body>
+
+  <nav class="top-nav">
+    <button class="icon-btn" id="menu-btn"><span class="material-icons">menu</span></button>
+    <div class="nav-title">Sudoku.com</div>
+    
+    <div class="nav-actions">
+      <button id="fast-new-btn" class="bar-button btn-new">New Game</button>
+    </div>
+  </nav>
+
+  <div id="hamburger-overlay" class="overlay"></div>
+  <div id="hamburger-menu" class="hamburger-menu">
+    <div class="nav-head">
+      <div class="nav-head-icon"><span class="material-icons">grid_on</span></div>
+      <div class="nav-head-title">Sudoku Hub</div>
+    </div>
+    <ul class="nav-items">
+      <li class="nav-item" id="new-game-btn"><span class="material-icons">add</span> <span>New Game</span></li>
+      <li class="nav-item" id="solver-mode-btn" style="display:none;"><span class="material-icons">edit</span> <span>Sudoku Solver</span></li>
+      <a href="index.html" style="text-decoration:none;"><li class="nav-item"><span class="material-icons">home</span> <span>Back to Home</span></li></a>
+    </ul>
+  </div>
+
+  <main class="game-container">
+    
+    <div class="info-bar">
+      <div class="info-item difficulty-dropdown" id="diff-trigger">
+        <span class="info-label">Difficulty</span>
+        <span class="info-value" id="sk-diff-text">Easy <span class="material-icons" style="font-size:14px; margin-top:2px;">expand_more</span></span>
+        
+        <div id="diff-menu" class="dropdown-menu">
+          <div class="diff-opt" data-diff="Easy">Easy</div>
+          <div class="diff-opt" data-diff="Medium">Medium</div>
+          <div class="diff-opt" data-diff="Hard">Hard</div>
+          <div class="diff-opt" data-diff="Expert">Expert</div>
+        </div>
+      </div>
+      
+      <div class="info-item center-item">
+        <span class="info-label">Mistakes</span>
+        <span class="info-value"><span id="sk-mistakes">0</span>/10</span>
+      </div>
+      
+      <div class="info-item right-item">
+        <span class="info-label">Time</span>
+        <span class="info-value" id="sk-timer">00:00</span>
+      </div>
+    </div>
+    
+    <div class="level-display" id="sk-level">Level 1</div>
+
+    <div class="board-container">
+      <div id="sudoku-board"></div>
+    </div>
+
+    <div class="controls">
+      <div class="tools">
+        <button class="tool-btn" id="undo-btn"><span class="material-icons">undo</span>Undo</button>
+        <button class="tool-btn" id="erase-btn"><span class="material-icons">backspace</span>Erase</button>
+        <button class="tool-btn" id="hint-btn">
+          <span class="material-icons">lightbulb</span>Hint
+        </button>
+      </div>
+      
+      <div class="numpad">
+        <button class="num-btn" data-val="1">1</button>
+        <button class="num-btn" data-val="2">2</button>
+        <button class="num-btn" data-val="3">3</button>
+        <button class="num-btn" data-val="4">4</button>
+        <button class="num-btn" data-val="5">5</button>
+        <button class="num-btn" data-val="6">6</button>
+        <button class="num-btn" data-val="7">7</button>
+        <button class="num-btn" data-val="8">8</button>
+        <button class="num-btn" data-val="9">9</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="sudoku.js"></script>
+  <script type="module" src="universal-chat.js"></script>
+</body>
+</html>

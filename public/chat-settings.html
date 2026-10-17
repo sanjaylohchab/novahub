@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Profile & Settings - NovaHub</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/808/808439.png">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --wa-bg: #0b141a; --wa-nav: #111b21; --wa-card: #202c33;
+            --wa-text: #e9edef; --wa-sub: #8696a0; --wa-accent: #00a884; --wa-border: #222d34;
+        }
+        body.light-mode {
+            --wa-bg: #f0f2f5; --wa-nav: #ffffff; --wa-card: #ffffff;
+            --wa-text: #111b21; --wa-sub: #667781; --wa-border: #d1d7db;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--wa-bg); color: var(--wa-text); display: flex; flex-direction: column; height: 100vh; overflow-y: auto; }
+
+        .top-nav { height: 60px; background-color: var(--wa-nav); display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--wa-border); gap: 15px; position: sticky; top: 0; z-index: 10; flex-shrink: 0; }
+        .nav-icon { color: var(--wa-text); cursor: pointer; font-size: 24px; text-decoration: none; display: flex; align-items: center; }
+        .nav-title { font-size: 19px; font-weight: bold; flex: 1; }
+
+        .settings-container { padding: 18px; max-width: 420px; margin: 0 auto; width: 100%; padding-bottom: 100px; }
+        .section-title { font-size: 12px; color: var(--wa-sub); font-weight: bold; text-transform: uppercase; margin: 18px 0 8px 4px; letter-spacing: 0.5px; }
+        .setting-box { background: var(--wa-card); border: 1px solid var(--wa-border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+
+        .input-group { margin-bottom: 14px; }
+        .input-label { font-size: 12px; color: var(--wa-sub); margin-bottom: 5px; display: block; font-weight: 600; }
+        .custom-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--wa-border); background: var(--wa-bg); color: var(--wa-text); outline: none; font-size: 14.5px; }
+
+        .btn-primary { background: var(--wa-accent); color: #fff; border: none; padding: 12px; border-radius: 10px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 5px; font-size: 14px; }
+        .btn-danger { background: #ef4444; color: white; border: none; padding: 12px; border-radius: 10px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 10px; font-size: 14px; }
+
+        .dp-preview { width: 90px; height: 90px; border-radius: 50%; background: var(--wa-bg); border: 2.5px solid var(--wa-accent); margin: 0 auto 14px auto; display: flex; justify-content: center; align-items: center; background-size: cover; background-position: center; color: var(--wa-sub); cursor: pointer; }
+        .row-toggle { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--wa-border); font-size: 14px; cursor: pointer; }
+        .row-toggle:last-child { border-bottom: none; }
+        .row-left { display: flex; align-items: center; gap: 10px; }
+        .color-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+        .color-preset { width: 34px; height: 34px; border-radius: 50%; cursor: pointer; border: 2px solid rgba(255,255,255,0.25); }
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <a href="chat.html" class="material-icons nav-icon">arrow_back</a>
+        <div class="nav-title">Profile & Settings</div>
+    </nav>
+
+    <div class="settings-container">
+        
+        <!-- 1. VIBRATION & iOS/ANDROID NOTIFICATIONS -->
+        <div class="section-title">Stealth Alerts & Vibration</div>
+        <div class="setting-box">
+            <div class="row-toggle" onclick="toggleVib()">
+                <div class="row-left"><span class="material-icons" style="color:#10b981;">vibration</span> <span>Vibration Alert (Bzz)</span></div>
+                <strong id="vib-status" style="color:#10b981;">ON</strong>
+            </div>
+            <div class="row-toggle" onclick="toggleNotif()">
+                <div class="row-left"><span class="material-icons" style="color:#a855f7;">notifications_active</span> <span>Disguised Alerts (**, ₹₹, ⭐️⭐️)</span></div>
+                <strong id="notif-status" style="color:var(--wa-accent);">ON</strong>
+            </div>
+            <button class="btn-primary" style="margin-top:12px; background:#3b82f6;" onclick="enableDevicePush()">📲 Enable / Test Phone Notification</button>
+            <p style="font-size:11px; color:var(--wa-sub); margin-top:6px;">*On iPhone: First use Share (⬆️) -> Add to Home Screen, then open from Home Screen and tap above button.</p>
+        </div>
+
+        <!-- 2. SECRET LOCK CHAT PIN SETUP (ENTER TWICE) -->
+        <div class="section-title">Secret Hidden Chats PIN</div>
+        <div class="setting-box">
+            <p style="font-size:12px; color:var(--wa-sub); margin-bottom:12px;">Set a PIN to hide locked chats. Type this exact PIN in the Chat Search Bar to reveal hidden chats.</p>
+            <div class="input-group">
+                <label class="input-label">Enter Secret Lock PIN</label>
+                <input type="password" id="lock-pin-1" class="custom-input" placeholder="Enter PIN (e.g. 9999)">
+            </div>
+            <div class="input-group">
+                <label class="input-label">Confirm Secret Lock PIN</label>
+                <input type="password" id="lock-pin-2" class="custom-input" placeholder="Confirm PIN">
+            </div>
+            <button class="btn-primary" onclick="saveSecretLockPin()">🔒 Save Secret Lock PIN</button>
+        </div>
+
+        <!-- 3. MY UNIVERSAL PROFILE -->
+        <div class="section-title">My Cloud Profile</div>
+        <div class="setting-box" style="text-align: center;">
+            <div id="dp-display" class="dp-preview" onclick="document.getElementById('dp-input').click()">
+                <span class="material-icons" style="font-size:40px;">person</span>
+            </div>
+            <div class="input-group" style="text-align: left;">
+                <label class="input-label">Profile Picture</label>
+                <input type="file" id="dp-input" accept="image/*" class="custom-input" style="padding: 6px;">
+            </div>
+            <div class="input-group" style="text-align: left;">
+                <label class="input-label">Display Name</label>
+                <input type="text" id="edit-name" class="custom-input">
+            </div>
+            <div class="input-group" style="text-align: left;">
+                <label class="input-label">My Access Code (Cloud ID)</label>
+                <input type="text" id="my-code-box" class="custom-input" disabled style="opacity:0.65;">
+            </div>
+            <button class="btn-primary" onclick="saveProfile()">Save Profile to Cloud</button>
+        </div>
+
+        <!-- 4. THEME & APPEARANCE -->
+        <div class="section-title">Theme & Appearance</div>
+        <div class="setting-box">
+            <div class="row-toggle" onclick="toggleDayNight()" style="margin-bottom:14px;">
+                <div class="row-left"><span class="material-icons" style="color:#eab308;">brightness_6</span> <span>Day / Night Mode</span></div>
+                <strong id="mode-status">Night Mode 🌙</strong>
+            </div>
+            <label class="input-label">Custom Accent Color</label>
+            <div class="color-row">
+                <div class="color-preset" style="background:#00a884;" onclick="setCol('#00a884')"></div>
+                <div class="color-preset" style="background:#3b82f6;" onclick="setCol('#3b82f6')"></div>
+                <div class="color-preset" style="background:#00f2fe;" onclick="setCol('#00f2fe')"></div>
+                <div class="color-preset" style="background:#a855f7;" onclick="setCol('#a855f7')"></div>
+                <div class="color-preset" style="background:#ec4899;" onclick="setCol('#ec4899')"></div>
+                <div class="color-preset" style="background:#eab308;" onclick="setCol('#eab308')"></div>
+                <input type="color" id="color-picker" style="width:36px; height:36px; border:none; background:transparent; cursor:pointer;">
+            </div>
+            <button class="btn-primary" onclick="saveTheme()">Apply Theme Color</button>
+        </div>
+
+        <button class="btn-danger" onclick="switchCloudAccount()">🔄 Lock / Switch Cloud Account</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { initializeFirestore, getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
+            authDomain: "novahub-201e5.firebaseapp.com",
+            projectId: "novahub-201e5",
+            storageBucket: "novahub-201e5.firebasestorage.app",
+            messagingSenderId: "188612451279",
+            appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
+        };
+        const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+        let db;
+        try { db = initializeFirestore(app, { experimentalForceLongPolling: true }, "default"); }
+        catch (e) { db = getFirestore(app, "default"); }
+
+        let base64Image = localStorage.getItem('nova_dp') || "";
+
+        async function syncToCloud() {
+            const code = localStorage.getItem('nova_account_code');
+            if (!code) return;
+            try {
+                await setDoc(doc(db, "novahub_accounts", code), {
+                    accountCode: code,
+                    uid: localStorage.getItem('nova_uid'),
+                    name: localStorage.getItem('nova_username'),
+                    dp: localStorage.getItem('nova_dp') || "",
+                    lockPin: localStorage.getItem('nova_lock_pin') || "",
+                    savedRooms: JSON.parse(localStorage.getItem('nova_saved_rooms') || '[]'),
+                    updatedAt: new Date().toLocaleString()
+                }, { merge: true });
+            } catch (e) {}
+        }
+
+        function initSettings() {
+            const savedCol = localStorage.getItem('chatAccentColor') || '#00a884';
+            document.documentElement.style.setProperty('--wa-accent', savedCol);
+            document.getElementById('color-picker').value = savedCol;
+
+            if (localStorage.getItem('nova_theme_mode') === 'light') {
+                document.body.classList.add('light-mode');
+                document.getElementById('mode-status').innerText = "Day Mode ☀️";
+            }
+
+            document.getElementById('edit-name').value = localStorage.getItem('nova_username') || "Player";
+            document.getElementById('my-code-box').value = localStorage.getItem('nova_account_code') || "Not synced yet (3-Tap on Gate)";
+
+            if (base64Image) {
+                const dpEl = document.getElementById('dp-display');
+                dpEl.innerHTML = '';
+                dpEl.style.backgroundImage = `url(${base64Image})`;
+            }
+
+            updateAlertLabels();
+
+            document.getElementById('dp-input').addEventListener('change', function(e) {
+                let file = e.target.files[0];
+                if (!file) return;
+                let reader = new FileReader();
+                reader.onload = function(ev) {
+                    let img = new Image();
+                    img.onload = function() {
+                        let canvas = document.createElement('canvas');
+                        canvas.width = 240; canvas.height = 240;
+                        canvas.getContext('2d').drawImage(img, 0, 0, 240, 240);
+                        base64Image = canvas.toDataURL('image/jpeg', 0.78);
+                        const dpEl = document.getElementById('dp-display');
+                        dpEl.innerHTML = '';
+                        dpEl.style.backgroundImage = `url(${base64Image})`;
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function updateAlertLabels() {
+            const vib = localStorage.getItem('nova_vib') !== 'false';
+            const notif = localStorage.getItem('nova_stealth_notif') !== 'false';
+            document.getElementById('vib-status').innerText = vib ? "ON" : "OFF";
+            document.getElementById('vib-status').style.color = vib ? "#10b981" : "#ef4444";
+            document.getElementById('notif-status').innerText = notif ? "ON (**, ₹₹)" : "OFF";
+        }
+
+        window.toggleVib = function() {
+            const cur = localStorage.getItem('nova_vib') !== 'false';
+            localStorage.setItem('nova_vib', !cur);
+            updateAlertLabels();
+        };
+
+        window.toggleNotif = function() {
+            const cur = localStorage.getItem('nova_stealth_notif') !== 'false';
+            localStorage.setItem('nova_stealth_notif', !cur);
+            updateAlertLabels();
+        };
+
+        window.enableDevicePush = async function() {
+            if (!("Notification" in window)) {
+                return alert("⚠️ On iPhone: Please tap Share (⬆️) -> 'Add to Home Screen' first, then open the app from your Home Screen to enable notifications!");
+            }
+            const perm = await Notification.requestPermission();
+            if (perm === "granted") {
+                if ('serviceWorker' in navigator) {
+                    const reg = await navigator.serviceWorker.ready;
+                    reg.showNotification("🎮 NovaHub Arcade", { body: "New high score challenge! Game khelo **" });
+                } else {
+                    new Notification("🎮 NovaHub Arcade", { body: "New high score challenge! Game khelo **" });
+                }
+                alert("✅ Notification enabled & test sent!");
+            } else {
+                alert("⚠️ Notification permission blocked in browser settings.");
+            }
+        };
+
+        window.saveSecretLockPin = async function() {
+            const p1 = document.getElementById('lock-pin-1').value.trim();
+            const p2 = document.getElementById('lock-pin-2').value.trim();
+            if (!p1) return alert("Please enter a Secret PIN!");
+            if (p1 !== p2) return alert("⚠️ PINs do not match! Please enter the exact same PIN twice.");
+            localStorage.setItem('nova_lock_pin', p1);
+            await syncToCloud();
+            document.getElementById('lock-pin-1').value = '';
+            document.getElementById('lock-pin-2').value = '';
+            alert("✅ Secret Lock PIN Saved! Now any locked chat will only appear when you type this PIN in the Chat Search Bar.");
+        };
+
+        window.toggleDayNight = function() {
+            document.body.classList.toggle('light-mode');
+            const isLight = document.body.classList.contains('light-mode');
+            localStorage.setItem('nova_theme_mode', isLight ? 'light' : 'dark');
+            document.getElementById('mode-status').innerText = isLight ? "Day Mode ☀️" : "Night Mode 🌙";
+        };
+
+        window.setCol = function(c) {
+            document.getElementById('color-picker').value = c;
+            window.saveTheme();
+        };
+
+        window.saveProfile = async function() {
+            let newName = document.getElementById('edit-name').value.trim();
+            if (!newName) return alert("Display Name cannot be empty!");
+            localStorage.setItem('nova_username', newName);
+            if (base64Image) localStorage.setItem('nova_dp', base64Image);
+            await syncToCloud();
+            alert("✅ Profile synced to Cloud!");
+            window.location.href = "chat.html";
+        };
+
+        window.saveTheme = function() {
+            let col = document.getElementById('color-picker').value;
+            localStorage.setItem('chatAccentColor', col);
+            document.documentElement.style.setProperty('--wa-accent', col);
+        };
+
+        window.switchCloudAccount = function() {
+            sessionStorage.removeItem('nova_gate_unlocked');
+            window.location.replace("chat.html");
+        };
+
+        initSettings();
+    </script>
+    <script type="module" src="universal-chat.js"></script>
+</body>
+</html>

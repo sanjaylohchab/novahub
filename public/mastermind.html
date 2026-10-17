@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mastermind - NovaHub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a; --nav-bg: #1e293b; --text-light: #e2e8f0;
+            --accent: #8b5cf6;
+            /* 5 Game Colors */
+            --c-red: #ef4444; --c-blue: #3b82f6; --c-green: #10b981; 
+            --c-yellow: #eab308; --c-orange: #f97316;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-dark); color: var(--text-light); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* Top Nav */
+        .top-nav { height: 60px; background-color: var(--nav-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 10; flex-shrink: 0;}
+        .back-btn { color: var(--text-light); text-decoration: none; display: flex; align-items: center; cursor: pointer; }
+        .nav-title { font-size: 18px; font-weight: bold; }
+        .nav-actions { display: flex; gap: 8px;}
+        .action-btn { background: #3b82f6; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;}
+        .hint-btn { background: #eab308; color: #000; }
+
+        /* Game Header */
+        .game-header { padding: 10px 15px; background: rgba(0,0,0,0.3); display: flex; flex-direction: column; align-items: center; border-bottom: 2px solid #334155;}
+        
+        /* Difficulty Selector */
+        .difficulty-selector { display: flex; gap: 10px; margin-bottom: 12px; }
+        .diff-btn { background: var(--nav-bg); color: #94a3b8; border: 1px solid #334155; padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; font-weight: bold;}
+        .diff-btn.active#btn-easy { background: #10b981; color: #000; border-color: #10b981; }
+        .diff-btn.active#btn-medium { background: #eab308; color: #000; border-color: #eab308; }
+        .diff-btn.active#btn-hard { background: #ef4444; color: #fff; border-color: #ef4444; }
+
+        .secret-title { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; font-weight: bold;}
+        .secret-row { display: flex; gap: 10px; }
+        .secret-peg { width: 35px; height: 35px; border-radius: 50%; background: #1e293b; border: 2px solid #334155; display: flex; justify-content: center; align-items: center; font-size: 18px; font-weight: bold; color: #64748b; box-shadow: inset 0 4px 6px rgba(0,0,0,0.5);}
+
+        /* Sticky Hint List */
+        .hints-container { background: #1e293b; padding: 0 15px; border-bottom: 2px solid #334155; display: flex; flex-direction: column; gap: 4px; align-items: center;}
+        .hint-item { font-size: 12px; font-weight: bold; color: #fde68a; background: rgba(245, 158, 11, 0.1); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.3); width: 100%; max-width: 350px; text-align: center;}
+
+        /* Board Area */
+        .board-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 8px; align-items: center;}
+        
+        .guess-row { display: flex; align-items: center; gap: 15px; background: #1e293b; padding: 8px 15px; border-radius: 12px; border: 1px solid #334155; width: 100%; max-width: 350px; opacity: 0.5; transition: 0.2s;}
+        .guess-row.active { opacity: 1; border-color: var(--accent); box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);}
+        
+        .row-num { font-size: 14px; color: #64748b; font-weight: bold; width: 20px;}
+        .pegs-container { display: flex; gap: 8px; flex: 1; justify-content: center;}
+        
+        .guess-peg { width: 32px; height: 32px; border-radius: 50%; background: #0f172a; border: 2px solid #334155; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); cursor: pointer; transition: 0.2s;}
+        .selected-peg { border: 2px solid #f8fafc; box-shadow: 0 0 12px #f8fafc; transform: scale(1.15); z-index: 5;}
+        
+        /* Feedback Area */
+        .feedback-container { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 28px; height: 28px;}
+        .feedback-dot { width: 10px; height: 10px; border-radius: 50%; background: #334155; border: 1px solid #0f172a;}
+        .dot-exact { background: #10b981; box-shadow: 0 0 5px #10b981; } /* Green */
+        .dot-partial { background: #f8fafc; box-shadow: 0 0 5px #f8fafc; } /* White */
+
+        /* Controls (Bottom) - Only 5 colors now */
+        .controls-container { background: var(--nav-bg); padding: 15px; border-top: 1px solid #334155; display: flex; flex-direction: column; gap: 15px;}
+        .color-picker { display: flex; justify-content: space-evenly; }
+        .color-btn { width: 45px; height: 45px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.1s; box-shadow: 0 4px 6px rgba(0,0,0,0.4);}
+        .color-btn:active { transform: scale(0.9); }
+        
+        /* Colors */
+        .bg-red { background-color: var(--c-red); } .bg-blue { background-color: var(--c-blue); }
+        .bg-green { background-color: var(--c-green); } .bg-yellow { background-color: var(--c-yellow); }
+        .bg-orange { background-color: var(--c-orange); }
+
+        .action-buttons { display: flex; gap: 10px; }
+        .btn-act { flex: 1; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 16px; border: none; cursor: pointer; color: white;}
+        .btn-undo { background: #475569; } .btn-undo:active { background: #334155; }
+        .btn-submit { background: var(--accent); } .btn-submit:active { background: #7c3aed; }
+        .btn-submit:disabled { background: #334155; color: #64748b; cursor: not-allowed;}
+
+        /* Modals */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 50; justify-content: center; align-items: center; padding: 20px; flex-direction: column; }
+        .modal-content { background: var(--nav-bg); padding: 25px; border-radius: 16px; text-align: center; max-width: 350px; border: 1px solid #334155;}
+        .modal-title { font-size: 24px; font-weight: bold; margin-bottom: 10px;}
+        .btn-primary { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px;}
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <a href="mind-games.html" class="back-btn"><span class="material-icons">arrow_back</span></a>
+        <div class="nav-title">Code Breaker</div>
+        <div class="nav-actions">
+            <button class="action-btn hint-btn" onclick="getHint()">
+                <span class="material-icons" style="font-size: 18px;">lightbulb</span> <span id="hint-count">5</span>
+            </button>
+            <button class="action-btn" onclick="document.getElementById('rules-modal').style.display='flex'">
+                <span class="material-icons" style="font-size: 18px;">help_outline</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Game Header -->
+    <div class="game-header">
+        <div class="difficulty-selector">
+            <button class="diff-btn active" id="btn-easy" onclick="setDifficulty('easy')">Easy</button>
+            <button class="diff-btn" id="btn-medium" onclick="setDifficulty('medium')">Medium</button>
+            <button class="diff-btn" id="btn-hard" onclick="setDifficulty('hard')">Hard</button>
+        </div>
+        
+        <div class="secret-title">Secret Code</div>
+        <div class="secret-row" id="secret-row">
+            <div class="secret-peg">?</div>
+            <div class="secret-peg">?</div>
+            <div class="secret-peg">?</div>
+            <div class="secret-peg">?</div>
+        </div>
+    </div>
+
+    <!-- Sticky Hints Display -->
+    <div class="hints-container" id="hints-list" style="padding-bottom: 10px; display: none;">
+        <!-- Hints will appear here permanently -->
+    </div>
+
+    <!-- Board -->
+    <div class="board-container" id="board">
+        <!-- Rows generated by JS -->
+    </div>
+
+    <!-- Controls (5 Colors) -->
+    <div class="controls-container">
+        <div class="color-picker">
+            <div class="color-btn bg-red" onclick="pickColor('red')"></div>
+            <div class="color-btn bg-blue" onclick="pickColor('blue')"></div>
+            <div class="color-btn bg-green" onclick="pickColor('green')"></div>
+            <div class="color-btn bg-yellow" onclick="pickColor('yellow')"></div>
+            <div class="color-btn bg-orange" onclick="pickColor('orange')"></div>
+        </div>
+        <div class="action-buttons">
+            <button class="btn-act btn-undo" onclick="clearSelected()">Clear Box</button>
+            <button class="btn-act btn-submit" id="submit-btn" onclick="submitGuess()" disabled>Check Code</button>
+        </div>
+    </div>
+
+    <!-- Rules Modal -->
+    <div class="modal-overlay" id="rules-modal">
+        <div class="modal-content">
+            <div class="modal-title" style="color: #3b82f6;">Rules & Modes</div>
+            <div style="color: #94a3b8; font-size: 14px; text-align: left; line-height: 1.5; margin-bottom: 15px;">
+                <b>Total Colors:</b> 5 | <b>Chances:</b> 12<br><br>
+                🟢 <b>Green Dot:</b> Sahi Color, Sahi Jagah.<br>
+                ⚪ <b>White Dot:</b> Sahi Color, Galat Jagah.<br><br>
+                <b>Modes:</b><br>
+                🟢 <b>Easy:</b> Dots seedhe apke box ke hisab se aayenge. No repeat colors.<br>
+                🟡 <b>Medium:</b> Dots aage-peeche hoke aayenge. No repeat colors.<br>
+                🔴 <b>Hard:</b> Dots aage-peeche honge aur Computer ek hi color ko repeat bhi kar sakta hai!
+            </div>
+            <button class="btn-primary" onclick="document.getElementById('rules-modal').style.display='none'">Got it!</button>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div class="modal-overlay" id="result-modal">
+        <div class="modal-content">
+            <div class="modal-title" id="result-title">System Hacked!</div>
+            <div id="result-desc" style="color: #e2e8f0; margin-bottom: 10px;">You broke the code in 4 attempts.</div>
+            <button class="btn-primary" onclick="initGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const COLORS = ['red', 'blue', 'green', 'yellow', 'orange']; // 5 Colors
+        const MAX_ATTEMPTS = 12; // 12 Chances
+        
+        let secretCode = [];
+        let currentRow = 0;
+        let currentGuess = [null, null, null, null];
+        let selectedPegIndex = 0; 
+        
+        let availableHints = [];
+        let hintsUsedCount = 0;
+        let difficulty = 'easy'; // Default mode
+
+        function setDifficulty(level) {
+            difficulty = level;
+            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${level}`).classList.add('active');
+            initGame();
+        }
+
+        function initGame() {
+            document.getElementById('result-modal').style.display = 'none';
+
+            // 1. Generate Secret Code based on Difficulty
+            if(difficulty === 'hard') {
+                // Hard: Colors can repeat!
+                secretCode = [];
+                for(let i=0; i<4; i++) {
+                    secretCode.push(COLORS[Math.floor(Math.random() * COLORS.length)]);
+                }
+            } else {
+                // Easy & Medium: Unique Colors
+                let shuffledColors = [...COLORS].sort(() => 0.5 - Math.random());
+                secretCode = shuffledColors.slice(0, 4); 
+            }
+            
+            // 2. Generate 5 Hints
+            let presentColors = [...new Set(secretCode)];
+            let missingColors = COLORS.filter(c => !secretCode.includes(c));
+            
+            availableHints = [];
+            presentColors.forEach(c => availableHints.push(`✅ Code mein ${c.toUpperCase()} hai.`));
+            missingColors.forEach(c => availableHints.push(`❌ Code mein ${c.toUpperCase()} NAHI hai.`));
+            
+            // Shuffle hints
+            availableHints.sort(() => 0.5 - Math.random()); 
+            
+            // Limit to exactly 5 hints (Since total colors = 5, total hints will be 5 anyway)
+            hintsUsedCount = 0;
+            document.getElementById('hint-count').innerText = 5;
+            document.getElementById('hints-list').innerHTML = '';
+            document.getElementById('hints-list').style.display = 'none';
+
+            // Hide secret in UI
+            const secretRow = document.getElementById('secret-row');
+            secretRow.innerHTML = '';
+            for(let i=0; i<4; i++) {
+                secretRow.innerHTML += `<div class="secret-peg">?</div>`;
+            }
+
+            currentRow = 0;
+            currentGuess = [null, null, null, null];
+            selectedPegIndex = 0;
+            
+            buildBoard();
+            updateRowUI();
+        }
+
+        // --- HINT SYSTEM ---
+        function getHint() {
+            if(hintsUsedCount >= 5) {
+                alert("Aapne apni saari 5 hints use kar li hain!");
+                return;
+            }
+            if(availableHints.length === 0) return;
+            
+            let hintMsg = availableHints.pop();
+            
+            let hintDiv = document.createElement('div');
+            hintDiv.className = 'hint-item';
+            hintDiv.innerText = `💡 ${hintMsg}`;
+            
+            const hintContainer = document.getElementById('hints-list');
+            hintContainer.style.display = 'flex';
+            hintContainer.appendChild(hintDiv);
+            
+            hintsUsedCount++;
+            document.getElementById('hint-count').innerText = 5 - hintsUsedCount;
+        }
+
+        function buildBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            // Generate rows in reverse so row 1 is at bottom
+            for(let i = MAX_ATTEMPTS - 1; i >= 0; i--) {
+                board.innerHTML += `
+                <div class="guess-row" id="row-${i}">
+                    <div class="row-num">${i + 1}</div>
+                    <div class="pegs-container">
+                        <div class="guess-peg" id="peg-${i}-0" onclick="selectPeg(${i}, 0)"></div>
+                        <div class="guess-peg" id="peg-${i}-1" onclick="selectPeg(${i}, 1)"></div>
+                        <div class="guess-peg" id="peg-${i}-2" onclick="selectPeg(${i}, 2)"></div>
+                        <div class="guess-peg" id="peg-${i}-3" onclick="selectPeg(${i}, 3)"></div>
+                    </div>
+                    <div class="feedback-container" id="feedback-${i}">
+                        <div class="feedback-dot"></div>
+                        <div class="feedback-dot"></div>
+                        <div class="feedback-dot"></div>
+                        <div class="feedback-dot"></div>
+                    </div>
+                </div>`;
+            }
+        }
+
+        function selectPeg(row, col) {
+            if(row !== currentRow) return;
+            selectedPegIndex = col;
+            updateRowUI();
+        }
+
+        function updateRowUI() {
+            for(let i = 0; i < MAX_ATTEMPTS; i++) {
+                document.getElementById(`row-${i}`).classList.remove('active');
+            }
+            if(currentRow < MAX_ATTEMPTS) {
+                document.getElementById(`row-${currentRow}`).classList.add('active');
+                
+                for(let i=0; i<4; i++) {
+                    const peg = document.getElementById(`peg-${currentRow}-${i}`);
+                    peg.className = 'guess-peg'; // Reset
+                    
+                    if(currentGuess[i]) peg.classList.add(`bg-${currentGuess[i]}`);
+                    if(i === selectedPegIndex) peg.classList.add('selected-peg');
+                }
+            }
+            document.getElementById('submit-btn').disabled = currentGuess.includes(null);
+        }
+
+        function pickColor(color) {
+            if(currentRow >= MAX_ATTEMPTS) return;
+            
+            currentGuess[selectedPegIndex] = color;
+            let nextEmpty = currentGuess.findIndex(c => c === null);
+            if(nextEmpty !== -1) selectedPegIndex = nextEmpty;
+            
+            updateRowUI();
+        }
+
+        function clearSelected() {
+            if(currentRow >= MAX_ATTEMPTS) return;
+            currentGuess[selectedPegIndex] = null;
+            updateRowUI();
+        }
+
+        function submitGuess() {
+            if(currentGuess.includes(null)) return;
+
+            let exact = 0;
+            let partial = 0;
+            let tempSecret = [...secretCode];
+            let tempGuess = [...currentGuess];
+            let feedbackArr = [null, null, null, null]; // Used for easy mode
+
+            // 1. Exact matches
+            for(let i=0; i<4; i++) {
+                if(tempGuess[i] === tempSecret[i]) {
+                    exact++;
+                    tempSecret[i] = null; 
+                    tempGuess[i] = 'counted';
+                    feedbackArr[i] = 'exact';
+                }
+            }
+
+            // 2. Partial matches
+            for(let i=0; i<4; i++) {
+                if(tempGuess[i] !== 'counted') {
+                    let indexInSecret = tempSecret.indexOf(tempGuess[i]);
+                    if(indexInSecret !== -1) {
+                        partial++;
+                        tempSecret[indexInSecret] = null;
+                        feedbackArr[i] = 'partial';
+                    } else {
+                        feedbackArr[i] = 'none';
+                    }
+                }
+            }
+
+            // Render feedback dots based on Difficulty
+            const feedbackContainer = document.getElementById(`feedback-${currentRow}`);
+            feedbackContainer.innerHTML = '';
+            
+            if(difficulty === 'easy') {
+                // EASY MODE: Dots exactly match box position
+                for(let i=0; i<4; i++) {
+                    if(feedbackArr[i] === 'exact') feedbackContainer.innerHTML += `<div class="feedback-dot dot-exact"></div>`;
+                    else if(feedbackArr[i] === 'partial') feedbackContainer.innerHTML += `<div class="feedback-dot dot-partial"></div>`;
+                    else feedbackContainer.innerHTML += `<div class="feedback-dot"></div>`;
+                }
+            } else {
+                // MEDIUM/HARD MODE: Dots are scrambled (sorted: green first, then white)
+                for(let i=0; i<exact; i++) feedbackContainer.innerHTML += `<div class="feedback-dot dot-exact"></div>`;
+                for(let i=0; i<partial; i++) feedbackContainer.innerHTML += `<div class="feedback-dot dot-partial"></div>`;
+                let remaining = 4 - (exact + partial);
+                for(let i=0; i<remaining; i++) feedbackContainer.innerHTML += `<div class="feedback-dot"></div>`;
+            }
+
+            // Clean active selection styling from the submitted row
+            for(let i=0; i<4; i++) {
+                document.getElementById(`peg-${currentRow}-${i}`).classList.remove('selected-peg');
+            }
+
+            // Check Win
+            if(exact === 4) {
+                showResult(true);
+                return;
+            }
+
+            // Move to next row
+            currentRow++;
+            currentGuess = [null, null, null, null];
+            selectedPegIndex = 0;
+            
+            if(currentRow >= MAX_ATTEMPTS) {
+                showResult(false);
+            } else {
+                updateRowUI();
+            }
+        }
+
+        function showResult(isWin) {
+            const secretRow = document.getElementById('secret-row');
+            secretRow.innerHTML = '';
+            for(let i=0; i<4; i++) {
+                secretRow.innerHTML += `<div class="secret-peg bg-${secretCode[i]}" style="color:transparent;">.</div>`;
+            }
+
+            const title = document.getElementById('result-title');
+            const desc = document.getElementById('result-desc');
+
+            if(isWin) {
+                title.innerText = "System Hacked! 💻";
+                title.style.color = "#10b981";
+                desc.innerText = `Aapne ${currentRow + 1} attempts mein code tod diya.`;
+            } else {
+                title.innerText = "Access Denied 🔒";
+                title.style.color = "#ef4444";
+                desc.innerText = "Aapke 12 attempts khatam ho gaye. Code reveal ho chuka hai.";
+            }
+
+            setTimeout(() => {
+                document.getElementById('result-modal').style.display = 'flex';
+            }, 800);
+        }
+
+        // Boot
+        initGame();
+        // Show rules on first load
+        document.getElementById('rules-modal').style.display = 'flex';
+    </script>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sliding Puzzle - NovaHub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a; --nav-bg: #1e293b; --text-light: #e2e8f0;
+            --accent: #f43f5e; /* Rose */
+            --grid-size: 3; /* Dynamically changed via JS */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-dark); color: var(--text-light); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .hidden { display: none !important; }
+
+        /* Top Navigation */
+        .top-nav { height: 60px; background-color: var(--nav-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 10; flex-shrink: 0;}
+        .back-btn { color: var(--text-light); text-decoration: none; display: flex; align-items: center; cursor: pointer; }
+        .nav-title { font-size: 18px; font-weight: bold; }
+        .action-btn { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;}
+
+        /* LEVELS SCREEN */
+        #levels-screen { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; align-items: center;}
+        .level-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; width: 100%; max-width: 400px; margin-top: 20px;}
+        .lvl-btn { background: #1e293b; border: 2px solid #334155; border-radius: 12px; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 24px; font-weight: 900; color: white; cursor: pointer; transition: 0.2s; position: relative;}
+        .lvl-btn:active { transform: scale(0.9); }
+        .lvl-btn.locked { background: #0f172a; border-color: #1e293b; color: #334155; cursor: not-allowed; }
+        .lvl-btn.locked:active { transform: none; }
+        .stars-disp { display: flex; gap: 2px; font-size: 10px; color: #fbbf24; margin-top: 5px;}
+
+        /* GAME SCREEN */
+        #game-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        
+        .game-header { display: flex; justify-content: space-between; width: 100%; max-width: 350px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155;}
+        .stat-box { display: flex; flex-direction: column; align-items: center;}
+        .stat-lbl { font-size: 12px; color: #94a3b8; font-weight: bold; text-transform: uppercase;}
+        .stat-val { font-size: 24px; font-weight: 900; color: white;}
+        .stat-val.target { color: var(--accent); }
+
+        /* Board Grid (Dynamic Size) */
+        .puzzle-board { display: grid; grid-template-columns: repeat(var(--grid-size), 1fr); grid-template-rows: repeat(var(--grid-size), 1fr); gap: 8px; width: 100%; max-width: 350px; aspect-ratio: 1; background: #1e293b; padding: 10px; border-radius: 16px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); border: 2px solid #334155;}
+        
+        /* Tiles */
+        .tile { background: #334155; color: white; font-size: 28px; font-weight: 900; display: flex; justify-content: center; align-items: center; border-radius: 8px; cursor: pointer; transition: transform 0.1s, background 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+        .tile:active { transform: scale(0.95); }
+        .tile.empty { background: transparent; cursor: default; box-shadow: none; border: 2px dashed rgba(255,255,255,0.1); }
+        .tile.correct { background: #059669; color: #ecfdf5; box-shadow: inset 0 0 10px rgba(0,0,0,0.2);}
+        
+        /* Modals */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 50; justify-content: center; align-items: center; padding: 20px; flex-direction: column; }
+        .modal-content { background: var(--nav-bg); padding: 25px; border-radius: 16px; text-align: center; max-width: 350px; border: 1px solid #334155; animation: slideUp 0.3s ease;}
+        @keyframes slideUp { from { transform: translateY(50px); opacity: 0;} to { transform: translateY(0); opacity: 1;} }
+        
+        .modal-title { font-size: 28px; font-weight: bold; margin-bottom: 5px; color: #10b981;}
+        .star-rating { font-size: 40px; color: #fbbf24; margin: 10px 0; letter-spacing: 5px;}
+        .btn-primary { background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 0 #059669; margin-top: 15px;}
+        .btn-primary:active { transform: translateY(4px); box-shadow: 0 0 0 transparent; }
+        .btn-secondary { background: #334155; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px;}
+    </style>
+</head>
+<body>
+
+    <nav class="top-nav">
+        <!-- The back button goes to levels screen if playing, or mind-games if on levels screen -->
+        <div class="back-btn" id="nav-back-btn" onclick="goBack()"><span class="material-icons">arrow_back</span></div>
+        <div class="nav-title" id="nav-title-text">Sliding Puzzle</div>
+        <button class="action-btn" id="reset-btn" onclick="startLevel(currentLevel)" style="display:none;"><span class="material-icons" style="font-size: 18px;">refresh</span></button>
+    </nav>
+
+    <!-- LEVELS SELECTION SCREEN -->
+    <div id="levels-screen">
+        <h2 style="color: #f43f5e; font-size: 24px; margin-bottom: 5px; font-weight: 900;">Select Level</h2>
+        <p style="color: #94a3b8; font-size: 14px; text-align: center;">Grid size aur difficulty level ke sath badhegi!</p>
+        
+        <div class="level-grid" id="levels-grid">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+
+    <!-- GAME PLAY SCREEN -->
+    <div id="game-screen" class="hidden">
+        <div class="game-header">
+            <div class="stat-box">
+                <span class="stat-lbl">Level</span>
+                <span class="stat-val" id="disp-lvl">1</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-lbl">Moves</span>
+                <span class="stat-val" id="disp-moves">0</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-lbl">Target</span>
+                <span class="stat-val target" id="disp-target">15</span>
+            </div>
+        </div>
+
+        <div class="puzzle-board" id="board">
+            <!-- Dynamically generated via JS -->
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div class="modal-overlay" id="win-modal">
+        <div class="modal-content">
+            <div class="modal-title" id="win-title">Level Passed!</div>
+            <div class="star-rating" id="win-stars">⭐⭐⭐</div>
+            <div style="color: #94a3b8; margin-bottom: 10px; font-size: 15px;">Aapne <b id="final-moves" style="color: white;">0</b> moves liye.<br>Target: <b id="final-target" style="color: #f43f5e;">0</b> moves.</div>
+            
+            <button class="btn-primary" id="next-lvl-btn" onclick="startLevel(currentLevel + 1)">Next Level ➡️</button>
+            <button class="btn-secondary" onclick="showLevels()">Levels Menu</button>
+        </div>
+    </div>
+
+    <script>
+        // 20 LEVELS CONFIGURATION
+        const levelData = [
+            { lvl: 1, size: 3, shuffles: 5, target: 8 },
+            { lvl: 2, size: 3, shuffles: 10, target: 15 },
+            { lvl: 3, size: 3, shuffles: 20, target: 30 },
+            { lvl: 4, size: 3, shuffles: 30, target: 45 },
+            { lvl: 5, size: 3, shuffles: 50, target: 70 }, // 3x3 Boss
+            
+            { lvl: 6, size: 4, shuffles: 15, target: 25 },
+            { lvl: 7, size: 4, shuffles: 30, target: 45 },
+            { lvl: 8, size: 4, shuffles: 45, target: 65 },
+            { lvl: 9, size: 4, shuffles: 60, target: 85 },
+            { lvl: 10, size: 4, shuffles: 80, target: 110 },
+            { lvl: 11, size: 4, shuffles: 100, target: 135 },
+            { lvl: 12, size: 4, shuffles: 150, target: 180 }, // 4x4 Boss
+            
+            { lvl: 13, size: 5, shuffles: 30, target: 45 },
+            { lvl: 14, size: 5, shuffles: 50, target: 70 },
+            { lvl: 15, size: 5, shuffles: 80, target: 110 },
+            { lvl: 16, size: 5, shuffles: 110, target: 145 },
+            { lvl: 17, size: 5, shuffles: 140, target: 180 },
+            { lvl: 18, size: 5, shuffles: 180, target: 230 },
+            { lvl: 19, size: 5, shuffles: 220, target: 280 },
+            { lvl: 20, size: 5, shuffles: 300, target: 380 } // Final Boss
+        ];
+
+        let board = []; 
+        let moves = 0;
+        let currentLevel = 1;
+        let unlockedLevel = parseInt(localStorage.getItem('slidingUnlocked')) || 1;
+        let starsData = JSON.parse(localStorage.getItem('slidingStars')) || {};
+
+        function init() {
+            showLevels();
+        }
+
+        // --- SCREEN MANAGEMENT ---
+        function showLevels() {
+            document.getElementById('levels-screen').classList.remove('hidden');
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('reset-btn').style.display = 'none';
+            document.getElementById('win-modal').style.display = 'none';
+            document.getElementById('nav-title-text').innerText = 'Select Level';
+            
+            const grid = document.getElementById('levels-grid');
+            grid.innerHTML = '';
+
+            levelData.forEach(ld => {
+                let btn = document.createElement('div');
+                let isLocked = ld.lvl > unlockedLevel;
+                
+                btn.className = `lvl-btn ${isLocked ? 'locked' : ''}`;
+                
+                if (isLocked) {
+                    btn.innerHTML = `<span class="material-icons" style="font-size:30px;">lock</span>`;
+                } else {
+                    let stars = starsData[ld.lvl] || 0;
+                    let starsHtml = '';
+                    for(let i=0; i<3; i++) starsHtml += i < stars ? '★' : '☆';
+                    
+                    btn.innerHTML = `${ld.lvl}<div class="stars-disp">${starsHtml}</div>`;
+                    btn.onclick = () => startLevel(ld.lvl);
+                }
+                grid.appendChild(btn);
+            });
+        }
+
+        function goBack() {
+            if(!document.getElementById('levels-screen').classList.contains('hidden')) {
+                window.location.href = 'mind-games.html'; // Go back to Mind Games hub
+            } else {
+                showLevels(); // Go back to levels screen
+            }
+        }
+
+        // --- GAME LOGIC ---
+        function startLevel(lvl) {
+            currentLevel = lvl;
+            let conf = levelData[lvl - 1];
+            
+            document.getElementById('levels-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('reset-btn').style.display = 'flex';
+            document.getElementById('win-modal').style.display = 'none';
+            document.getElementById('nav-title-text').innerText = `Level ${lvl}`;
+            
+            // Set CSS Variable for grid sizing
+            document.documentElement.style.setProperty('--grid-size', conf.size);
+
+            document.getElementById('disp-lvl').innerText = lvl;
+            document.getElementById('disp-target').innerText = conf.target;
+            
+            moves = 0;
+            document.getElementById('disp-moves').innerText = moves;
+
+            generateSolvableBoard(conf.size, conf.shuffles);
+            renderBoard(conf.size);
+        }
+
+        function generateSolvableBoard(size, shuffles) {
+            board = [];
+            let totalTiles = size * size;
+            for (let i = 1; i < totalTiles; i++) board.push(i);
+            board.push(""); // The empty space
+            
+            let emptyIdx = totalTiles - 1;
+            let lastEmpty = -1;
+
+            // Make valid random moves to shuffle the board
+            for (let i = 0; i < shuffles; i++) {
+                let adjacent = getAdjacentIndices(emptyIdx, size);
+                
+                // Try not to immediately undo the last move to ensure good shuffling
+                let validMoves = adjacent.filter(idx => idx !== lastEmpty);
+                if (validMoves.length === 0) validMoves = adjacent; // Fallback
+                
+                let pick = validMoves[Math.floor(Math.random() * validMoves.length)];
+                
+                // Swap
+                board[emptyIdx] = board[pick];
+                board[pick] = "";
+                lastEmpty = emptyIdx;
+                emptyIdx = pick;
+            }
+        }
+
+        function getAdjacentIndices(idx, size) {
+            let r = Math.floor(idx / size);
+            let c = idx % size;
+            let adj = [];
+            
+            if (r > 0) adj.push(idx - size); // Top
+            if (r < size - 1) adj.push(idx + size); // Bottom
+            if (c > 0) adj.push(idx - 1); // Left
+            if (c < size - 1) adj.push(idx + 1); // Right
+            
+            return adj;
+        }
+
+        function renderBoard(size) {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            
+            // Dynamic Font size based on grid size
+            let fontSize = size === 3 ? '32px' : (size === 4 ? '24px' : '18px');
+
+            board.forEach((val, idx) => {
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+                tile.style.fontSize = fontSize;
+                
+                if (val === "") {
+                    tile.classList.add('empty');
+                } else {
+                    tile.innerText = val;
+                    if (val === idx + 1) tile.classList.add('correct');
+                    tile.onclick = () => moveTile(idx, size);
+                }
+                boardEl.appendChild(tile);
+            });
+        }
+
+        function moveTile(idx, size) {
+            const emptyIdx = board.indexOf("");
+            const r1 = Math.floor(idx / size), c1 = idx % size;
+            const r2 = Math.floor(emptyIdx / size), c2 = emptyIdx % size;
+            
+            const isAdjacent = (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1;
+
+            if (isAdjacent) {
+                board[emptyIdx] = board[idx];
+                board[idx] = "";
+                moves++;
+                document.getElementById('disp-moves').innerText = moves;
+                
+                renderBoard(size);
+                checkWin(size);
+            }
+        }
+
+        function checkWin(size) {
+            let isWon = true;
+            let totalTiles = size * size;
+            
+            for (let i = 0; i < totalTiles - 1; i++) {
+                if (board[i] !== i + 1) {
+                    isWon = false;
+                    break;
+                }
+            }
+            if(board[totalTiles - 1] !== "") isWon = false;
+
+            if (isWon) {
+                handleVictory();
+            }
+        }
+
+        function handleVictory() {
+            let conf = levelData[currentLevel - 1];
+            
+            // Calculate Stars
+            let stars = 1;
+            if(moves <= conf.target) stars = 3;
+            else if(moves <= conf.target * 1.5) stars = 2;
+
+            // Save Progress
+            if(stars > (starsData[currentLevel] || 0)) {
+                starsData[currentLevel] = stars;
+                localStorage.setItem('slidingStars', JSON.stringify(starsData));
+            }
+
+            if(currentLevel === unlockedLevel && currentLevel < 20) {
+                unlockedLevel++;
+                localStorage.setItem('slidingUnlocked', unlockedLevel);
+            }
+
+            // Show Modal UI
+            document.getElementById('final-moves').innerText = moves;
+            document.getElementById('final-target').innerText = conf.target;
+            
+            let starsHtml = '';
+            for(let i=0; i<3; i++) {
+                starsHtml += i < stars ? '⭐' : '⬛';
+            }
+            document.getElementById('win-stars').innerText = starsHtml;
+
+            // Check if final level completed
+            let nextBtn = document.getElementById('next-lvl-btn');
+            if(currentLevel === 20) {
+                document.getElementById('win-title').innerText = "Game Completed! 🏆";
+                nextBtn.style.display = 'none';
+            } else {
+                document.getElementById('win-title').innerText = "Level Passed!";
+                nextBtn.style.display = 'block';
+            }
+
+            document.getElementById('win-modal').style.display = 'flex';
+        }
+
+        // Boot
+        init();
+    </script>
+</body>
+</html>

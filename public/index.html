@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Novaview Digital Hub</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/808/808439.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/feather-icons"></script>
+  <style>
+    button, a, input, label, .clickable { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .view-transition { transition: opacity 0.3s ease; }
+    #game-container { display: none; justify-content: center; align-items: center; flex-direction: column; min-height: 100vh; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 45; background: #1a1a2e; }
+    canvas { display: block; image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+    .toast-show { animation: fadeUp 0.3s ease forwards; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans select-none antialiased">
+
+  <div id="decoy-view" class="view-transition opacity-100 flex flex-col min-h-screen">
+    <header class="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur px-4 md:px-8 flex items-center justify-between sticky top-0 z-40">
+      <div id="left-secret-trigger" class="flex items-center space-x-3 cursor-pointer">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white"><i data-feather="monitor" class="w-5 h-5"></i></div>
+        <div>
+          <span class="font-bold tracking-tight text-lg text-white">Nova<span class="text-indigo-400">Hub</span></span>
+          <span class="text-[10px] block text-slate-400 -mt-1 font-mono">Media & Games</span>
+        </div>
+      </div>
+      <button id="secret-trigger-btn" class="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 transition"><i data-feather="rotate-cw" class="w-4 h-4"></i></button>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8">
+      <section class="space-y-4">
+        <h3 class="font-semibold text-slate-200 text-base flex items-center gap-2"><i data-feather="upload-cloud" class="w-4 h-4 text-indigo-400"></i> Upload Archives</h3>
+        <div class="grid grid-cols-3 gap-3">
+          <label class="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800">
+            <i data-feather="file-text" class="w-6 h-6 text-rose-400 mb-1"></i><span id="pdf-label" class="text-xs font-semibold text-slate-300">PDF</span><input type="file" id="pdf-input" accept=".pdf" class="hidden" />
+          </label>
+          <label class="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800">
+            <i data-feather="music" class="w-6 h-6 text-amber-400 mb-1"></i><span id="sound-label" class="text-xs font-semibold text-slate-300">Sound</span><input type="file" id="sound-input" accept="audio/*" class="hidden" />
+          </label>
+          <label class="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800">
+            <i data-feather="video" class="w-6 h-6 text-emerald-400 mb-1"></i><span id="video-label" class="text-xs font-semibold text-slate-300">Video</span><input type="file" id="video-input" accept="video/*" class="hidden" />
+          </label>
+        </div>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="font-semibold text-slate-200 text-base flex items-center gap-2"><i data-feather="play-circle" class="w-4 h-4 text-indigo-400"></i> Mini Games</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-emerald-400">Classic Snake</h2><p class="text-sm text-slate-400">Swipe to play</p></div>
+            <button id="start-snake-btn" class="px-5 py-2.5 bg-emerald-600 font-bold text-white rounded-xl shadow-lg">Play Now</button>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-blue-400">Sudoku.com</h2><p class="text-sm text-slate-400">Advanced Solver Mode</p></div>
+            <a href="sudoku.html" class="px-5 py-2.5 bg-blue-600 font-bold text-white rounded-xl shadow-lg text-center">Play Now</a>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-amber-400">2048 Puzzle</h2><p class="text-sm text-slate-400">Join the numbers</p></div>
+            <a href="2048.html" class="px-5 py-2.5 bg-amber-600 font-bold text-white rounded-xl shadow-lg text-center">Play Now</a>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-rose-400">Tic Tac Toe</h2><p class="text-sm text-slate-400">Unbeatable AI</p></div>
+            <a href="tictactoe.html" class="px-5 py-2.5 bg-rose-600 font-bold text-white rounded-xl shadow-lg text-center">Play Now</a>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-green-400">Ludo Hub</h2><p class="text-sm text-slate-400">Multiplayer Board</p></div>
+            <a href="ludo.html" class="px-5 py-2.5 bg-green-600 font-bold text-white rounded-xl shadow-lg text-center">Play Now</a>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-cyan-400">Tetris Classic</h2><p class="text-sm text-slate-400">Block Puzzle</p></div>
+            <a href="tetris.html" class="px-5 py-2.5 bg-cyan-600 font-bold text-white rounded-xl shadow-lg text-center">Play Now</a>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-purple-400">Memory Match</h2><p class="text-sm text-slate-400">Brain Exercise</p></div>
+            <a href="memory.html" class="px-5 py-2.5 bg-purple-600 font-bold text-white rounded-xl shadow-lg text-center">Play Now</a>
+          </div>
+          <div class="bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center justify-between">
+            <div><h2 class="text-xl font-bold text-yellow-400">Neon Flappy</h2><p class="text-sm text-slate-400">Endless Runner</p></div>
+            <a href="flappybird.html" class="px-5 py-2.5 bg-yellow-600 font-bold text-slate-900 rounded-xl shadow-lg text-center">Fly Now</a>
+          </div>
+          <div class="col-span-1 sm:col-span-2 mt-2">
+            <a href="mind-games.html" class="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 py-4 rounded-2xl font-bold transition">
+              <i data-feather="brain" class="w-5 h-5 text-fuchsia-400"></i> Explore More Mind Games <i data-feather="chevron-right" class="w-4 h-4"></i>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="fake-toast" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-2xl hidden z-50 flex items-center gap-2">
+      <i data-feather="check-circle" class="w-4 h-4 text-emerald-400"></i><span id="toast-msg">Success</span>
+    </div>
+  </div>
+
+  <div id="game-container">
+    <div style="position: absolute; top: 20px; left: 20px; z-index: 50;">
+      <button id="close-game-btn" class="px-4 py-2 bg-rose-600 text-white text-sm font-bold rounded-lg shadow-lg flex items-center gap-2"><i data-feather="arrow-left" class="w-4 h-4"></i> Back</button>
+    </div>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <!-- ================= ENTER YOUR PERSONAL ID CODE ================= -->
+  <div id="passcode-modal" class="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 hidden">
+    <div class="w-full max-w-sm space-y-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl">
+      <h3 class="text-center text-indigo-400 font-bold uppercase tracking-widest text-sm">Enter Your Personal ID Code</h3>
+      <p class="text-center text-xs text-slate-400">Enter your permanent code (e.g. 7488). Your chats & name stay linked to this code forever.</p>
+      <input type="text" id="secret-pin-input" placeholder="e.g. 7488" class="w-full tracking-widest text-center text-2xl font-mono py-3 bg-slate-950 border border-slate-700 rounded-xl text-indigo-400 outline-none"/>
+      <div class="flex gap-2 pt-2">
+        <button id="cancel-pin-btn" class="flex-1 py-3 text-sm font-bold bg-slate-800 text-slate-400 rounded-xl">CANCEL</button>
+        <button id="submit-pin-btn" class="flex-1 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl">OPEN MY WHATSAPP</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="snake.js"></script>
+  <script>
+    feather.replace();
+
+    let clickCount = 0;
+    let clickTimer = null;
+
+    function handleTripleTap() {
+      clickCount++;
+      clearTimeout(clickTimer);
+      if (clickCount >= 3) {
+        clickCount = 0;
+        document.getElementById('passcode-modal').classList.remove('hidden');
+        document.getElementById('secret-pin-input').value = localStorage.getItem('nova_my_code') || '';
+        document.getElementById('secret-pin-input').focus();
+      } else {
+        clickTimer = setTimeout(() => { clickCount = 0; }, 600);
+      }
+    }
+
+    document.getElementById('left-secret-trigger').addEventListener('click', handleTripleTap);
+    document.getElementById('secret-trigger-btn').addEventListener('click', handleTripleTap);
+
+    document.getElementById('cancel-pin-btn').addEventListener('click', () => {
+      document.getElementById('passcode-modal').classList.add('hidden');
+    });
+
+    function loginWithPersonalCode() {
+      const myCode = document.getElementById('secret-pin-input').value.trim();
+      if (!myCode) return alert("Apna koi bhi Permanent Code dalein (jaise 7488)!");
+
+      localStorage.setItem('nova_stealth_gate_locked', 'false');
+
+      if (myCode.toLowerCase() === 'god4499') {
+        sessionStorage.setItem('open_god_directly', 'true');
+        window.location.href = 'chat.html';
+        return;
+      }
+
+      // Lock Permanent Identity to this Code!
+      localStorage.setItem('nova_my_code', myCode);
+      localStorage.setItem('nova_account_code', myCode);
+      localStorage.setItem('nova_uid', 'user_' + myCode);
+
+      window.location.href = 'chat.html';
+    }
+
+    document.getElementById('submit-pin-btn').addEventListener('click', loginWithPersonalCode);
+    document.getElementById('secret-pin-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') loginWithPersonalCode();
+    });
+
+    function setupFakeUpload(id, labelId, txt) {
+      document.getElementById(id).addEventListener('change', function(e) {
+        if(e.target.files.length > 0) {
+          document.getElementById('toast-msg').textContent = `${e.target.files[0].name} archived.`;
+          document.getElementById('fake-toast').classList.remove('hidden'); 
+          document.getElementById('fake-toast').classList.add('toast-show');
+          let lbl = document.getElementById(labelId);
+          lbl.textContent = "Done!"; 
+          lbl.classList.replace('text-slate-300', 'text-emerald-400');
+          setTimeout(() => {
+            document.getElementById('fake-toast').classList.add('hidden'); 
+            document.getElementById('fake-toast').classList.remove('toast-show');
+            lbl.textContent = txt; 
+            lbl.classList.replace('text-emerald-400', 'text-slate-300'); 
+            e.target.value = '';
+          }, 3000);
+        }
+      });
+    }
+    setupFakeUpload('pdf-input', 'pdf-label', 'PDF'); 
+    setupFakeUpload('sound-input', 'sound-label', 'Sound'); 
+    setupFakeUpload('video-input', 'video-label', 'Video');
+  </script>
+  <script type="module" src="universal-chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <title>2048 Puzzle</title>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+            color: #776e65;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+
+        body {
+            background-color: #faf8ef;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- Top Navigation --- */
+        .top-nav {
+            height: 56px; background-color: #bbada0; color: white;
+            display: flex; align-items: center; padding: 0 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+        .back-btn { color: white; text-decoration: none; display: flex; align-items: center; padding: 8px; margin-right: 16px; cursor: pointer; }
+        .nav-title { font-size: 20px; font-weight: bold; color: white; }
+
+        .container {
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            flex: 1; padding: 10px;
+        }
+
+        .head {
+            width: 100%; max-width: 400px;
+            margin-bottom: 20px; position: relative;
+        }
+
+        .title { font-size: 3rem; font-weight: bold; }
+
+        .score-container {
+            background-color: #bbada0; color: white;
+            padding: 5px 15px; border-radius: 6px; float: right;
+            font-size: 1.5rem; font-weight: bold;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .score-container::before { content: "SCORE"; font-size: 0.8rem; color: #eee4da; }
+
+        .new-game {
+            background-color: #8f7a66; color: white; border: none;
+            padding: 10px 20px; border-radius: 6px; font-weight: bold; font-size: 1rem;
+            float: right; margin-top: 10px; cursor: pointer;
+        }
+        .new-game:active { transform: scale(0.95); }
+
+        .intro { font-size: 1rem; }
+
+        .board {
+            width: 100%; max-width: 400px; aspect-ratio: 1;
+            background: #bbada0; border: 6px solid #bbada0; border-radius: 6px;
+            display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 6px;
+        }
+
+        .tile {
+            background-color: #cdc1b5; border-radius: 3px;
+            display: flex; justify-content: center; align-items: center;
+            font-size: clamp(1.5rem, 6vw, 2.5rem); font-weight: bold;
+            transition: background-color 0.15s, transform 0.1s;
+        }
+
+        .b2 { background-color: #eee4da; color: #727371; }
+        .b4 { background-color: #ede0c8; color: #727371; }
+        .b8 { background-color: #f2b179; color: white; }
+        .b16 { background-color: #f59563; color: white; }
+        .b32 { background-color: #f67c5f; color: white; }
+        .b64 { background-color: #f65e3b; color: white; }
+        .b128 { background-color: #edcf72; color: white; font-size: clamp(1.2rem, 5vw, 2rem); }
+        .b256 { background-color: #edcc61; color: white; font-size: clamp(1.2rem, 5vw, 2rem); }
+        .b512 { background-color: #edc850; color: white; font-size: clamp(1.2rem, 5vw, 2rem); }
+        .b1024 { background-color: #edc53f; color: white; font-size: clamp(1rem, 4vw, 1.5rem); }
+        .b2048 { background-color: #edc22e; color: white; font-size: clamp(1rem, 4vw, 1.5rem); box-shadow: 0 0 10px rgba(243, 215, 116, 0.5); }
+        .b4096 { background-color: #3c3a32; color: white; }
+        .b8192 { background-color: #3c3a32; color: white; }
+
+        /* Mobile Controls */
+        .arrow-keys, .key { display: none; }
+        .key {
+            height: 60px; width: 60px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            background-color: #cdc1b5; margin: 5px; cursor: pointer; color: white;
+        }
+        .key .material-icons { font-size: 40px; color: white; }
+        .key:active { background-color: #bbada0; }
+        #keyup { margin-top: 20px; }
+
+        @media only screen and (max-width: 600px) {
+            .arrow-keys, .key { display: flex; }
+            .key { height: 50px; width: 50px; }
+            .key .material-icons { font-size: 35px; }
+        }
+    </style>
+</head>
+<script type="module" src="universal-chat.js"></script>
+<body>
+    
+    <!-- Top Navigation -->
+    <nav class="top-nav">
+        <a href="index.html" class="back-btn"><span class="material-icons">arrow_back</span></a>
+        <div class="nav-title">2048 Puzzle</div>
+    </nav>
+
+    <div id="top" class="container">
+        <div class="head">
+            <span class="title">2048</span>
+            <div class="score-container">
+                <span class="score" id="score">0</span>
+            </div>
+            <br><br>
+            <span class="intro">Join the tiles to get to <b>2048</b></span>
+            <button class="new-game" onclick="setGame()">New Game</button>
+        </div>
+
+        <div class="board" id="board">
+            <!-- Tiles will be generated here -->
+        </div>
+        
+        <!-- Mobile Controls (Using Material Icons instead of images) -->
+        <div class="key" id="keyup">
+            <span class="material-icons">keyboard_arrow_up</span>
+        </div>
+        <div class="arrow-keys">
+            <div class="key" id="keyleft">
+                <span class="material-icons">keyboard_arrow_left</span>
+            </div>
+            <div class="key" id="keydown">
+                <span class="material-icons">keyboard_arrow_down</span>
+            </div>
+            <div class="key" id="keyright">
+                <span class="material-icons">keyboard_arrow_right</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        var board;
+        var score = 0;
+        var rows = 4;
+        var columns = 4;
+
+        window.onload = function() {
+            setGame();
+        }
+
+        function setGame() {
+            board = [
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0]
+            ];
+            score = 0;
+            document.getElementById("score").innerText = score;
+            document.getElementById("board").innerHTML = ""; // Clear board
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < columns; c++) {
+                    let tile = document.createElement("div");
+                    tile.id = r.toString() + "-" + c.toString();
+                    updateTile(tile, board[r][c]);
+                    document.getElementById("board").append(tile);
+                }
+            }
+            
+            setTwo();
+            setTwo();
+        }
+
+        function updateTile(tile, num) {
+            tile.innerText = "";
+            tile.className = "tile"; 
+            if (num > 0) {
+                tile.innerText = num.toString();
+                if (num <= 8192) { tile.classList.add("b" + num.toString()); } 
+                else { tile.classList.add("b8192"); }                
+            }
+        }
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code == "ArrowLeft") { slideLeft(); setTwo(); }
+            else if (e.code == "ArrowRight") { slideRight(); setTwo(); }
+            else if (e.code == "ArrowUp") { slideUp(); setTwo(); }
+            else if (e.code == "ArrowDown") { slideDown(); setTwo(); }
+            document.getElementById("score").innerText = score;
+        });
+
+        // Touch/Swipe Logic for Mobile
+        let startX = 0, startY = 0;
+        document.getElementById("board").addEventListener("touchstart", e => {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        }, {passive: false});
+
+        document.getElementById("board").addEventListener("touchend", e => {
+            if(!startX || !startY) return;
+            let dx = e.changedTouches[0].clientX - startX;
+            let dy = e.changedTouches[0].clientY - startY;
+            if(Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+                if(dx > 0) { slideRight(); setTwo(); } else { slideLeft(); setTwo(); }
+            } else if(Math.abs(dy) > 30) {
+                if(dy > 0) { slideDown(); setTwo(); } else { slideUp(); setTwo(); }
+            }
+            document.getElementById("score").innerText = score;
+            startX = 0; startY = 0;
+        });
+
+        // Button Controls
+        document.getElementById("keyup").addEventListener("click", () => { slideUp(); setTwo(); document.getElementById("score").innerText = score;});
+        document.getElementById("keydown").addEventListener("click", () => { slideDown(); setTwo(); document.getElementById("score").innerText = score;});
+        document.getElementById("keyright").addEventListener("click", () => { slideRight(); setTwo(); document.getElementById("score").innerText = score;});
+        document.getElementById("keyleft").addEventListener("click", () => { slideLeft(); setTwo(); document.getElementById("score").innerText = score;});
+
+        window.addEventListener("keydown", function(e) {
+            if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) { e.preventDefault(); }
+        }, false);
+
+        function filterZero(row){ return row.filter(num => num != 0); }
+
+        function slide(row) {
+            row = filterZero(row); 
+            for (let i = 0; i < row.length-1; i++){
+                if (row[i] == row[i+1]) {
+                    row[i] *= 2;
+                    row[i+1] = 0;
+                    score += row[i];
+                }
+            } 
+            row = filterZero(row); 
+            while (row.length < columns) { row.push(0); } 
+            return row;
+        }
+
+        function slideLeft() {
+            for (let r = 0; r < rows; r++) {
+                let row = board[r];
+                row = slide(row);
+                board[r] = row;
+                for (let c = 0; c < columns; c++){
+                    let tile = document.getElementById(r.toString() + "-" + c.toString());
+                    updateTile(tile, board[r][c]);
+                }
+            }
+        }
+
+        function slideRight() {
+            for (let r = 0; r < rows; r++) {
+                let row = board[r];       
+                row.reverse();              
+                row = slide(row)            
+                board[r] = row.reverse();   
+                for (let c = 0; c < columns; c++){
+                    let tile = document.getElementById(r.toString() + "-" + c.toString());
+                    updateTile(tile, board[r][c]);
+                }
+            }
+        }
+
+        function slideUp() {
+            for (let c = 0; c < columns; c++) {
+                let row = [board[0][c], board[1][c], board[2][c], board[3][c]];
+                row = slide(row);
+                for (let r = 0; r < rows; r++){
+                    board[r][c] = row[r];
+                    let tile = document.getElementById(r.toString() + "-" + c.toString());
+                    updateTile(tile, board[r][c]);
+                }
+            }
+        }
+
+        function slideDown() {
+            for (let c = 0; c < columns; c++) {
+                let row = [board[0][c], board[1][c], board[2][c], board[3][c]];
+                row.reverse(); row = slide(row); row.reverse();
+                for (let r = 0; r < rows; r++){
+                    board[r][c] = row[r];
+                    let tile = document.getElementById(r.toString() + "-" + c.toString());
+                    updateTile(tile, board[r][c]);
+                }
+            }
+        }
+
+        function setTwo() {
+            if (!hasEmptyTile()) return;
+            let found = false;
+            while (!found) {
+                let r = Math.floor(Math.random() * rows);
+                let c = Math.floor(Math.random() * columns);
+                if (board[r][c] == 0) {
+                    board[r][c] = Math.random() > 0.9 ? 4 : 2; 
+                    let tile = document.getElementById(r.toString() + "-" + c.toString());
+                    updateTile(tile, board[r][c]);
+                    found = true;
+                }
+            }
+        }
+
+        function hasEmptyTile() {
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < columns; c++) {
+                    if (board[r][c] == 0) return true;
+                }
+            }
+            return false;
+        }
+    </script>
+</body>
+</html>
