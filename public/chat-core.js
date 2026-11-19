@@ -1,6 +1,6 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Unified Game + Messenger | Location Share | Strict Seen | 1-on-1 DM & Calls
+// Unified Game + Messenger | Current & Live Location | Strict Seen | 1-on-1 DM
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -153,6 +153,7 @@ function saveSessionToLocal() {
 
 document.getElementById('btn-logout-now').onclick = () => {
     if (!confirm(`Logout from ID "${myAccountCode}" (${myName})?`)) return;
+    stopAllLiveSessions();
     if (unsubscribeChat) unsubscribeChat();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     wipeLocalSessionData();
@@ -427,6 +428,7 @@ function selectRoom(roomId, openUI = true) {
         document.getElementById('chat-view').classList.remove('open');
     }
 
+    refreshLiveBanner();
     renderSidebarList();
     listenToPresence(roomId);
     listenToMessages(roomId);
@@ -434,7 +436,7 @@ function selectRoom(roomId, openUI = true) {
 }
 
 // ============================================================================
-// 3. ENCRYPTION, NOTIFICATIONS, LOCATION SHARE & MESSAGES
+// 3. ENCRYPTION, NOTIFICATIONS, CURRENT + LIVE LOCATION & MESSAGES
 // ============================================================================
 function encryptText(plainText, key) {
     if (!key) return plainText;
@@ -549,58 +551,203 @@ function listenToPresence(roomId) {
 function getDateGroupLabel(d = new Date()) { return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
 function getShortTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
-// SHARE CURRENT LOCATION BUTTON HANDLER
+// ============================================================================
+// WHATSAPP-STYLE CURRENT & LIVE LOCATION ENGINE
+// ============================================================================
+const locModal = document.getElementById('location-modal');
+const liveBanner = document.getElementById('active-live-banner');
+const liveBannerText = document.getElementById('active-live-text');
+let selectedLiveHours = 1; // 1, 8, 24, or 0 (until turned off)
+const activeLiveSessions = {}; // { [roomId]: { msgId, watchId, expireTimer, label, lastUpdateMs } }
+
+function refreshLiveBanner() {
+    const sess = activeLiveSessions[currentRoom];
+    if (sess) {
+        liveBannerText.innerText = `Sharing Live Location (${sess.label})`;
+        liveBanner.style.display = 'flex';
+    } else {
+        liveBanner.style.display = 'none';
+    }
+}
+
+async function stopLiveLocation(roomId, msgId) {
+    const sess = activeLiveSessions[roomId];
+    if (sess && (!msgId || sess.msgId === msgId)) {
+        if (sess.watchId !== null) navigator.geolocation.clearWatch(sess.watchId);
+        if (sess.expireTimer) clearTimeout(sess.expireTimer);
+        delete activeLiveSessions[roomId];
+    }
+    if (roomId && msgId) {
+        try {
+            await updateDoc(doc(db, roomId, msgId), {
+                isLiveActive: false,
+                lastUpdatedStr: getShortTime(new Date())
+            });
+        } catch (e) {}
+    }
+    refreshLiveBanner();
+}
+window.stopLiveLocation = stopLiveLocation;
+
+function stopAllLiveSessions() {
+    Object.keys(activeLiveSessions).forEach(rId => {
+        const s = activeLiveSessions[rId];
+        stopLiveLocation(rId, s.msgId);
+    });
+}
+
+document.getElementById('btn-banner-stop-live').onclick = () => {
+    const sess = activeLiveSessions[currentRoom];
+    if (sess) stopLiveLocation(currentRoom, sess.msgId);
+};
+
+// Open Location Picker Modal
 const locBtn = document.getElementById('btn-share-location');
 if (locBtn) {
     locBtn.onclick = () => {
         if (!currentRoom) return alert("Please select a friend first!");
         if (!navigator.geolocation) return alert("❌ Location is not supported on this device/browser.");
-        if (!confirm("📍 Share your current location in this chat?")) return;
-
-        const inp = document.getElementById('msg-input');
-        const prevPh = inp.placeholder;
-        inp.placeholder = "📍 Fetching GPS location...";
-
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-            inp.placeholder = prevPh;
-            const lat = pos.coords.latitude.toFixed(6);
-            const lng = pos.coords.longitude.toFixed(6);
-            const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-            const now = new Date();
-            const meta = getRoomMeta(currentRoom);
-
-            await addDoc(collection(db, currentRoom), {
-                type: "location",
-                lat,
-                lng,
-                mapUrl,
-                text: `📍 Location (${lat}, ${lng})`,
-                originalAuditText: `📍 Location: ${mapUrl}`,
-                uid: myUid,
-                accountCode: myAccountCode,
-                name: myName,
-                shortTime: getShortTime(now),
-                dateLabel: getDateGroupLabel(now),
-                sentAtStr: now.toLocaleString(),
-                sentMs: Date.now(),
-                vanishTimer: meta.timer || "off",
-                timestamp: serverTimestamp(),
-                replyTo: replyTarget,
-                seenStatus: false,
-                manualUnseen: false,
-                reactions: {},
-                starredBy: [],
-                deletedFor: [],
-                isDeletedEveryone: false
-            });
-            replyTarget = null;
-            document.getElementById('reply-bar').style.display = 'none';
-        }, (err) => {
-            inp.placeholder = prevPh;
-            alert("⚠️ Location access denied or GPS is turned off. Please allow location permission in browser settings.");
-        }, { enableHighAccuracy: true, timeout: 12000 });
+        locModal.style.display = 'flex';
     };
 }
+document.getElementById('btn-close-loc-modal').onclick = () => { locModal.style.display = 'none'; };
+locModal.onclick = (e) => { if (e.target === locModal) locModal.style.display = 'none'; };
+
+// Duration chips selector
+document.querySelectorAll('.dur-chip').forEach(chip => {
+    chip.onclick = () => {
+        document.querySelectorAll('.dur-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        selectedLiveHours = Number(chip.getAttribute('data-hours'));
+    };
+});
+
+// Option 1: Send One-Time Current Location
+document.getElementById('btn-send-current-loc').onclick = () => {
+    locModal.style.display = 'none';
+    const targetRoom = currentRoom;
+    const inp = document.getElementById('msg-input');
+    const prevPh = inp.placeholder;
+    inp.placeholder = "📍 Fetching GPS location...";
+
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        inp.placeholder = prevPh;
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const now = new Date();
+        const meta = getRoomMeta(targetRoom);
+
+        await addDoc(collection(db, targetRoom), {
+            type: "location",
+            lat, lng, mapUrl,
+            text: `📍 Current Location (${lat}, ${lng})`,
+            originalAuditText: `📍 Current Location: ${mapUrl}`,
+            uid: myUid, accountCode: myAccountCode, name: myName,
+            shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
+            sentMs: Date.now(), vanishTimer: meta.timer || "off",
+            timestamp: serverTimestamp(), replyTo: replyTarget, seenStatus: false, manualUnseen: false,
+            reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
+        });
+        replyTarget = null;
+        document.getElementById('reply-bar').style.display = 'none';
+    }, () => {
+        inp.placeholder = prevPh;
+        alert("⚠️ Location permission denied or GPS is off. Please allow location in browser settings.");
+    }, { enableHighAccuracy: true, timeout: 12000 });
+};
+
+// Option 2: Start Live Location Sharing
+document.getElementById('btn-start-live-loc').onclick = () => {
+    locModal.style.display = 'none';
+    const targetRoom = currentRoom;
+    const hours = selectedLiveHours;
+    const inp = document.getElementById('msg-input');
+    const prevPh = inp.placeholder;
+    inp.placeholder = "🛰️ Starting Live Location...";
+
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        inp.placeholder = prevPh;
+
+        // If already sharing live location in this room, stop previous one first
+        if (activeLiveSessions[targetRoom]) {
+            await stopLiveLocation(targetRoom, activeLiveSessions[targetRoom].msgId);
+        }
+
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const now = new Date();
+        const meta = getRoomMeta(targetRoom);
+
+        const expiresAt = hours > 0 ? (Date.now() + hours * 3600000) : 0;
+        const endStr = hours > 0 ? getShortTime(new Date(expiresAt)) : "";
+        const durLabel = hours === 0 ? "Until turned off" : (hours === 1 ? `1 hr (until ${endStr})` : `${hours} hrs (until ${endStr})`);
+
+        const docRef = await addDoc(collection(db, targetRoom), {
+            type: "live_location",
+            isLiveActive: true,
+            liveDurationHours: hours,
+            liveDurationLabel: durLabel,
+            liveExpiresAt: expiresAt,
+            lastUpdatedStr: getShortTime(now),
+            lat, lng, mapUrl,
+            text: `🛰️ Live Location (${durLabel})`,
+            originalAuditText: `🛰️ Live Location (${durLabel}): ${mapUrl}`,
+            uid: myUid, accountCode: myAccountCode, name: myName,
+            shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
+            sentMs: Date.now(), vanishTimer: meta.timer || "off",
+            timestamp: serverTimestamp(), replyTo: replyTarget, seenStatus: false, manualUnseen: false,
+            reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
+        });
+        replyTarget = null;
+        document.getElementById('reply-bar').style.display = 'none';
+
+        const session = {
+            msgId: docRef.id,
+            watchId: null,
+            expireTimer: null,
+            label: durLabel,
+            lastUpdateMs: Date.now()
+        };
+
+        // Start continuous GPS watcher (throttled to every 6 seconds to save battery & quota)
+        session.watchId = navigator.geolocation.watchPosition(async (p) => {
+            if (!activeLiveSessions[targetRoom] || activeLiveSessions[targetRoom].msgId !== docRef.id) return;
+            if (expiresAt > 0 && Date.now() >= expiresAt) {
+                stopLiveLocation(targetRoom, docRef.id);
+                return;
+            }
+            if (Date.now() - session.lastUpdateMs < 6000) return;
+            session.lastUpdateMs = Date.now();
+
+            const nLat = p.coords.latitude.toFixed(6);
+            const nLng = p.coords.longitude.toFixed(6);
+            const nUrl = `https://www.google.com/maps?q=${nLat},${nLng}`;
+            try {
+                await updateDoc(doc(db, targetRoom, docRef.id), {
+                    lat: nLat,
+                    lng: nLng,
+                    mapUrl: nUrl,
+                    lastUpdatedStr: getShortTime(new Date()),
+                    originalAuditText: `🛰️ Live Location (${durLabel}): ${nUrl}`
+                });
+            } catch (e) {}
+        }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+
+        if (expiresAt > 0) {
+            session.expireTimer = setTimeout(() => {
+                stopLiveLocation(targetRoom, docRef.id);
+            }, hours * 3600000);
+        }
+
+        activeLiveSessions[targetRoom] = session;
+        refreshLiveBanner();
+    }, () => {
+        inp.placeholder = prevPh;
+        alert("⚠️ Location permission denied or GPS is off. Please allow location in browser settings.");
+    }, { enableHighAccuracy: true, timeout: 12000 });
+};
 
 async function sendMessage() {
     if (!currentRoom) return alert("Please add or select a friend first!");
@@ -782,12 +929,42 @@ function listenToMessages(roomId) {
 
             let quote = m.replyTo ? `<div class="msg-quote"><b>${m.replyTo.name}</b><br>${m.replyTo.text}</div>` : '';
             let body = '';
-            if (m.type === 'location') {
+
+            if (m.type === 'live_location') {
+                const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
+                const isExpired = m.liveExpiresAt && m.liveExpiresAt > 0 && Date.now() > m.liveExpiresAt;
+                const isActive = !!m.isLiveActive && !isExpired;
+
+                if (m.isLiveActive && isExpired && isMe) {
+                    stopLiveLocation(roomId, id);
+                }
+
+                const statusLine = isActive
+                    ? `${m.liveDurationLabel || 'Live'} • Updated ${m.lastUpdatedStr || m.shortTime}`
+                    : `Live location ended • Last at ${m.lastUpdatedStr || m.shortTime}`;
+
+                body = `<a href="${url}" target="_blank" rel="noopener" class="loc-card ${isActive ? 'live-active' : 'live-ended'}" onclick="event.stopPropagation()">
+                    <span class="material-icons" style="font-size:27px; color:${isActive ? '#10b981' : '#94a3b8'};">share_location</span>
+                    <div style="overflow:hidden;">
+                        <div style="font-weight:700; font-size:13px; color:${isActive ? '#fff' : '#cbd5e1'}; display:flex; align-items:center;">
+                            Live Location ${isActive ? '<span class="live-tag">● LIVE</span>' : ''}
+                        </div>
+                        <div style="font-size:11px; color:#cbd5e1;">${statusLine}</div>
+                        <div style="font-size:10.5px; color:#00f2fe; margin-top:2px;">Tap to open on Map</div>
+                    </div>
+                </a>`;
+
+                if (isActive && isMe) {
+                    body += `<button class="stop-live-btn" onclick="event.stopPropagation(); window.stopLiveLocation('${roomId}', '${id}')">
+                        <span class="material-icons" style="font-size:15px;">stop_circle</span> Stop Sharing Live Location
+                    </button>`;
+                }
+            } else if (m.type === 'location') {
                 const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
                 body = `<a href="${url}" target="_blank" rel="noopener" class="loc-card" onclick="event.stopPropagation()">
                     <span class="material-icons" style="font-size:26px; color:#10b981;">location_on</span>
                     <div>
-                        <div style="font-weight:700; font-size:13px; color:#00f2fe;">Shared Location</div>
+                        <div style="font-weight:700; font-size:13px; color:#00f2fe;">Current Location</div>
                         <div style="font-size:11px; color:#cbd5e1;">${m.lat}, ${m.lng} • Tap to open Map</div>
                     </div>
                 </a>`;
@@ -867,7 +1044,7 @@ async function openViewOnceModal(id, m) {
 const overlay = document.getElementById('msg-overlay');
 function openContextMenu(e, id, m) {
     const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
-    const dec = m.type === 'location' ? (m.mapUrl || m.text) : decryptText(m.text, encKey);
+    const dec = (m.type === 'location' || m.type === 'live_location') ? (m.mapUrl || m.text) : decryptText(m.text, encKey);
     selectedMsg = { id, ...m, decrypted: dec };
     overlay.style.display = 'block';
     const x = Math.max(10, Math.min(e.clientX - 90, window.innerWidth - 235));
@@ -931,6 +1108,9 @@ document.getElementById('cm-seen').onclick = async () => {
 document.getElementById('cm-del').onclick = async () => {
     let ans = prompt("Delete message?\n1. Delete for me\n2. Delete for everyone");
     if (!ans) return;
+    if (selectedMsg.type === 'live_location' && selectedMsg.isLiveActive && isMyMessage(selectedMsg)) {
+        await stopLiveLocation(currentRoom, selectedMsg.id);
+    }
     if (ans.trim() === "1") {
         let d = selectedMsg.deletedFor || [];
         d.push(myUid);
@@ -1333,4 +1513,3 @@ document.getElementById('god-wipe-btn').onclick = async () => {
     for (const d of snap.docs) await deleteDoc(doc(db, godRoom, d.id));
     window.inspectGod(godRoom);
 };
-
