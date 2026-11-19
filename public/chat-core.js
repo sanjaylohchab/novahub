@@ -1333,3 +1333,4 @@ document.getElementById('god-wipe-btn').onclick = async () => {
     for (const d of snap.docs) await deleteDoc(doc(db, godRoom, d.id));
     window.inspectGod(godRoom);
 };
+
