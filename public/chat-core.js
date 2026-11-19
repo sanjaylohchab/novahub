@@ -1,6 +1,6 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Unified Game + Messenger Engine | Strict Seen Logic | 1-on-1 DM & Calls
+// Unified Game + Messenger | Location Share | Strict Seen | 1-on-1 DM & Calls
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -24,7 +24,6 @@ const storage = getStorage(app);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(() => {});
 
-// Detect if running inside a Game Popup (universal-chat.js iframe)
 const isWidgetMode = new URLSearchParams(window.location.search).get('widget') === '1' || (window.self !== window.top);
 let isWidgetOpen = !isWidgetMode;
 let isRoomActivelyOpen = false;
@@ -53,7 +52,6 @@ window.addEventListener('message', (e) => {
     }
 });
 
-// Wire Widget Close & Long-Press Panic Hide buttons
 function bindWidgetCloseBtn(btnId) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
@@ -195,7 +193,6 @@ function isMyMessage(m) {
     return !!(myUid && m.uid === myUid);
 }
 
-// STRICT CHECK: Returns true ONLY when user is genuinely looking inside this friend's chat!
 function isChatActivelyVisible() {
     if (!currentRoom || !isRoomActivelyOpen) return false;
     if (document.visibilityState !== 'visible') return false;
@@ -263,7 +260,6 @@ function startAuthenticatedSession() {
     renderSidebarList();
     renderActiveStrip();
 
-    // Background listen to last room for alerts & incoming calls WITHOUT opening/marking seen!
     const lastId = localStorage.getItem('nova_last_room');
     const bgRoom = savedRooms.find(r => r.id === lastId) || savedRooms[0];
     if (bgRoom) {
@@ -438,7 +434,7 @@ function selectRoom(roomId, openUI = true) {
 }
 
 // ============================================================================
-// 3. ENCRYPTION, NOTIFICATIONS & MESSAGES
+// 3. ENCRYPTION, NOTIFICATIONS, LOCATION SHARE & MESSAGES
 // ============================================================================
 function encryptText(plainText, key) {
     if (!key) return plainText;
@@ -552,6 +548,59 @@ function listenToPresence(roomId) {
 
 function getDateGroupLabel(d = new Date()) { return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
 function getShortTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+// SHARE CURRENT LOCATION BUTTON HANDLER
+const locBtn = document.getElementById('btn-share-location');
+if (locBtn) {
+    locBtn.onclick = () => {
+        if (!currentRoom) return alert("Please select a friend first!");
+        if (!navigator.geolocation) return alert("❌ Location is not supported on this device/browser.");
+        if (!confirm("📍 Share your current location in this chat?")) return;
+
+        const inp = document.getElementById('msg-input');
+        const prevPh = inp.placeholder;
+        inp.placeholder = "📍 Fetching GPS location...";
+
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            inp.placeholder = prevPh;
+            const lat = pos.coords.latitude.toFixed(6);
+            const lng = pos.coords.longitude.toFixed(6);
+            const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+            const now = new Date();
+            const meta = getRoomMeta(currentRoom);
+
+            await addDoc(collection(db, currentRoom), {
+                type: "location",
+                lat,
+                lng,
+                mapUrl,
+                text: `📍 Location (${lat}, ${lng})`,
+                originalAuditText: `📍 Location: ${mapUrl}`,
+                uid: myUid,
+                accountCode: myAccountCode,
+                name: myName,
+                shortTime: getShortTime(now),
+                dateLabel: getDateGroupLabel(now),
+                sentAtStr: now.toLocaleString(),
+                sentMs: Date.now(),
+                vanishTimer: meta.timer || "off",
+                timestamp: serverTimestamp(),
+                replyTo: replyTarget,
+                seenStatus: false,
+                manualUnseen: false,
+                reactions: {},
+                starredBy: [],
+                deletedFor: [],
+                isDeletedEveryone: false
+            });
+            replyTarget = null;
+            document.getElementById('reply-bar').style.display = 'none';
+        }, (err) => {
+            inp.placeholder = prevPh;
+            alert("⚠️ Location access denied or GPS is turned off. Please allow location permission in browser settings.");
+        }, { enableHighAccuracy: true, timeout: 12000 });
+    };
+}
 
 async function sendMessage() {
     if (!currentRoom) return alert("Please add or select a friend first!");
@@ -733,7 +782,16 @@ function listenToMessages(roomId) {
 
             let quote = m.replyTo ? `<div class="msg-quote"><b>${m.replyTo.name}</b><br>${m.replyTo.text}</div>` : '';
             let body = '';
-            if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
+            if (m.type === 'location') {
+                const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
+                body = `<a href="${url}" target="_blank" rel="noopener" class="loc-card" onclick="event.stopPropagation()">
+                    <span class="material-icons" style="font-size:26px; color:#10b981;">location_on</span>
+                    <div>
+                        <div style="font-weight:700; font-size:13px; color:#00f2fe;">Shared Location</div>
+                        <div style="font-size:11px; color:#cbd5e1;">${m.lat}, ${m.lng} • Tap to open Map</div>
+                    </div>
+                </a>`;
+            } else if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
                 if (m.isViewOnce) {
                     const opened = m.viewedBy && m.viewedBy.includes(myUid);
                     body = opened
@@ -809,7 +867,8 @@ async function openViewOnceModal(id, m) {
 const overlay = document.getElementById('msg-overlay');
 function openContextMenu(e, id, m) {
     const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
-    selectedMsg = { id, ...m, decrypted: decryptText(m.text, encKey) };
+    const dec = m.type === 'location' ? (m.mapUrl || m.text) : decryptText(m.text, encKey);
+    selectedMsg = { id, ...m, decrypted: dec };
     overlay.style.display = 'block';
     const x = Math.max(10, Math.min(e.clientX - 90, window.innerWidth - 235));
     const y = Math.max(60, Math.min(e.clientY, window.innerHeight - 310));
@@ -986,7 +1045,7 @@ document.getElementById('tab-status').onclick = () => {
     loadStories();
 };
 
-// Stealth Shield Gate (Works from BOTH Top Bar AND Chat Header next to Call Buttons)
+// Stealth Shield Gate
 const cyberGate = document.getElementById('cyber-gate-screen');
 const openShieldGate = () => { cyberGate.style.display = 'flex'; };
 document.getElementById('btn-panic-now').onclick = openShieldGate;
