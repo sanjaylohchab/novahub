@@ -1,17 +1,20 @@
-self.addEventListener('install', (e) => {
+const CACHE_NAME = 'novahub-live-v5';
+
+self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
-self.addEventListener('activate', (e) => {
-    e.waitUntil(self.clients.claim());
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((keys) =>
+            Promise.all(keys.map((key) => caches.delete(key)))
+        ).then(() => self.clients.claim())
+    );
 });
 
-self.addEventListener('notificationclick', (e) => {
-    e.notification.close();
-    e.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            if (clientList.length > 0) return clientList[0].focus();
-            return clients.openWindow('/');
-        })
+self.addEventListener('fetch', (event) => {
+    if (event.request.method !== 'GET') return;
+    event.respondWith(
+        fetch(event.request).catch(() => caches.match(event.request))
     );
 });
