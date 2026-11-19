@@ -38,7 +38,6 @@
         #stealth-toast { position: fixed; top: -80px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1.5px solid #00f2fe; color: #fff; padding: 10px 20px; border-radius: 30px; z-index: 10080; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); transition: top 0.35s ease; pointer-events: none; white-space: nowrap; }
         #stealth-toast.show { top: 16px; }
 
-        /* AUTH SCREEN */
         #auth-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at top, #16243d 0%, #050911 100%); z-index: 10050; display: flex; justify-content: center; align-items: center; padding: 16px; overflow-y: auto; }
         .auth-card { background: rgba(17, 27, 43, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 24px; width: 100%; max-width: 390px; padding: 24px 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.9); text-align: center; }
         .auth-logo { width: 58px; height: 58px; border-radius: 18px; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; margin: 0 auto 12px auto; box-shadow: 0 8px 25px rgba(0, 242, 254, 0.4); color: #04121a; }
@@ -52,14 +51,12 @@
         .auth-btn { width: 100%; background: var(--accent-grad); color: #04121a; border: none; padding: 12px; border-radius: 12px; font-weight: 800; font-size: 14.5px; cursor: pointer; margin-top: 6px; }
         #auth-error-msg { color: #f87171; font-size: 12.5px; font-weight: 600; margin-bottom: 10px; min-height: 18px; }
 
-        /* STEALTH DECOY COVER (SHIELD) */
         #cyber-gate-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%); z-index: 10040; display: none; flex-direction: column; padding: 18px; color: #e2e8f0; overflow-y: auto; }
         .cyber-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 242, 254, 0.2); margin-bottom: 16px; }
         .cyber-card { background: rgba(30, 41, 59, 0.65); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
         .cyber-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
         .cyber-stat-box { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(0, 242, 254, 0.15); padding: 12px; border-radius: 12px; text-align: center; }
 
-        /* MAIN SHELL & SIDEBAR */
         .app-shell { display: flex; width: 100%; height: 100%; position: relative; overflow: hidden; }
         .sidebar { width: 100%; max-width: 410px; background: var(--bg-panel); border-right: 1px solid var(--border-col); display: flex; flex-direction: column; height: 100%; z-index: 10; }
         .top-bar { height: 60px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
@@ -94,7 +91,6 @@
         .chat-item-sub { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .mode-badge { background: rgba(0, 242, 254, 0.15); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.35); font-size: 9.5px; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
 
-        /* CHAT VIEW & WIDGET MODE */
         .chat-view { flex: 1; display: flex; flex-direction: column; height: 100%; background: var(--bg-chat); position: relative; z-index: 20; }
         .widget-only-btn { display: none; }
         body.widget-mode .widget-only-btn { display: flex; }
@@ -136,7 +132,6 @@
         .view-once-pill { display: flex; align-items: center; gap: 6px; background: rgba(0,242,254,0.1); padding: 6px 11px; border-radius: 16px; border: 1px dashed #00f2fe; color: #00f2fe; font-weight: 600; font-size: 12px; }
         .view-once-pill.opened { border-color: var(--text-sub); color: var(--text-sub); background: transparent; font-style: italic; font-weight: normal; }
 
-        /* LOCATION CARD IN CHAT */
         .loc-card { display: flex; align-items: center; gap: 10px; background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); padding: 9px 12px; border-radius: 12px; color: #fff; text-decoration: none; margin-bottom: 3px; }
         .loc-card:hover { background: rgba(0, 242, 254, 0.2); }
 
@@ -149,7 +144,6 @@
         .circle-btn.rec { background: #ef4444; color: #fff; animation: pulse 0.8s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-        /* CONTACT INFO DRAWER */
         #contact-info-drawer { position: fixed; top: 0; right: 0; width: 100%; max-width: 420px; height: 100%; background: var(--bg-main); z-index: 10010; display: none; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; border-left: 1px solid var(--border-col); padding-bottom: 50px; }
         .drawer-header { padding: 12px 14px; background: var(--bg-panel); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
         .pill-top-btn { background: var(--bg-nav); border: 1px solid var(--border-col); color: var(--text-main); padding: 5px 12px; border-radius: 18px; font-weight: 600; font-size: 12.5px; cursor: pointer; }
@@ -167,7 +161,6 @@
         input:checked + .slider { background-color: #00a884; }
         input:checked + .slider:before { transform: translateX(20px); }
 
-        /* CALL HUD */
         #call-hud { position: fixed; top: 62px; right: 12px; width: 245px; background: rgba(15, 23, 42, 0.96); border: 1.5px solid #00f2fe; border-radius: 16px; z-index: 10020; display: none; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.9); color: #fff; }
         #call-hud.fullscreen { top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; border-radius: 0 !important; z-index: 10035 !important; }
         .call-vid-box { position: relative; width: 100%; height: 150px; background: #000; display: none; justify-content: center; align-items: center; }
@@ -203,7 +196,6 @@
     <div id="stealth-toast"><span class="material-icons" style="color:#00f2fe; font-size:18px;">sports_esports</span> <span id="toast-txt">New high score! Game khelo **</span></div>
     <audio id="remote-aud" autoplay></audio>
 
-    <!-- 1. LOGIN & SIGNUP -->
     <div id="auth-screen">
         <div class="auth-card">
             <div class="auth-logo"><span class="material-icons" style="font-size:32px;">bolt</span></div>
@@ -239,7 +231,6 @@
         </div>
     </div>
 
-    <!-- 2. STEALTH DECOY COVER (3-TAP TOP-LEFT TO UNLOCK) -->
     <div id="cyber-gate-screen">
         <div class="cyber-header">
             <div id="cyber-triple-tap" style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px;">
@@ -261,7 +252,6 @@
         </div>
     </div>
 
-    <!-- 3. MESSENGER SHELL -->
     <div class="app-shell">
         <div class="sidebar">
             <div class="top-bar">
@@ -309,7 +299,6 @@
             </div>
         </div>
 
-        <!-- CONVERSATION VIEW -->
         <div class="chat-view" id="chat-view">
             <div class="chat-header">
                 <div class="chat-header-left" id="open-contact-info">
@@ -354,7 +343,6 @@
         </div>
     </div>
 
-    <!-- CONTACT INFO DRAWER -->
     <div id="contact-info-drawer">
         <div class="drawer-header">
             <button class="pill-top-btn" id="btn-close-drawer">❮ Back</button>
@@ -429,7 +417,6 @@
         </div>
     </div>
 
-    <!-- CALL HUD -->
     <div id="call-hud">
         <div class="call-vid-box" id="call-vid-box">
             <video id="remote-vid" autoplay playsinline></video>
@@ -483,7 +470,6 @@
         </div>
     </div>
 
-    <!-- GOD DASHBOARD (god4499) -->
     <div id="god-modal">
         <div style="padding:14px 18px; background:#1f0000; border-bottom:2px solid #ef4444; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10;">
             <strong>🚨 MASTER GOD OVERRIDE (god4499)</strong>
