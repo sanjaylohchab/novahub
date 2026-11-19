@@ -42,7 +42,7 @@
             <div class="uchat-badge" id="uchat-badge">0</div>
         </div>
         <div class="uchat-box" id="uchat-box">
-            <iframe id="uchat-iframe" src="chat.html?widget=1" allow="camera; microphone; autoplay; clipboard-read; clipboard-write; fullscreen"></iframe>
+            <iframe id="uchat-iframe" src="chat.html?widget=1" allow="camera; microphone; geolocation; autoplay; clipboard-read; clipboard-write; fullscreen"></iframe>
         </div>
     `;
     document.body.appendChild(wrap);
