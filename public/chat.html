@@ -110,6 +110,10 @@
         .chat-title-name { font-weight: 700; font-size: 14.5px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
         .chat-title-status { font-size: 11px; color: #00f2fe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+        /* ACTIVE LIVE LOCATION BANNER */
+        #active-live-banner { background: rgba(16, 185, 129, 0.16); border-bottom: 1px solid rgba(16, 185, 129, 0.4); padding: 7px 12px; display: none; justify-content: space-between; align-items: center; font-size: 12px; color: #a7f3d0; flex-shrink: 0; }
+        .live-pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; margin-right: 6px; animation: pulse 1s infinite; }
+
         .msgs-container { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 0); background-size: 22px 22px; }
         .date-pill { align-self: center; background: var(--bg-nav); color: var(--text-sub); font-size: 10.5px; font-weight: 600; padding: 3px 11px; border-radius: 12px; margin: 6px 0; border: 1px solid var(--border-col); }
 
@@ -132,8 +136,19 @@
         .view-once-pill { display: flex; align-items: center; gap: 6px; background: rgba(0,242,254,0.1); padding: 6px 11px; border-radius: 16px; border: 1px dashed #00f2fe; color: #00f2fe; font-weight: 600; font-size: 12px; }
         .view-once-pill.opened { border-color: var(--text-sub); color: var(--text-sub); background: transparent; font-style: italic; font-weight: normal; }
 
-        .loc-card { display: flex; align-items: center; gap: 10px; background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); padding: 9px 12px; border-radius: 12px; color: #fff; text-decoration: none; margin-bottom: 3px; }
-        .loc-card:hover { background: rgba(0, 242, 254, 0.2); }
+        /* LOCATION & LIVE LOCATION CARDS */
+        .loc-card { display: flex; align-items: center; gap: 10px; background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); padding: 9px 12px; border-radius: 12px; color: #fff; text-decoration: none; margin-bottom: 4px; min-width: 205px; }
+        .loc-card.live-active { background: rgba(16, 185, 129, 0.16); border-color: #10b981; }
+        .loc-card.live-ended { background: rgba(148, 163, 184, 0.1); border-color: rgba(148, 163, 184, 0.3); opacity: 0.85; }
+        .live-tag { display: inline-flex; align-items: center; gap: 4px; background: #ef4444; color: #fff; font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 8px; margin-left: 5px; letter-spacing: 0.4px; }
+        .stop-live-btn { width: 100%; background: rgba(239, 68, 68, 0.22); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.5); padding: 6px 10px; border-radius: 9px; font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 2px; margin-bottom: 4px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+
+        /* LOCATION PICKER MODAL */
+        .loc-opt-card { background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 14px; padding: 13px; margin-bottom: 12px; }
+        .loc-action-btn { width: 100%; padding: 11px 14px; border-radius: 12px; border: none; font-weight: 800; font-size: 13.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .dur-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 12px 0; }
+        .dur-chip { padding: 9px 8px; border-radius: 10px; background: var(--bg-panel); border: 1.5px solid var(--border-col); color: var(--text-sub); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; transition: 0.15s; }
+        .dur-chip.active { background: rgba(16, 185, 129, 0.18); border-color: #10b981; color: #10b981; }
 
         .reply-preview-bar { background: var(--bg-nav); padding: 6px 12px; border-top: 1px solid var(--border-col); display: none; justify-content: space-between; align-items: center; font-size: 12px; flex-shrink: 0; }
         .chat-input-bar { padding: 7px 8px; background: var(--bg-nav); display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border-col); flex-shrink: 0; }
@@ -320,6 +335,15 @@
                 </div>
             </div>
 
+            <!-- ACTIVE LIVE LOCATION BANNER -->
+            <div id="active-live-banner">
+                <div style="display:flex; align-items:center; overflow:hidden;">
+                    <span class="live-pulse-dot"></span>
+                    <span id="active-live-text" style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Sharing Live Location...</span>
+                </div>
+                <button id="btn-banner-stop-live" style="background:#ef4444; color:#fff; border:none; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; cursor:pointer; flex-shrink:0; margin-left:8px;">STOP</button>
+            </div>
+
             <div class="msgs-container" id="msgs-container"></div>
 
             <div class="reply-preview-bar" id="reply-bar">
@@ -333,12 +357,44 @@
             <div class="chat-input-bar">
                 <span class="material-icons" id="btn-emoji" style="color:var(--text-sub); cursor:pointer; font-size:21px;">sentiment_satisfied_alt</span>
                 <span class="material-icons" id="btn-attach" style="color:var(--text-sub); cursor:pointer; font-size:21px;" title="Send Photo/Video">attach_file</span>
-                <span class="material-icons" id="btn-share-location" style="color:#10b981; cursor:pointer; font-size:21px;" title="Share Current Location">location_on</span>
+                <span class="material-icons" id="btn-share-location" style="color:#10b981; cursor:pointer; font-size:21px;" title="Share Current or Live Location">location_on</span>
                 <input type="file" id="msg-file-input" accept="image/*,video/*" style="display:none;">
                 <div class="vo-toggle" id="btn-vo-toggle" title="1-Time View Media">1</div>
                 <input type="text" id="msg-input" class="msg-input" placeholder="Message...">
                 <button class="circle-btn" id="btn-vn-rec" style="background:#334155; color:#fff;"><span class="material-icons" style="font-size:18px;" id="vn-icon">mic</span></button>
                 <button class="circle-btn" id="btn-send-msg"><span class="material-icons" style="font-size:18px;">send</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WHATSAPP-STYLE LOCATION PICKER MODAL -->
+    <div class="modal-bg" id="location-modal">
+        <div class="modal-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
+                <strong style="color:#00f2fe; display:flex; align-items:center; gap:6px;"><span class="material-icons" style="color:#10b981;">location_on</span> Share Location</strong>
+                <span class="material-icons" style="cursor:pointer;" id="btn-close-loc-modal">close</span>
+            </div>
+
+            <div class="loc-opt-card">
+                <div style="font-size:13px; font-weight:700; margin-bottom:4px;">📌 Current Location</div>
+                <div style="font-size:11.5px; color:var(--text-sub); margin-bottom:10px;">Send your exact one-time GPS location pin.</div>
+                <button class="loc-action-btn" id="btn-send-current-loc" style="background:rgba(0,242,254,0.16); color:#00f2fe; border:1px solid #00f2fe;">
+                    <span class="material-icons" style="font-size:18px;">my_location</span> Send Current Location
+                </button>
+            </div>
+
+            <div class="loc-opt-card" style="margin-bottom:0;">
+                <div style="font-size:13px; font-weight:700; margin-bottom:4px;">🛰️ Share Live Location</div>
+                <div style="font-size:11.5px; color:var(--text-sub);">Updates in real-time. You can stop anytime.</div>
+                <div class="dur-grid" id="live-dur-grid">
+                    <div class="dur-chip active" data-hours="1">⏱️ 1 Hour</div>
+                    <div class="dur-chip" data-hours="8">🕒 8 Hours</div>
+                    <div class="dur-chip" data-hours="24">📅 24 Hours</div>
+                    <div class="dur-chip" data-hours="0">♾️ Until I turn off</div>
+                </div>
+                <button class="loc-action-btn" id="btn-start-live-loc" style="background:var(--accent-grad); color:#04121a;">
+                    <span class="material-icons" style="font-size:18px;">share_location</span> Start Live Location
+                </button>
             </div>
         </div>
     </div>
