@@ -1,6 +1,6 @@
-const CACHE_NAME = 'novahub-live-v5';
+const CACHE_NAME = 'novahub-live-v6';
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
     self.skipWaiting();
 });
 
