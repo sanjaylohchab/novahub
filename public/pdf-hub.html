@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NovaHub - PDF Hub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #060b13;
+            --card: #0f172a;
+            --nav: #131e31;
+            --border: rgba(255, 255, 255, 0.09);
+            --text: #f1f5f9;
+            --sub: #94a3b8;
+            --red: #f43f5e;
+            --cyan: #00f2fe;
+            --green: #10b981;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); color: var(--text); min-height: 100dvh; padding-bottom: 90px; }
+        button, .tab-btn, .pdf-card { touch-action: manipulation; user-select: none; }
+
+        .header { position: sticky; top: 0; z-index: 50; height: 58px; background: var(--nav); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .icon-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.08); border: none; color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; text-decoration: none; }
+        .icon-btn:active { transform: scale(0.92); }
+        .title-txt { font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+
+        .tabs { display: flex; background: var(--card); margin: 12px; padding: 4px; border-radius: 14px; border: 1px solid var(--border); gap: 4px; }
+        .tab-btn { flex: 1; padding: 10px 6px; border-radius: 10px; border: none; background: transparent; color: var(--sub); font-weight: 700; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .tab-btn.active { background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; }
+
+        .section { display: none; padding: 0 12px; }
+        .section.active { display: block; }
+
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+        .big-btn { background: var(--card); border: 1.5px dashed rgba(244,63,94,0.45); border-radius: 16px; padding: 16px 10px; color: var(--text); display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; text-align: center; }
+        .big-btn:active { transform: scale(0.97); }
+        .big-btn.cyan { border-color: rgba(0,242,254,0.45); }
+        .big-btn .material-icons { font-size: 28px; }
+        .big-btn span { font-size: 12.5px; font-weight: 700; }
+        .big-btn small { font-size: 10.5px; color: var(--sub); }
+
+        .list-title { font-size: 11.5px; font-weight: 800; color: var(--sub); text-transform: uppercase; letter-spacing: 0.6px; margin: 10px 4px 8px 4px; display: flex; justify-content: space-between; }
+        .empty-box { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px 16px; text-align: center; color: var(--sub); font-size: 13px; line-height: 1.6; }
+
+        .pdf-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 11px; }
+        .pdf-ico { width: 44px; height: 44px; border-radius: 12px; background: rgba(244,63,94,0.16); color: var(--red); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .pdf-info { flex: 1; min-width: 0; cursor: pointer; }
+        .pdf-name { font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+        .pdf-meta { font-size: 11px; color: var(--sub); }
+        .pdf-actions { display: flex; gap: 5px; flex-shrink: 0; }
+
+        .maker-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+        .inp { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 11px 13px; border-radius: 12px; font-size: 14px; outline: none; margin-bottom: 12px; }
+        .inp:focus { border-color: var(--cyan); }
+        .primary-btn { width: 100%; background: linear-gradient(135deg, #00f2fe, #00a884); color: #04121a; border: none; padding: 12px; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; }
+        .secondary-btn { width: 100%; background: rgba(255,255,255,0.08); color: var(--text); border: 1px solid var(--border); padding: 11px; border-radius: 12px; font-weight: 700; font-size: 13.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; }
+        .thumb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+        .thumb-wrap { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: #000; }
+        .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .thumb-del { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(239,68,68,0.9); color: #fff; border: none; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+        /* FULLSCREEN PDF READER OVERLAY */
+        #reader-modal { position: fixed; inset: 0; background: #050911; z-index: 200; display: none; flex-direction: column; }
+        #reader-modal.open { display: flex; }
+        .reader-top { height: 54px; background: var(--nav); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 10px; gap: 8px; flex-shrink: 0; }
+        .reader-title { flex: 1; font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .reader-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 12px; background: #0b1120; }
+        #pdf-canvas { max-width: 100%; height: auto; border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.8); background: #fff; }
+        .reader-bar { height: 56px; background: var(--nav); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; flex-shrink: 0; }
+        .page-pill { font-size: 12.5px; font-weight: 800; color: var(--cyan); background: rgba(0,242,254,0.12); padding: 5px 12px; border-radius: 16px; }
+
+        /* VAULT PIN LOCK OVERLAY & MODAL */
+        .modal-bg { position: fixed; inset: 0; background: rgba(5,9,17,0.94); z-index: 300; display: none; justify-content: center; align-items: center; padding: 18px; }
+        .modal-bg.open { display: flex; }
+        .modal-card { width: 100%; max-width: 340px; background: var(--card); border: 1.5px solid rgba(0,242,254,0.3); border-radius: 20px; padding: 20px; text-align: center; }
+
+        #toast { position: fixed; top: -70px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1.5px solid var(--cyan); color: #fff; padding: 9px 18px; border-radius: 30px; font-size: 12.5px; font-weight: 600; z-index: 500; transition: top 0.25s ease; white-space: nowrap; }
+        #toast.show { top: 16px; }
+    </style>
+</head>
+<body>
+    <div id="toast">Done</div>
+
+    <div class="header">
+        <div class="header-left">
+            <a href="index.html" class="icon-btn" title="Back to Home"><span class="material-icons">arrow_back</span></a>
+            <div class="title-txt"><span class="material-icons" style="color:var(--red);">picture_as_pdf</span> PDF Hub</div>
+        </div>
+        <button class="icon-btn" id="btn-vault-lock-cfg" type="button" title="PDF Vault PIN Lock"><span class="material-icons" id="lock-ico">lock_open</span></button>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-vault" type="button"><span class="material-icons" style="font-size:17px;">folder_special</span> Reader & Vault</button>
+        <button class="tab-btn" id="tab-maker" type="button"><span class="material-icons" style="font-size:17px;">add_photo_alternate</span> Photo to PDF</button>
+    </div>
+
+    <!-- TAB 1: PDF READER & PRIVATE VAULT -->
+    <div class="section active" id="sec-vault">
+        <div class="action-grid">
+            <div class="big-btn" id="btn-save-pdf">
+                <span class="material-icons" style="color:var(--red);">upload_file</span>
+                <span>Save to Vault</span>
+                <small>Private Offline Locker</small>
+            </div>
+            <div class="big-btn cyan" id="btn-quick-read">
+                <span class="material-icons" style="color:var(--cyan);">menu_book</span>
+                <span>Quick Read PDF</span>
+                <small>Open without saving</small>
+            </div>
+        </div>
+        <input type="file" id="inp-save-pdf" accept="application/pdf,.pdf" style="display:none;">
+        <input type="file" id="inp-quick-pdf" accept="application/pdf,.pdf" style="display:none;">
+
+        <div class="list-title">
+            <span>🔒 My Saved PDFs</span>
+            <span id="vault-count">0 Files</span>
+        </div>
+        <div id="vault-list"></div>
+    </div>
+
+    <!-- TAB 2: PHOTO TO PDF MAKER -->
+    <div class="section" id="sec-maker">
+        <div class="maker-card">
+            <h3 style="font-size:15px; margin-bottom:4px;">📸 Photos se PDF Banayein</h3>
+            <p style="font-size:12px; color:var(--sub); margin-bottom:12px;">Notes, Bills, ya Photos select karein aur 1 click mein PDF banayein.</p>
+
+            <input type="text" id="pdf-out-name" class="inp" placeholder="PDF Name (e.g. My_Notes)" value="Nova_Document">
+            <input type="file" id="inp-maker-imgs" accept="image/*" multiple style="display:none;">
+
+            <button class="secondary-btn" id="btn-pick-imgs" type="button" style="border-style:dashed; border-color:var(--cyan); color:var(--cyan);">
+                <span class="material-icons">add_a_photo</span> Select Photos (<span id="img-count">0</span>)
+            </button>
+
+            <div class="thumb-grid" id="thumb-grid"></div>
+
+            <button class="primary-btn" id="btn-make-save" type="button"><span class="material-icons">save</span> Create & Save to Vault</button>
+            <button class="secondary-btn" id="btn-make-dl" type="button"><span class="material-icons">download</span> Create & Download PDF</button>
+        </div>
+    </div>
+
+    <!-- FULLSCREEN PDF READER -->
+    <div id="reader-modal">
+        <div class="reader-top">
+            <button class="icon-btn" id="btn-close-reader" type="button"><span class="material-icons">close</span></button>
+            <div class="reader-title" id="reader-title">Document.pdf</div>
+            <button class="icon-btn" id="btn-reader-dl" type="button" title="Download PDF"><span class="material-icons" style="color:var(--green);">download</span></button>
+        </div>
+        <div class="reader-body">
+            <canvas id="pdf-canvas"></canvas>
+        </div>
+        <div class="reader-bar">
+            <div style="display:flex; gap:6px;">
+                <button class="icon-btn" id="btn-prev-pg" type="button"><span class="material-icons">chevron_left</span></button>
+                <button class="icon-btn" id="btn-next-pg" type="button"><span class="material-icons">chevron_right</span></button>
+            </div>
+            <div class="page-pill" id="page-pill">Page 1 / 1</div>
+            <div style="display:flex; gap:6px;">
+                <button class="icon-btn" id="btn-zoom-out" type="button"><span class="material-icons">zoom_out</span></button>
+                <button class="icon-btn" id="btn-zoom-in" type="button"><span class="material-icons">zoom_in</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VAULT PIN UNLOCK SCREEN -->
+    <div class="modal-bg" id="pin-gate">
+        <div class="modal-card">
+            <span class="material-icons" style="font-size:40px; color:var(--cyan); margin-bottom:8px;">lock</span>
+            <h3 style="margin-bottom:4px;">PDF Vault Locked</h3>
+            <p style="font-size:12px; color:var(--sub); margin-bottom:14px;">Saved PDFs dekhne ke liye apna PIN daalein</p>
+            <input type="password" id="gate-pin-inp" class="inp" inputmode="numeric" placeholder="Enter PIN..." style="text-align:center; letter-spacing:4px; font-size:18px;">
+            <div id="gate-err" style="color:#f87171; font-size:12px; min-height:18px; margin-bottom:6px;"></div>
+            <button class="primary-btn" id="btn-gate-unlock" type="button">🔓 Unlock PDF Hub</button>
+            <a href="index.html" style="display:inline-block; margin-top:12px; color:var(--sub); font-size:12px; text-decoration:none;">⬅ Back to Games</a>
+        </div>
+    </div>
+
+    <!-- VAULT PIN SETUP MODAL -->
+    <div class="modal-bg" id="pin-setup-modal">
+        <div class="modal-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <strong style="color:var(--cyan);">🔒 PDF Vault Lock</strong>
+                <span class="material-icons" style="cursor:pointer;" id="btn-close-pin-setup">close</span>
+            </div>
+            <p style="font-size:12px; color:var(--sub); margin-bottom:12px;">PIN lagane par koi bhi bina code ke aapki saved PDFs nahi khol payega.</p>
+            <input type="password" id="setup-pin-inp" class="inp" inputmode="numeric" placeholder="Set 4+ digit PIN...">
+            <button class="primary-btn" id="btn-enable-pin" type="button">🔒 Enable / Update PIN</button>
+            <button class="secondary-btn" id="btn-disable-pin" type="button" style="color:#f87171;">🔓 Turn OFF Lock</button>
+        </div>
+    </div>
+
+    <script>
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        const $ = id => document.getElementById(id);
+        let db = null;
+        let selectedImages = [];
+        let pdfDoc = null, currentPage = 1, currentScale = 1.35, activeBuffer = null, activeFileName = "Document.pdf";
+
+        function showToast(msg) {
+            const t = $('toast');
+            t.innerText = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(2) + ' MB';
+        }
+
+        // ==================== 1. INDEXEDDB PRIVATE VAULT ====================
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open('NovaHubMediaVault', 1);
+                req.onupgradeneeded = e => {
+                    const d = e.target.result;
+                    if (!d.objectStoreNames.contains('pdfs')) d.createObjectStore('pdfs', { keyPath: 'id' });
+                    if (!d.objectStoreNames.contains('sounds')) d.createObjectStore('sounds', { keyPath: 'id' });
+                    if (!d.objectStoreNames.contains('videos')) d.createObjectStore('videos', { keyPath: 'id' });
+                };
+                req.onsuccess = e => { db = e.target.result; resolve(db); };
+                req.onerror = e => reject(e);
+            });
+        }
+
+        function savePdfToDB(name, arrayBuffer) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('pdfs', 'readwrite');
+                const item = {
+                    id: 'pdf_' + Date.now(),
+                    name: name.endsWith('.pdf') ? name : name + '.pdf',
+                    size: arrayBuffer.byteLength,
+                    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    data: arrayBuffer
+                };
+                tx.objectStore('pdfs').put(item);
+                tx.oncomplete = () => resolve(item);
+                tx.onerror = e => reject(e);
+            });
+        }
+
+        function getAllPdfs() {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('pdfs', 'readonly');
+                const req = tx.objectStore('pdfs').getAll();
+                req.onsuccess = () => resolve(req.result.reverse());
+                req.onerror = e => reject(e);
+            });
+        }
+
+        function deletePdfFromDB(id) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('pdfs', 'readwrite');
+                tx.objectStore('pdfs').delete(id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = e => reject(e);
+            });
+        }
+
+        function downloadBuffer(buf, name) {
+            const blob = new Blob([buf], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name.endsWith('.pdf') ? name : name + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }
+
+        async function renderVault() {
+            const list = $('vault-list');
+            const items = await getAllPdfs();
+            $('vault-count').innerText = `${items.length} File${items.length === 1 ? '' : 's'}`;
+            if (!items.length) {
+                list.innerHTML = `<div class="empty-box">📂 <b>Abhi koi PDF saved nahi hai</b><br>Upar <b>Save to Vault</b> ya <b>Photo to PDF</b> se apni private PDF add karein.</div>`;
+                return;
+            }
+            list.innerHTML = '';
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'pdf-card';
+                card.innerHTML = `
+                    <div class="pdf-ico"><span class="material-icons">picture_as_pdf</span></div>
+                    <div class="pdf-info">
+                        <div class="pdf-name">${item.name}</div>
+                        <div class="pdf-meta">${formatSize(item.size)} • ${item.date}</div>
+                    </div>
+                    <div class="pdf-actions">
+                        <button class="icon-btn dl-btn" type="button" title="Download"><span class="material-icons" style="font-size:18px; color:var(--green);">download</span></button>
+                        <button class="icon-btn del-btn" type="button" title="Delete"><span class="material-icons" style="font-size:18px; color:#f87171;">delete</span></button>
+                    </div>
+                `;
+                card.querySelector('.pdf-info').onclick = () => openPdfReader(item.data, item.name);
+                card.querySelector('.pdf-ico').onclick = () => openPdfReader(item.data, item.name);
+                card.querySelector('.dl-btn').onclick = (e) => { e.stopPropagation(); downloadBuffer(item.data, item.name); showToast('📥 Downloading PDF...'); };
+                card.querySelector('.del-btn').onclick = async (e) => {
+                    e.stopPropagation();
+                    if (!confirm(`"${item.name}" delete karein?`)) return;
+                    await deletePdfFromDB(item.id);
+                    renderVault();
+                    showToast('🗑️ PDF deleted');
+                };
+                list.appendChild(card);
+            });
+        }
+
+        // ==================== 2. PDF READER ENGINE ====================
+        async function renderPage(num) {
+            if (!pdfDoc) return;
+            const page = await pdfDoc.getPage(num);
+            const canvas = $('pdf-canvas');
+            const ctx = canvas.getContext('2d');
+            const vp = page.getViewport({ scale: currentScale });
+            canvas.width = vp.width;
+            canvas.height = vp.height;
+            await page.render({ canvasContext: ctx, viewport: vp }).promise;
+            $('page-pill').innerText = `Page ${num} / ${pdfDoc.numPages}`;
+        }
+
+        async function openPdfReader(arrayBuffer, name) {
+            if (!window.pdfjsLib) { showToast('⚠️ Internet ON karein PDF Reader load ke liye'); return; }
+            try {
+                activeBuffer = arrayBuffer.slice(0);
+                activeFileName = name;
+                $('reader-title').innerText = name;
+                $('reader-modal').classList.add('open');
+                $('page-pill').innerText = 'Loading...';
+                const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) });
+                pdfDoc = await loadingTask.promise;
+                currentPage = 1;
+                currentScale = window.innerWidth < 500 ? 1.25 : 1.5;
+                await renderPage(currentPage);
+            } catch (err) {
+                $('reader-modal').classList.remove('open');
+                showToast('❌ PDF open nahi ho paayi');
+            }
+        }
+
+        $('btn-close-reader').onclick = () => { $('reader-modal').classList.remove('open'); pdfDoc = null; };
+        $('btn-reader-dl').onclick = () => { if (activeBuffer) downloadBuffer(activeBuffer, activeFileName); };
+        $('btn-prev-pg').onclick = () => { if (pdfDoc && currentPage > 1) { currentPage--; renderPage(currentPage); } };
+        $('btn-next-pg').onclick = () => { if (pdfDoc && currentPage < pdfDoc.numPages) { currentPage++; renderPage(currentPage); } };
+        $('btn-zoom-in').onclick = () => { if (pdfDoc && currentScale < 3) { currentScale += 0.3; renderPage(currentPage); } };
+        $('btn-zoom-out').onclick = () => { if (pdfDoc && currentScale > 0.6) { currentScale -= 0.3; renderPage(currentPage); } };
+
+        // ==================== 3. UPLOAD & QUICK READ ====================
+        $('btn-save-pdf').onclick = () => $('inp-save-pdf').click();
+        $('btn-quick-read').onclick = () => $('inp-quick-pdf').click();
+
+        $('inp-save-pdf').onchange = async function() {
+            const file = this.files[0];
+            if (!file) return;
+            this.value = '';
+            showToast('⏳ Saving to Vault...');
+            const buf = await file.arrayBuffer();
+            await savePdfToDB(file.name, buf);
+            await renderVault();
+            showToast('✅ Vault mein save ho gayi!');
+        };
+
+        $('inp-quick-pdf').onchange = async function() {
+            const file = this.files[0];
+            if (!file) return;
+            this.value = '';
+            const buf = await file.arrayBuffer();
+            openPdfReader(buf, file.name);
+        };
+
+        // ==================== 4. PHOTO TO PDF MAKER ====================
+        function renderThumbs() {
+            $('img-count').innerText = selectedImages.length;
+            const grid = $('thumb-grid');
+            grid.innerHTML = '';
+            selectedImages.forEach((src, idx) => {
+                const div = document.createElement('div');
+                div.className = 'thumb-wrap';
+                div.innerHTML = `<img src="${src}"><button class="thumb-del" type="button">×</button>`;
+                div.querySelector('.thumb-del').onclick = () => { selectedImages.splice(idx, 1); renderThumbs(); };
+                grid.appendChild(div);
+            });
+        }
+
+        function fileToCompressedDataURL(file) {
+            return new Promise((res, rej) => {
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const c = document.createElement('canvas');
+                        let w = img.width, h = img.height, max = 1400;
+                        if (w > max) { h = Math.round(h * max / w); w = max; }
+                        c.width = w; c.height = h;
+                        c.getContext('2d').drawImage(img, 0, 0, w, h);
+                        res(c.toDataURL('image/jpeg', 0.82));
+                    };
+                    img.onerror = rej;
+                    img.src = ev.target.result;
+                };
+                reader.onerror = rej;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        $('btn-pick-imgs').onclick = () => $('inp-maker-imgs').click();
+        $('inp-maker-imgs').onchange = async function() {
+            const files = Array.from(this.files || []);
+            this.value = '';
+            if (!files.length) return;
+            showToast('⏳ Photos load ho rahi hain...');
+            for (const f of files) {
+                const dataUrl = await fileToCompressedDataURL(f);
+                selectedImages.push(dataUrl);
+            }
+            renderThumbs();
+            showToast(`✅ ${files.length} photo add ho gayi`);
+        };
+
+        async function buildPdfFromImages() {
+            if (!selectedImages.length) { showToast('⚠️ Pehle kam se kam 1 photo select karein!'); return null; }
+            if (!window.jspdf) { showToast('⚠️ Internet ON karein PDF Maker ke liye'); return null; }
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+            const pw = doc.internal.pageSize.getWidth();
+            const ph = doc.internal.pageSize.getHeight();
+
+            for (let i = 0; i < selectedImages.length; i++) {
+                if (i > 0) doc.addPage();
+                const imgData = selectedImages[i];
+                const dims = await new Promise(res => {
+                    const im = new Image();
+                    im.onload = () => res({ w: im.width, h: im.height });
+                    im.src = imgData;
+                });
+                const ratio = Math.min((pw - 12) / dims.w, (ph - 12) / dims.h);
+                const w = dims.w * ratio, h = dims.h * ratio;
+                doc.addImage(imgData, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h);
+            }
+            return doc.output('arraybuffer');
+        }
+
+        $('btn-make-save').onclick = async () => {
+            const buf = await buildPdfFromImages();
+            if (!buf) return;
+            const name = ($('pdf-out-name').value.trim() || 'Nova_Document');
+            await savePdfToDB(name, buf);
+            selectedImages = [];
+            renderThumbs();
+            await renderVault();
+            $('tab-vault').click();
+            showToast('✅ PDF ban kar Vault mein save ho gayi!');
+        };
+
+        $('btn-make-dl').onclick = async () => {
+            const buf = await buildPdfFromImages();
+            if (!buf) return;
+            const name = ($('pdf-out-name').value.trim() || 'Nova_Document');
+            downloadBuffer(buf, name);
+            showToast('📥 PDF download ho rahi hai!');
+        };
+
+        // ==================== 5. TABS & OPTIONAL VAULT PIN LOCK ====================
+        $('tab-vault').onclick = () => {
+            $('tab-vault').classList.add('active'); $('tab-maker').classList.remove('active');
+            $('sec-vault').classList.add('active'); $('sec-maker').classList.remove('active');
+        };
+        $('tab-maker').onclick = () => {
+            $('tab-maker').classList.add('active'); $('tab-vault').classList.remove('active');
+            $('sec-maker').classList.add('active'); $('sec-vault').classList.remove('active');
+        };
+
+        function syncLockUI() {
+            const on = localStorage.getItem('nova_pdf_lock') === 'true' && !!localStorage.getItem('nova_pdf_pin');
+            $('lock-ico').innerText = on ? 'lock' : 'lock_open';
+            $('lock-ico').style.color = on ? '#10b981' : '#f1f5f9';
+            return on;
+        }
+
+        $('btn-vault-lock-cfg').onclick = () => {
+            $('setup-pin-inp').value = localStorage.getItem('nova_pdf_pin') || '';
+            $('pin-setup-modal').classList.add('open');
+        };
+        $('btn-close-pin-setup').onclick = () => $('pin-setup-modal').classList.remove('open');
+
+        $('btn-enable-pin').onclick = () => {
+            const pin = $('setup-pin-inp').value.trim();
+            if (pin.length < 4) { showToast('⚠️ Kam se kam 4 digit ka PIN daalein'); return; }
+            localStorage.setItem('nova_pdf_pin', pin);
+            localStorage.setItem('nova_pdf_lock', 'true');
+            syncLockUI();
+            $('pin-setup-modal').classList.remove('open');
+            showToast('🔒 PDF Vault Lock ON ho gaya!');
+        };
+
+        $('btn-disable-pin').onclick = () => {
+            localStorage.setItem('nova_pdf_lock', 'false');
+            syncLockUI();
+            $('pin-setup-modal').classList.remove('open');
+            showToast('🔓 PDF Vault Lock OFF ho gaya');
+        };
+
+        $('btn-gate-unlock').onclick = () => {
+            const val = $('gate-pin-inp').value.trim();
+            if (val === localStorage.getItem('nova_pdf_pin')) {
+                $('pin-gate').classList.remove('open');
+                $('gate-pin-inp').value = '';
+                $('gate-err').innerText = '';
+            } else {
+                $('gate-err').innerText = '❌ Galat PIN!';
+                $('gate-pin-inp').value = '';
+            }
+        };
+
+        // INIT
+        (async () => {
+            if (syncLockUI()) $('pin-gate').classList.add('open');
+            await initDB();
+            await renderVault();
+        })();
+    </script>
+    <script src="universal-chat.js"></script>
+</body>
+</html>
