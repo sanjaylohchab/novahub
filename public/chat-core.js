@@ -1,9 +1,9 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Unified Game + Messenger | Current & Live Location | Strict Seen | 1-on-1 DM
+// Fast Incremental DOM | Stable Video Playback | 0ms Panic Hide | Live Location
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -17,7 +17,7 @@ const firebaseConfig = {
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 let db;
-try { db = initializeFirestore(app, { experimentalForceLongPolling: true }, "default"); }
+try { db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, "default"); }
 catch (e) { db = getFirestore(app, "default"); }
 const storage = getStorage(app);
 
@@ -46,28 +46,17 @@ window.addEventListener('message', (e) => {
         updatePresence("online");
         markVisibleMessagesSeen();
         const box = document.getElementById('msgs-container');
-        if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 60);
+        if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
     } else if (!isWidgetOpen) {
         updatePresence("offline");
     }
 });
 
-function bindWidgetCloseBtn(btnId) {
-    const btn = document.getElementById(btnId);
-    if (!btn) return;
-    let holdTimer = null;
-    const startHold = () => { holdTimer = setTimeout(() => postToGame({ type: 'NOVA_PANIC_HIDE' }), 700); };
-    const clearHold = () => clearTimeout(holdTimer);
-    btn.addEventListener('mousedown', startHold);
-    btn.addEventListener('touchstart', startHold, { passive: true });
-    btn.addEventListener('mouseup', clearHold);
-    btn.addEventListener('touchend', clearHold);
-    btn.addEventListener('click', (e) => { e.stopPropagation(); clearHold(); postToGame({ type: 'NOVA_CLOSE_WIDGET' }); });
-}
-bindWidgetCloseBtn('btn-widget-close-side');
-bindWidgetCloseBtn('btn-widget-close-chat');
-const cyberCloseBtn = document.getElementById('btn-cyber-close-widget');
-if (cyberCloseBtn) cyberCloseBtn.onclick = () => postToGame({ type: 'NOVA_CLOSE_WIDGET' });
+// 0ms Instant Close Buttons for Game Widget
+['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.onclick = (e) => { e.stopPropagation(); postToGame({ type: 'NOVA_CLOSE_WIDGET' }); };
+});
 
 // ============================================================================
 // 1. STRICT AUTHENTICATION (1 CODE = 1 UNIQUE ID)
@@ -169,6 +158,7 @@ let unsubscribePresence = null;
 let unsubscribeCall = null;
 let unsubscribeAccountSync = null;
 let cachedMessages = {};
+const markingSeen = new Set();
 let selectedMsg = null;
 let replyTarget = null;
 let editingMsgId = null;
@@ -209,7 +199,8 @@ async function markVisibleMessagesSeen() {
     const nowTime = new Date().toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     for (const id in cachedMessages) {
         const m = cachedMessages[id];
-        if (!m || isMyMessage(m) || m.seenStatus || m.manualUnseen || m.isDeletedEveryone) continue;
+        if (!m || isMyMessage(m) || m.seenStatus || m.manualUnseen || m.isDeletedEveryone || markingSeen.has(id)) continue;
+        markingSeen.add(id);
         const vTimer = m.vanishTimer || "off";
         try {
             await updateDoc(doc(db, currentRoom, id), {
@@ -219,7 +210,9 @@ async function markVisibleMessagesSeen() {
                 seenMs: Date.now(),
                 ...(vTimer === "instant" ? { isDeletedEveryone: true, deletedByAudit: "Instant Snap Mode" } : {})
             });
-        } catch (e) {}
+        } catch (e) {} finally {
+            markingSeen.delete(id);
+        }
     }
 }
 
@@ -236,7 +229,7 @@ function startAuthenticatedSession() {
         dpEl.style.backgroundImage = `url(${myDp})`;
     } else {
         dpEl.style.backgroundImage = '';
-        dpEl.innerHTML = `<span class="material-icons" style="font-size:21px;">person</span><div class="online-dot"></div>`;
+        dpEl.innerHTML = `<span class="material-icons" style="font-size:20px;">person</span><div class="online-dot"></div>`;
     }
 
     if (unsubscribeAccountSync) unsubscribeAccountSync();
@@ -382,10 +375,15 @@ document.getElementById('pin-search-input').oninput = (e) => {
     renderSidebarList();
 };
 
+// GUARANTEED INSTANT BACK BUTTON
 document.getElementById('btn-mobile-back').onclick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     isRoomActivelyOpen = false;
     document.getElementById('chat-view').classList.remove('open');
+    document.getElementById('contact-info-drawer').style.display = 'none';
+    document.getElementById('emoji-picker').classList.remove('show');
+    document.getElementById('msg-overlay').style.display = 'none';
     renderSidebarList();
 };
 
@@ -412,6 +410,7 @@ function updateActiveHeaderBadges(meta) {
 }
 
 function selectRoom(roomId, openUI = true) {
+    const isSameRoom = (currentRoom === roomId);
     currentRoom = roomId;
     localStorage.setItem('nova_last_room', roomId);
     const meta = getRoomMeta(roomId);
@@ -430,9 +429,16 @@ function selectRoom(roomId, openUI = true) {
 
     refreshLiveBanner();
     renderSidebarList();
-    listenToPresence(roomId);
-    listenToMessages(roomId);
-    listenToCalls(roomId);
+
+    if (!isSameRoom || !unsubscribeChat) {
+        listenToPresence(roomId);
+        listenToMessages(roomId);
+        listenToCalls(roomId);
+    } else if (openUI) {
+        markVisibleMessagesSeen();
+        const box = document.getElementById('msgs-container');
+        setTimeout(() => { box.scrollTop = box.scrollHeight; }, 30);
+    }
 }
 
 // ============================================================================
@@ -495,7 +501,7 @@ async function triggerStealthAlert(type) {
     const toast = document.getElementById('stealth-toast');
     document.getElementById('toast-txt').innerText = txt;
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3500);
+    setTimeout(() => toast.classList.remove('show'), 3200);
 
     if ("Notification" in window && Notification.permission === "granted" && !isChatActivelyVisible()) {
         try {
@@ -557,8 +563,8 @@ function getShortTime(d = new Date()) { return d.toLocaleTimeString([], { hour: 
 const locModal = document.getElementById('location-modal');
 const liveBanner = document.getElementById('active-live-banner');
 const liveBannerText = document.getElementById('active-live-text');
-let selectedLiveHours = 1; // 1, 8, 24, or 0 (until turned off)
-const activeLiveSessions = {}; // { [roomId]: { msgId, watchId, expireTimer, label, lastUpdateMs } }
+let selectedLiveHours = 1;
+const activeLiveSessions = {};
 
 function refreshLiveBanner() {
     const sess = activeLiveSessions[currentRoom];
@@ -579,10 +585,7 @@ async function stopLiveLocation(roomId, msgId) {
     }
     if (roomId && msgId) {
         try {
-            await updateDoc(doc(db, roomId, msgId), {
-                isLiveActive: false,
-                lastUpdatedStr: getShortTime(new Date())
-            });
+            await updateDoc(doc(db, roomId, msgId), { isLiveActive: false, lastUpdatedStr: getShortTime(new Date()) });
         } catch (e) {}
     }
     refreshLiveBanner();
@@ -590,10 +593,7 @@ async function stopLiveLocation(roomId, msgId) {
 window.stopLiveLocation = stopLiveLocation;
 
 function stopAllLiveSessions() {
-    Object.keys(activeLiveSessions).forEach(rId => {
-        const s = activeLiveSessions[rId];
-        stopLiveLocation(rId, s.msgId);
-    });
+    Object.keys(activeLiveSessions).forEach(rId => stopLiveLocation(rId, activeLiveSessions[rId].msgId));
 }
 
 document.getElementById('btn-banner-stop-live').onclick = () => {
@@ -601,7 +601,6 @@ document.getElementById('btn-banner-stop-live').onclick = () => {
     if (sess) stopLiveLocation(currentRoom, sess.msgId);
 };
 
-// Open Location Picker Modal
 const locBtn = document.getElementById('btn-share-location');
 if (locBtn) {
     locBtn.onclick = () => {
@@ -613,7 +612,6 @@ if (locBtn) {
 document.getElementById('btn-close-loc-modal').onclick = () => { locModal.style.display = 'none'; };
 locModal.onclick = (e) => { if (e.target === locModal) locModal.style.display = 'none'; };
 
-// Duration chips selector
 document.querySelectorAll('.dur-chip').forEach(chip => {
     chip.onclick = () => {
         document.querySelectorAll('.dur-chip').forEach(c => c.classList.remove('active'));
@@ -622,7 +620,6 @@ document.querySelectorAll('.dur-chip').forEach(chip => {
     };
 });
 
-// Option 1: Send One-Time Current Location
 document.getElementById('btn-send-current-loc').onclick = () => {
     locModal.style.display = 'none';
     const targetRoom = currentRoom;
@@ -639,8 +636,7 @@ document.getElementById('btn-send-current-loc').onclick = () => {
         const meta = getRoomMeta(targetRoom);
 
         await addDoc(collection(db, targetRoom), {
-            type: "location",
-            lat, lng, mapUrl,
+            type: "location", lat, lng, mapUrl,
             text: `📍 Current Location (${lat}, ${lng})`,
             originalAuditText: `📍 Current Location: ${mapUrl}`,
             uid: myUid, accountCode: myAccountCode, name: myName,
@@ -653,11 +649,10 @@ document.getElementById('btn-send-current-loc').onclick = () => {
         document.getElementById('reply-bar').style.display = 'none';
     }, () => {
         inp.placeholder = prevPh;
-        alert("⚠️ Location permission denied or GPS is off. Please allow location in browser settings.");
+        alert("⚠️ Location permission denied or GPS is off.");
     }, { enableHighAccuracy: true, timeout: 12000 });
 };
 
-// Option 2: Start Live Location Sharing
 document.getElementById('btn-start-live-loc').onclick = () => {
     locModal.style.display = 'none';
     const targetRoom = currentRoom;
@@ -668,11 +663,7 @@ document.getElementById('btn-start-live-loc').onclick = () => {
 
     navigator.geolocation.getCurrentPosition(async (pos) => {
         inp.placeholder = prevPh;
-
-        // If already sharing live location in this room, stop previous one first
-        if (activeLiveSessions[targetRoom]) {
-            await stopLiveLocation(targetRoom, activeLiveSessions[targetRoom].msgId);
-        }
+        if (activeLiveSessions[targetRoom]) await stopLiveLocation(targetRoom, activeLiveSessions[targetRoom].msgId);
 
         const lat = pos.coords.latitude.toFixed(6);
         const lng = pos.coords.longitude.toFixed(6);
@@ -685,15 +676,9 @@ document.getElementById('btn-start-live-loc').onclick = () => {
         const durLabel = hours === 0 ? "Until turned off" : (hours === 1 ? `1 hr (until ${endStr})` : `${hours} hrs (until ${endStr})`);
 
         const docRef = await addDoc(collection(db, targetRoom), {
-            type: "live_location",
-            isLiveActive: true,
-            liveDurationHours: hours,
-            liveDurationLabel: durLabel,
-            liveExpiresAt: expiresAt,
-            lastUpdatedStr: getShortTime(now),
-            lat, lng, mapUrl,
-            text: `🛰️ Live Location (${durLabel})`,
-            originalAuditText: `🛰️ Live Location (${durLabel}): ${mapUrl}`,
+            type: "live_location", isLiveActive: true, liveDurationHours: hours, liveDurationLabel: durLabel,
+            liveExpiresAt: expiresAt, lastUpdatedStr: getShortTime(now), lat, lng, mapUrl,
+            text: `🛰️ Live Location (${durLabel})`, originalAuditText: `🛰️ Live Location (${durLabel}): ${mapUrl}`,
             uid: myUid, accountCode: myAccountCode, name: myName,
             shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
             sentMs: Date.now(), vanishTimer: meta.timer || "off",
@@ -703,21 +688,10 @@ document.getElementById('btn-start-live-loc').onclick = () => {
         replyTarget = null;
         document.getElementById('reply-bar').style.display = 'none';
 
-        const session = {
-            msgId: docRef.id,
-            watchId: null,
-            expireTimer: null,
-            label: durLabel,
-            lastUpdateMs: Date.now()
-        };
-
-        // Start continuous GPS watcher (throttled to every 6 seconds to save battery & quota)
+        const session = { msgId: docRef.id, watchId: null, expireTimer: null, label: durLabel, lastUpdateMs: Date.now() };
         session.watchId = navigator.geolocation.watchPosition(async (p) => {
             if (!activeLiveSessions[targetRoom] || activeLiveSessions[targetRoom].msgId !== docRef.id) return;
-            if (expiresAt > 0 && Date.now() >= expiresAt) {
-                stopLiveLocation(targetRoom, docRef.id);
-                return;
-            }
+            if (expiresAt > 0 && Date.now() >= expiresAt) { stopLiveLocation(targetRoom, docRef.id); return; }
             if (Date.now() - session.lastUpdateMs < 6000) return;
             session.lastUpdateMs = Date.now();
 
@@ -726,26 +700,18 @@ document.getElementById('btn-start-live-loc').onclick = () => {
             const nUrl = `https://www.google.com/maps?q=${nLat},${nLng}`;
             try {
                 await updateDoc(doc(db, targetRoom, docRef.id), {
-                    lat: nLat,
-                    lng: nLng,
-                    mapUrl: nUrl,
-                    lastUpdatedStr: getShortTime(new Date()),
+                    lat: nLat, lng: nLng, mapUrl: nUrl, lastUpdatedStr: getShortTime(new Date()),
                     originalAuditText: `🛰️ Live Location (${durLabel}): ${nUrl}`
                 });
             } catch (e) {}
         }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
 
-        if (expiresAt > 0) {
-            session.expireTimer = setTimeout(() => {
-                stopLiveLocation(targetRoom, docRef.id);
-            }, hours * 3600000);
-        }
-
+        if (expiresAt > 0) session.expireTimer = setTimeout(() => stopLiveLocation(targetRoom, docRef.id), hours * 3600000);
         activeLiveSessions[targetRoom] = session;
         refreshLiveBanner();
     }, () => {
         inp.placeholder = prevPh;
-        alert("⚠️ Location permission denied or GPS is off. Please allow location in browser settings.");
+        alert("⚠️ Location permission denied or GPS is off.");
     }, { enableHighAccuracy: true, timeout: 12000 });
 };
 
@@ -794,11 +760,11 @@ function compressImg(file) {
             const img = new Image();
             img.onload = () => {
                 const c = document.createElement('canvas');
-                let w = img.width, h = img.height, max = 1100;
+                let w = img.width, h = img.height, max = 1000;
                 if (w > max) { h = Math.round((h * max) / w); w = max; }
                 c.width = w; c.height = h;
                 c.getContext('2d').drawImage(img, 0, 0, w, h);
-                res(c.toDataURL('image/jpeg', 0.72));
+                res(c.toDataURL('image/jpeg', 0.7));
             };
             img.src = e.target.result;
         };
@@ -815,25 +781,39 @@ document.getElementById('msg-file-input').onchange = async function() {
     const isVid = file.type.startsWith('video/');
     const now = new Date();
     const meta = getRoomMeta(currentRoom);
-    let url = "";
-    if (!isVid) url = await compressImg(file);
-    else {
-        try {
-            const fRef = sRef(storage, `chat_media/${currentRoom}/${Date.now()}_${file.name}`);
-            await uploadBytes(fRef, file);
-            url = await getDownloadURL(fRef);
-        } catch (e) {
-            url = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+    const inp = document.getElementById('msg-input');
+    const prevPh = inp.placeholder;
+    inp.placeholder = isVid ? "🎥 Uploading video..." : "📷 Sending photo...";
+
+    try {
+        let url = "";
+        if (!isVid) {
+            url = await compressImg(file);
+        } else {
+            try {
+                const fRef = sRef(storage, `chat_media/${currentRoom}/${Date.now()}_${file.name}`);
+                await uploadBytes(fRef, file);
+                url = await getDownloadURL(fRef);
+            } catch (e) {
+                if (file.size > 680 * 1024) {
+                    inp.placeholder = prevPh;
+                    return alert("⚠️ Video upload failed! Firebase Storage enable/rules check karein, ya chhoti (<650KB) video bhejein.");
+                }
+                url = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+            }
         }
+        await addDoc(collection(db, currentRoom), {
+            type: isVid ? "video" : "image", mediaUrl: url, text: isVid ? "🎥 Video" : "📷 Photo",
+            originalAuditText: isVid ? "🎥 Video" : "📷 Photo", isViewOnce, viewedBy: [],
+            uid: myUid, accountCode: myAccountCode, name: myName, shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now),
+            sentAtStr: now.toLocaleString(), sentMs: Date.now(), vanishTimer: meta.timer || "off",
+            timestamp: serverTimestamp(), seenStatus: false, manualUnseen: false,
+            reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
+        });
+    } catch (err) {
+        alert("⚠️ Media send failed. Please try a smaller file.");
     }
-    await addDoc(collection(db, currentRoom), {
-        type: isVid ? "video" : "image", mediaUrl: url, text: isVid ? "🎥 Video" : "📷 Photo",
-        originalAuditText: isVid ? "🎥 Video" : "📷 Photo", isViewOnce, viewedBy: [],
-        uid: myUid, accountCode: myAccountCode, name: myName, shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now),
-        sentAtStr: now.toLocaleString(), sentMs: Date.now(), vanishTimer: meta.timer || "off",
-        timestamp: serverTimestamp(), seenStatus: false, manualUnseen: false,
-        reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
-    });
+    inp.placeholder = prevPh;
     isViewOnce = false; voBtn.classList.remove('active');
 };
 
@@ -878,6 +858,75 @@ vnBtn.onclick = async () => {
     }
 };
 
+// ============================================================================
+// INCREMENTAL MESSAGE RENDERER (NO VIDEO RELOAD / NO FLICKER / FAST SCROLL)
+// ============================================================================
+function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
+    if (m.type === 'live_location') {
+        const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
+        const isExpired = m.liveExpiresAt && m.liveExpiresAt > 0 && Date.now() > m.liveExpiresAt;
+        const isActive = !!m.isLiveActive && !isExpired;
+        if (m.isLiveActive && isExpired && isMe) stopLiveLocation(roomId, id);
+
+        const statusLine = isActive
+            ? `${m.liveDurationLabel || 'Live'} • Updated ${m.lastUpdatedStr || m.shortTime}`
+            : `Live location ended • Last at ${m.lastUpdatedStr || m.shortTime}`;
+
+        let html = `<a href="${url}" target="_blank" rel="noopener" class="loc-card ${isActive ? 'live-active' : 'live-ended'}" onclick="event.stopPropagation()">
+            <span class="material-icons" style="font-size:26px; color:${isActive ? '#10b981' : '#94a3b8'};">share_location</span>
+            <div style="overflow:hidden;">
+                <div style="font-weight:700; font-size:13px; color:${isActive ? '#fff' : '#cbd5e1'}; display:flex; align-items:center;">
+                    Live Location ${isActive ? '<span class="live-tag">● LIVE</span>' : ''}
+                </div>
+                <div style="font-size:11px; color:#cbd5e1;">${statusLine}</div>
+                <div style="font-size:10.5px; color:#00f2fe; margin-top:2px;">Tap to open on Map</div>
+            </div>
+        </a>`;
+        if (isActive && isMe) {
+            html += `<button class="stop-live-btn" type="button" onclick="event.stopPropagation(); window.stopLiveLocation('${roomId}', '${id}')">
+                <span class="material-icons" style="font-size:15px;">stop_circle</span> Stop Sharing Live Location
+            </button>`;
+        }
+        return html;
+    }
+    if (m.type === 'location') {
+        const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
+        return `<a href="${url}" target="_blank" rel="noopener" class="loc-card" onclick="event.stopPropagation()">
+            <span class="material-icons" style="font-size:26px; color:#10b981;">location_on</span>
+            <div>
+                <div style="font-weight:700; font-size:13px; color:#00f2fe;">Current Location</div>
+                <div style="font-size:11px; color:#cbd5e1;">${m.lat}, ${m.lng} • Tap to open Map</div>
+            </div>
+        </a>`;
+    }
+    if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
+        if (m.isViewOnce) {
+            const opened = m.viewedBy && m.viewedBy.includes(myUid);
+            return opened
+                ? `<div class="view-once-pill opened"><span class="material-icons" style="font-size:15px;">timelapse</span> Opened</div>`
+                : `<div class="view-once-pill"><span class="material-icons" style="font-size:15px;">looks_one</span> 1-Time ${m.type.toUpperCase()}</div>`;
+        }
+        if (m.type === 'video') {
+            return `<video src="${m.mediaUrl}" controls playsinline webkit-playsinline preload="metadata" class="msg-media" onclick="event.stopPropagation()"></video>`;
+        }
+        if (m.type === 'audio') {
+            return `<audio src="${m.mediaUrl}" controls preload="metadata" style="width:195px; height:34px;" onclick="event.stopPropagation()"></audio>`;
+        }
+        return `<img src="${m.mediaUrl}" loading="lazy" class="msg-media">`;
+    }
+    return `<span>${decryptText(m.text, encKey)}</span>`;
+}
+
+function getBodySignature(m, encKey) {
+    if (m.type === 'live_location') return `live:${m.lat}:${m.lng}:${m.isLiveActive}:${m.lastUpdatedStr}`;
+    if (m.type === 'location') return `loc:${m.lat}:${m.lng}`;
+    if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
+        const opened = !!(m.viewedBy && m.viewedBy.includes(myUid));
+        return `media:${m.type}:${m.isViewOnce}:${opened}`;
+    }
+    return `txt:${decryptText(m.text, encKey)}`;
+}
+
 function listenToMessages(roomId) {
     if (unsubscribeChat) unsubscribeChat();
     const box = document.getElementById('msgs-container');
@@ -885,11 +934,17 @@ function listenToMessages(roomId) {
     cachedMessages = {};
     isInitialLoad = true;
     const encKey = localStorage.getItem(`nova_enc_${roomId}`) || "";
+    const domMap = new Map();
+    let lastDatePillText = "";
 
-    unsubscribeChat = onSnapshot(query(collection(db, roomId), orderBy("timestamp", "asc")), (snap) => {
-        box.innerHTML = '';
-        let lastDate = "";
+    // Load last 60 messages for fast startup and smooth scrolling
+    const q = query(collection(db, roomId), orderBy("timestamp", "asc"), limitToLast(60));
+
+    unsubscribeChat = onSnapshot(q, (snap) => {
         let mediaCount = 0, starCount = 0;
+        const visibleIds = new Set();
+        let addedNewNode = false;
+        const wasNearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 140;
 
         snap.forEach(d => {
             const m = d.data();
@@ -907,107 +962,102 @@ function listenToMessages(roomId) {
                 }
             }
 
+            visibleIds.add(id);
             if (m.type === 'image' || m.type === 'video') mediaCount++;
             if (m.starredBy && m.starredBy.includes(myUid)) starCount++;
 
             const isMe = isMyMessage(m);
-
-            const dLbl = m.dateLabel || "Today";
-            if (dLbl !== lastDate) {
-                const dp = document.createElement('div');
-                dp.className = 'date-pill';
-                dp.innerText = dLbl;
-                box.appendChild(dp);
-                lastDate = dLbl;
-            }
-
-            const wrap = document.createElement('div');
-            wrap.className = `msg-wrap ${isMe ? 'me' : 'other'}`;
-
-            const bub = document.createElement('div');
-            bub.className = 'msg-bubble';
-
-            let quote = m.replyTo ? `<div class="msg-quote"><b>${m.replyTo.name}</b><br>${m.replyTo.text}</div>` : '';
-            let body = '';
-
-            if (m.type === 'live_location') {
-                const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
-                const isExpired = m.liveExpiresAt && m.liveExpiresAt > 0 && Date.now() > m.liveExpiresAt;
-                const isActive = !!m.isLiveActive && !isExpired;
-
-                if (m.isLiveActive && isExpired && isMe) {
-                    stopLiveLocation(roomId, id);
-                }
-
-                const statusLine = isActive
-                    ? `${m.liveDurationLabel || 'Live'} • Updated ${m.lastUpdatedStr || m.shortTime}`
-                    : `Live location ended • Last at ${m.lastUpdatedStr || m.shortTime}`;
-
-                body = `<a href="${url}" target="_blank" rel="noopener" class="loc-card ${isActive ? 'live-active' : 'live-ended'}" onclick="event.stopPropagation()">
-                    <span class="material-icons" style="font-size:27px; color:${isActive ? '#10b981' : '#94a3b8'};">share_location</span>
-                    <div style="overflow:hidden;">
-                        <div style="font-weight:700; font-size:13px; color:${isActive ? '#fff' : '#cbd5e1'}; display:flex; align-items:center;">
-                            Live Location ${isActive ? '<span class="live-tag">● LIVE</span>' : ''}
-                        </div>
-                        <div style="font-size:11px; color:#cbd5e1;">${statusLine}</div>
-                        <div style="font-size:10.5px; color:#00f2fe; margin-top:2px;">Tap to open on Map</div>
-                    </div>
-                </a>`;
-
-                if (isActive && isMe) {
-                    body += `<button class="stop-live-btn" onclick="event.stopPropagation(); window.stopLiveLocation('${roomId}', '${id}')">
-                        <span class="material-icons" style="font-size:15px;">stop_circle</span> Stop Sharing Live Location
-                    </button>`;
-                }
-            } else if (m.type === 'location') {
-                const url = m.mapUrl || `https://www.google.com/maps?q=${m.lat},${m.lng}`;
-                body = `<a href="${url}" target="_blank" rel="noopener" class="loc-card" onclick="event.stopPropagation()">
-                    <span class="material-icons" style="font-size:26px; color:#10b981;">location_on</span>
-                    <div>
-                        <div style="font-weight:700; font-size:13px; color:#00f2fe;">Current Location</div>
-                        <div style="font-size:11px; color:#cbd5e1;">${m.lat}, ${m.lng} • Tap to open Map</div>
-                    </div>
-                </a>`;
-            } else if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
-                if (m.isViewOnce) {
-                    const opened = m.viewedBy && m.viewedBy.includes(myUid);
-                    body = opened
-                        ? `<div class="view-once-pill opened"><span class="material-icons" style="font-size:15px;">timelapse</span> Opened</div>`
-                        : `<div class="view-once-pill"><span class="material-icons" style="font-size:15px;">looks_one</span> 1-Time ${m.type.toUpperCase()}</div>`;
-                } else {
-                    if (m.type === 'video') body = `<video src="${m.mediaUrl}" controls class="msg-media"></video>`;
-                    else if (m.type === 'audio') body = `<audio src="${m.mediaUrl}" controls style="width:195px; height:34px;"></audio>`;
-                    else body = `<img src="${m.mediaUrl}" class="msg-media">`;
-                }
-            } else {
-                body = `<span>${decryptText(m.text, encKey)}</span>`;
-            }
-
             const starIcon = (m.starredBy && m.starredBy.includes(myUid)) ? `<span class="material-icons" style="font-size:12px; color:#eab308;">star</span>` : '';
             const tick = m.seenStatus ? `<span class="material-icons seen-tick read">done_all</span>` : `<span class="material-icons seen-tick">check</span>`;
+            const metaHtml = `${starIcon} ${m.isEdited ? 'Edited' : ''} <span>${m.shortTime || ''}</span> ${tick}`;
+            const reactTxt = (m.reactions && Object.keys(m.reactions).length > 0) ? Object.values(m.reactions).join(' ') : '';
+            const bodySig = getBodySignature(m, encKey);
 
-            bub.innerHTML = `
-                ${!isMe ? `<div class="msg-sender">${m.name}</div>` : ''}
-                ${quote}
-                ${body}
-                <span class="msg-meta">${starIcon} ${m.isEdited ? 'Edited' : ''} <span>${m.shortTime || ''}</span> ${tick}</span>
-            `;
+            if (domMap.has(id)) {
+                // UPDATE IN PLACE — NEVER DESTROYS <video> OR <img>!
+                const entry = domMap.get(id);
+                if (entry.bodySig !== bodySig) {
+                    entry.bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey);
+                    entry.bodySig = bodySig;
+                }
+                if (entry.metaHtml !== metaHtml) {
+                    entry.metaEl.innerHTML = metaHtml;
+                    entry.metaHtml = metaHtml;
+                }
+                if (entry.reactTxt !== reactTxt) {
+                    entry.reactEl.innerText = reactTxt;
+                    entry.reactEl.style.display = reactTxt ? 'flex' : 'none';
+                    entry.reactTxt = reactTxt;
+                }
+            } else {
+                const dLbl = m.dateLabel || "Today";
+                if (dLbl !== lastDatePillText) {
+                    const dp = document.createElement('div');
+                    dp.className = 'date-pill';
+                    dp.innerText = dLbl;
+                    box.appendChild(dp);
+                    lastDatePillText = dLbl;
+                }
 
-            bub.onclick = (e) => {
-                e.stopPropagation();
-                if (m.isViewOnce && (!m.viewedBy || !m.viewedBy.includes(myUid))) openViewOnceModal(id, m);
-                else openContextMenu(e, id, m);
-            };
+                const wrap = document.createElement('div');
+                wrap.className = `msg-wrap ${isMe ? 'me' : 'other'}`;
+                wrap.dataset.msgId = id;
 
-            wrap.appendChild(bub);
-            if (m.reactions && Object.keys(m.reactions).length > 0) {
-                const rDiv = document.createElement('div');
-                rDiv.className = 'msg-reactions';
-                rDiv.innerText = Object.values(m.reactions).join(' ');
-                wrap.appendChild(rDiv);
+                const bub = document.createElement('div');
+                bub.className = 'msg-bubble';
+
+                if (!isMe) {
+                    const sEl = document.createElement('div');
+                    sEl.className = 'msg-sender';
+                    sEl.innerText = m.name || '';
+                    bub.appendChild(sEl);
+                }
+                if (m.replyTo) {
+                    const qEl = document.createElement('div');
+                    qEl.className = 'msg-quote';
+                    qEl.innerHTML = `<b>${m.replyTo.name}</b><br>${m.replyTo.text}`;
+                    bub.appendChild(qEl);
+                }
+
+                const bodyEl = document.createElement('div');
+                bodyEl.className = 'msg-body';
+                bodyEl.style.display = 'inline';
+                bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey);
+                bub.appendChild(bodyEl);
+
+                const metaEl = document.createElement('span');
+                metaEl.className = 'msg-meta';
+                metaEl.innerHTML = metaHtml;
+                bub.appendChild(metaEl);
+
+                bub.onclick = (e) => {
+                    e.stopPropagation();
+                    const fresh = cachedMessages[id] || m;
+                    if (fresh.isViewOnce && (!fresh.viewedBy || !fresh.viewedBy.includes(myUid))) openViewOnceModal(id, fresh);
+                    else openContextMenu(e, id, fresh);
+                };
+
+                const reactEl = document.createElement('div');
+                reactEl.className = 'msg-reactions';
+                reactEl.innerText = reactTxt;
+                reactEl.style.display = reactTxt ? 'flex' : 'none';
+
+                wrap.appendChild(bub);
+                wrap.appendChild(reactEl);
+                box.appendChild(wrap);
+
+                domMap.set(id, { wrap, bodyEl, metaEl, reactEl, bodySig, metaHtml, reactTxt });
+                addedNewNode = true;
             }
-            box.appendChild(wrap);
         });
+
+        // Remove deleted messages from DOM
+        for (const [id, entry] of domMap.entries()) {
+            if (!visibleIds.has(id)) {
+                entry.wrap.remove();
+                domMap.delete(id);
+            }
+        }
 
         document.getElementById('di-media-count').innerText = mediaCount;
         document.getElementById('di-star-count').innerText = starCount > 0 ? starCount : "None";
@@ -1023,7 +1073,9 @@ function listenToMessages(roomId) {
 
         if (isChatActivelyVisible()) {
             markVisibleMessagesSeen();
-            box.scrollTop = box.scrollHeight;
+            if (isInitialLoad || (addedNewNode && wasNearBottom)) {
+                box.scrollTop = box.scrollHeight;
+            }
         }
         isInitialLoad = false;
     });
@@ -1032,7 +1084,7 @@ function listenToMessages(roomId) {
 async function openViewOnceModal(id, m) {
     document.getElementById('modal-title').innerText = "➀ One-Time Media";
     document.getElementById('modal-body').innerHTML = m.type === 'video'
-        ? `<video src="${m.mediaUrl}" controls autoplay style="width:100%; border-radius:8px;"></video>`
+        ? `<video src="${m.mediaUrl}" controls autoplay playsinline webkit-playsinline style="width:100%; border-radius:8px;"></video>`
         : (m.type === 'audio' ? `<audio src="${m.mediaUrl}" controls autoplay style="width:100%;"></audio>` : `<img src="${m.mediaUrl}" style="width:100%; border-radius:8px;">`);
     document.getElementById('generic-modal').style.display = 'flex';
     let v = m.viewedBy || [];
@@ -1059,7 +1111,7 @@ overlay.onclick = () => overlay.style.display = 'none';
 document.querySelectorAll('.react-emo').forEach(el => {
     el.onclick = async () => {
         const emo = el.getAttribute('data-emo');
-        let r = selectedMsg.reactions || {};
+        let r = { ...(selectedMsg.reactions || {}) };
         if (r[myUid] === emo) delete r[myUid]; else r[myUid] = emo;
         await updateDoc(doc(db, currentRoom, selectedMsg.id), { reactions: r });
     };
@@ -1084,7 +1136,7 @@ document.getElementById('cm-info').onclick = () => {
     document.getElementById('generic-modal').style.display = 'flex';
 };
 document.getElementById('cm-star').onclick = async () => {
-    let s = selectedMsg.starredBy || [];
+    let s = [...(selectedMsg.starredBy || [])];
     const i = s.indexOf(myUid);
     if (i > -1) s.splice(i, 1); else s.push(myUid);
     await updateDoc(doc(db, currentRoom, selectedMsg.id), { starredBy: s });
@@ -1100,8 +1152,7 @@ document.getElementById('cm-edit').onclick = () => {
 document.getElementById('cm-seen').onclick = async () => {
     const next = !selectedMsg.seenStatus;
     await updateDoc(doc(db, currentRoom, selectedMsg.id), {
-        seenStatus: next,
-        manualUnseen: !next,
+        seenStatus: next, manualUnseen: !next,
         seenAtStr: next ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""
     });
 };
@@ -1112,7 +1163,7 @@ document.getElementById('cm-del').onclick = async () => {
         await stopLiveLocation(currentRoom, selectedMsg.id);
     }
     if (ans.trim() === "1") {
-        let d = selectedMsg.deletedFor || [];
+        let d = [...(selectedMsg.deletedFor || [])];
         d.push(myUid);
         await updateDoc(doc(db, currentRoom, selectedMsg.id), { deletedFor: d });
     } else if (ans.trim() === "2") {
@@ -1128,7 +1179,7 @@ document.getElementById('btn-close-drawer').onclick = () => drawer.style.display
 document.getElementById('btn-edit-contact-name').onclick = () => {
     const meta = getRoomMeta(currentRoom);
     let n = prompt("Edit Friend's Nickname:", meta.name);
-    if (n && n.trim()) { meta.name = n.trim(); syncAccountToCloud(); selectRoom(currentRoom, true); }
+    if (n && n.trim()) { meta.name = n.trim(); syncAccountToCloud(); updateActiveHeaderBadges(meta); renderSidebarList(); }
 };
 
 document.getElementById('toggle-lock-chat').onchange = (e) => {
@@ -1225,11 +1276,20 @@ document.getElementById('tab-status').onclick = () => {
     loadStories();
 };
 
-// Stealth Shield Gate
+// 0ms INSTANT PANIC SHIELD:
+// - Inside Game Widget: hides BOTH chat & lightning button immediately!
+// - Standalone chat.html: opens fake NOVA-OS decoy cover!
 const cyberGate = document.getElementById('cyber-gate-screen');
-const openShieldGate = () => { cyberGate.style.display = 'flex'; };
-document.getElementById('btn-panic-now').onclick = openShieldGate;
-document.getElementById('btn-chat-panic').onclick = (e) => { e.stopPropagation(); openShieldGate(); };
+const triggerInstantPanic = (e) => {
+    if (e) e.stopPropagation();
+    if (isWidgetMode) {
+        postToGame({ type: 'NOVA_PANIC_HIDE' });
+    } else {
+        cyberGate.style.display = 'flex';
+    }
+};
+document.getElementById('btn-panic-now').onclick = triggerInstantPanic;
+document.getElementById('btn-chat-panic').onclick = triggerInstantPanic;
 
 let gTaps = 0, gTimer = null;
 document.getElementById('cyber-triple-tap').onclick = () => {
@@ -1418,7 +1478,16 @@ function listenToCalls(roomId) {
     });
 }
 
-document.getElementById('btn-emoji').onclick = (e) => { e.stopPropagation(); document.getElementById('emoji-picker').classList.toggle('show'); };
+// LAZY-LOAD EMOJI PICKER (Speeds up app & games dramatically!)
+let emojiPickerLoaded = false;
+document.getElementById('btn-emoji').onclick = async (e) => {
+    e.stopPropagation();
+    if (!emojiPickerLoaded) {
+        emojiPickerLoaded = true;
+        try { await import("https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"); } catch (err) {}
+    }
+    document.getElementById('emoji-picker').classList.toggle('show');
+};
 document.getElementById('emoji-picker').addEventListener('emoji-click', e => { document.getElementById('msg-input').value += e.detail.unicode; });
 
 document.getElementById('di-media').onclick = () => {
@@ -1428,7 +1497,7 @@ document.getElementById('di-media').onclick = () => {
         const m = cachedMessages[id];
         if ((m.type === 'image' || m.type === 'video') && !m.isViewOnce && !m.isDeletedEveryone) {
             count++;
-            html += m.type === 'video' ? `<video src="${m.mediaUrl}" controls style="width:100%; border-radius:8px;"></video>` : `<img src="${m.mediaUrl}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">`;
+            html += m.type === 'video' ? `<video src="${m.mediaUrl}" controls playsinline webkit-playsinline preload="metadata" style="width:100%; border-radius:8px;"></video>` : `<img src="${m.mediaUrl}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">`;
         }
     }
     html += '</div>';
