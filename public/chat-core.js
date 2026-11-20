@@ -1,6 +1,6 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Fast Incremental DOM | Stable Video Playback | 0ms Panic Hide | Live Location
+// Fast Throttled Sync | App PIN Lock | Fake Notice Shield | Fixed Video & Clear
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -22,14 +22,19 @@ catch (e) { db = getFirestore(app, "default"); }
 const storage = getStorage(app);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(() => {});
 
 const isWidgetMode = new URLSearchParams(window.location.search).get('widget') === '1' || (window.self !== window.top);
 let isWidgetOpen = !isWidgetMode;
 let isRoomActivelyOpen = false;
+let domMap = new Map();
 
 if (isWidgetMode) document.body.classList.add('widget-mode');
 if (localStorage.getItem('nova_theme_mode') === 'light') document.body.classList.add('light-mode');
+
+// iOS Safari keyboard viewport reset fix (prevents header/Back button dead-zone!)
+document.addEventListener('focusout', () => {
+    setTimeout(() => { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; }, 50);
+});
 
 function postToGame(payload) {
     if (isWidgetMode) {
@@ -37,29 +42,17 @@ function postToGame(payload) {
     }
 }
 
-window.addEventListener('message', (e) => {
-    const d = e.data;
-    if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
-    isWidgetOpen = !!d.open;
-    if (d.panic && (pc || localStream)) cleanupCall(false);
-    if (isWidgetOpen && isRoomActivelyOpen) {
-        updatePresence("online");
-        markVisibleMessagesSeen();
-        const box = document.getElementById('msgs-container');
-        if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
-    } else if (!isWidgetOpen) {
-        updatePresence("offline");
-    }
-});
-
-// 0ms Instant Close Buttons for Game Widget
-['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget'].forEach(id => {
+['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget', 'btn-lock-close-widget'].forEach(id => {
     const btn = document.getElementById(id);
-    if (btn) btn.onclick = (e) => { e.stopPropagation(); postToGame({ type: 'NOVA_CLOSE_WIDGET' }); };
+    if (btn) btn.onclick = (e) => {
+        e.stopPropagation();
+        if (document.activeElement) document.activeElement.blur();
+        postToGame({ type: 'NOVA_CLOSE_WIDGET' });
+    };
 });
 
 // ============================================================================
-// 1. STRICT AUTHENTICATION (1 CODE = 1 UNIQUE ID)
+// 1. STRICT AUTHENTICATION + APP ENTRY LOCK (PIN GATE)
 // ============================================================================
 let authMode = 'login';
 let myAccountCode = (localStorage.getItem('nova_account_code') || "").trim();
@@ -67,13 +60,136 @@ let myUid = myAccountCode ? ('uid_' + myAccountCode) : "";
 let myName = localStorage.getItem('nova_username') || "";
 let myDp = localStorage.getItem('nova_dp') || "";
 let myLockPin = localStorage.getItem('nova_lock_pin') || "";
+let appLockEnabled = localStorage.getItem('nova_app_lock_enabled') === 'true';
+let appLockPin = localStorage.getItem('nova_app_lock_pin') || "";
+let isAppUnlocked = !appLockEnabled;
 let savedRooms = JSON.parse(localStorage.getItem('nova_saved_rooms') || '[]').filter(r => r.id !== 'global_novahub_chat');
 
 const authScreen = document.getElementById('auth-screen');
+const appLockScreen = document.getElementById('app-lock-screen');
+const lockSettingsModal = document.getElementById('lock-settings-modal');
+const cyberGate = document.getElementById('cyber-gate-screen');
 const errEl = document.getElementById('auth-error-msg');
 const codeInp = document.getElementById('auth-code');
 const nameInp = document.getElementById('auth-name');
 const passInp = document.getElementById('auth-pass');
+
+function updateAppLockIconUI() {
+    const icon = document.getElementById('app-lock-icon');
+    const sw = document.getElementById('toggle-app-lock-sw');
+    if (appLockEnabled && appLockPin) {
+        icon.innerText = 'lock';
+        icon.style.color = '#10b981';
+        if (sw) sw.checked = true;
+    } else {
+        icon.innerText = 'lock_open';
+        icon.style.color = 'var(--text-sub)';
+        if (sw) sw.checked = false;
+    }
+}
+
+function lockAppIfEnabled() {
+    if (!myAccountCode || !appLockEnabled || !appLockPin) return;
+    isAppUnlocked = false;
+    isRoomActivelyOpen = false;
+    if (document.activeElement) document.activeElement.blur();
+    document.getElementById('chat-view').classList.remove('open');
+    document.getElementById('contact-info-drawer').style.display = 'none';
+    document.getElementById('msg-overlay').style.display = 'none';
+    document.getElementById('lock-pin-input').value = '';
+    document.getElementById('lock-error-msg').innerText = '';
+    appLockScreen.style.display = 'flex';
+}
+
+function unlockAppWithPin() {
+    const val = document.getElementById('lock-pin-input').value.trim();
+    if (val === appLockPin) {
+        isAppUnlocked = true;
+        document.getElementById('lock-pin-input').value = '';
+        document.getElementById('lock-error-msg').innerText = '';
+        appLockScreen.style.display = 'none';
+        window.scrollTo(0, 0);
+    } else {
+        document.getElementById('lock-error-msg').innerText = '❌ Galat PIN! Dobara koshish karein.';
+        document.getElementById('lock-pin-input').value = '';
+    }
+}
+
+document.getElementById('btn-unlock-app').onclick = unlockAppWithPin;
+document.getElementById('lock-pin-input').onkeypress = e => { if (e.key === 'Enter') unlockAppWithPin(); };
+document.getElementById('btn-lock-to-decoy').onclick = () => { cyberGate.style.display = 'flex'; };
+
+// Open App Lock ON/OFF Modal
+document.getElementById('btn-app-lock-toggle').onclick = () => {
+    updateAppLockIconUI();
+    document.getElementById('set-app-lock-pin').value = appLockPin;
+    document.getElementById('lock-settings-msg').innerText = '';
+    lockSettingsModal.style.display = 'flex';
+};
+document.getElementById('btn-close-lock-settings').onclick = () => { lockSettingsModal.style.display = 'none'; };
+lockSettingsModal.onclick = (e) => { if (e.target === lockSettingsModal) lockSettingsModal.style.display = 'none'; };
+
+document.getElementById('btn-save-lock-settings').onclick = async () => {
+    const wantsLock = document.getElementById('toggle-app-lock-sw').checked;
+    const newPin = document.getElementById('set-app-lock-pin').value.trim();
+    const msgEl = document.getElementById('lock-settings-msg');
+
+    if (wantsLock && newPin.length < 4) {
+        msgEl.style.color = '#f87171';
+        msgEl.innerText = '⚠️ Kam se kam 4 digit ka PIN daalein!';
+        return;
+    }
+
+    appLockEnabled = wantsLock;
+    if (newPin.length >= 4) appLockPin = newPin;
+    localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
+    localStorage.setItem('nova_app_lock_pin', appLockPin);
+    if (myAccountCode) {
+        await setDoc(doc(db, "novahub_accounts", myAccountCode), { appLockEnabled, appLockPin }, { merge: true }).catch(() => {});
+    }
+    updateAppLockIconUI();
+    msgEl.style.color = '#10b981';
+    msgEl.innerText = appLockEnabled ? '✅ Chat Entry Lock ON ho gaya!' : '🔓 Chat Entry Lock OFF ho gaya!';
+    setTimeout(() => { lockSettingsModal.style.display = 'none'; }, 750);
+};
+
+document.getElementById('btn-lock-now-manual').onclick = () => {
+    if (!appLockPin || appLockPin.length < 4) {
+        document.getElementById('lock-settings-msg').style.color = '#f87171';
+        document.getElementById('lock-settings-msg').innerText = '⚠️ Pehle upar 4+ digit PIN daal kar Save karein!';
+        return;
+    }
+    appLockEnabled = true;
+    localStorage.setItem('nova_app_lock_enabled', 'true');
+    updateAppLockIconUI();
+    lockSettingsModal.style.display = 'none';
+    lockAppIfEnabled();
+};
+
+// Auto-lock when widget closes or browser tab goes background
+window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
+    isWidgetOpen = !!d.open;
+    if (d.panic && (pc || localStream)) cleanupCall(false);
+    if (!isWidgetOpen) {
+        updatePresence("offline", true);
+        lockAppIfEnabled();
+    } else if (isWidgetOpen && isAppUnlocked && isRoomActivelyOpen) {
+        updatePresence("online", true);
+        markVisibleMessagesSeen();
+        const box = document.getElementById('msgs-container');
+        if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
+    }
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        lockAppIfEnabled();
+    } else if (document.visibilityState === 'visible' && isAppUnlocked) {
+        markVisibleMessagesSeen();
+    }
+});
 
 document.getElementById('tab-btn-login').onclick = () => {
     authMode = 'login';
@@ -110,8 +226,8 @@ document.getElementById('btn-auth-submit').onclick = async () => {
         if (snap.exists()) { errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
         if (!name) { errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
         wipeLocalSessionData();
-        myAccountCode = code; myUid = 'uid_' + code; myName = name; myDp = ""; myLockPin = ""; savedRooms = [];
-        await setDoc(accRef, { accountCode: code, password: pass, uid: myUid, name: myName, dp: "", lockPin: "", savedRooms: [], createdAt: new Date().toLocaleString() });
+        myAccountCode = code; myUid = 'uid_' + code; myName = name; myDp = ""; myLockPin = ""; appLockEnabled = false; appLockPin = ""; savedRooms = [];
+        await setDoc(accRef, { accountCode: code, password: pass, uid: myUid, name: myName, dp: "", lockPin: "", appLockEnabled: false, appLockPin: "", savedRooms: [], createdAt: new Date().toLocaleString() });
     } else {
         if (!snap.exists()) { errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
         const data = snap.data();
@@ -119,16 +235,19 @@ document.getElementById('btn-auth-submit').onclick = async () => {
         wipeLocalSessionData();
         myAccountCode = code; myUid = 'uid_' + code; myName = data.name || ("User_" + code);
         myDp = data.dp || ""; myLockPin = data.lockPin || "";
+        appLockEnabled = !!data.appLockEnabled;
+        appLockPin = data.appLockPin || "";
         savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
     }
 
+    isAppUnlocked = true; // Fresh login unlocks immediately
     saveSessionToLocal();
     authScreen.style.display = 'none';
-    startAuthenticatedSession();
+    startAuthenticatedSession(false);
 };
 
 function wipeLocalSessionData() {
-    ['nova_account_code', 'nova_uid', 'nova_username', 'nova_dp', 'nova_lock_pin', 'nova_saved_rooms', 'nova_last_room'].forEach(k => localStorage.removeItem(k));
+    ['nova_account_code', 'nova_uid', 'nova_username', 'nova_dp', 'nova_lock_pin', 'nova_app_lock_enabled', 'nova_app_lock_pin', 'nova_saved_rooms', 'nova_last_room'].forEach(k => localStorage.removeItem(k));
 }
 
 function saveSessionToLocal() {
@@ -137,6 +256,8 @@ function saveSessionToLocal() {
     localStorage.setItem('nova_username', myName);
     localStorage.setItem('nova_dp', myDp);
     localStorage.setItem('nova_lock_pin', myLockPin);
+    localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
+    localStorage.setItem('nova_app_lock_pin', appLockPin);
     localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
 }
 
@@ -185,11 +306,12 @@ function isMyMessage(m) {
 }
 
 function isChatActivelyVisible() {
-    if (!currentRoom || !isRoomActivelyOpen) return false;
+    if (!currentRoom || !isRoomActivelyOpen || !isAppUnlocked) return false;
     if (document.visibilityState !== 'visible') return false;
     if (isWidgetMode && !isWidgetOpen) return false;
     if (authScreen.style.display !== 'none') return false;
-    if (document.getElementById('cyber-gate-screen').style.display === 'flex') return false;
+    if (appLockScreen.style.display === 'flex') return false;
+    if (cyberGate.style.display === 'flex') return false;
     if ((isWidgetMode || window.innerWidth <= 768) && !document.getElementById('chat-view').classList.contains('open')) return false;
     return true;
 }
@@ -204,10 +326,7 @@ async function markVisibleMessagesSeen() {
         const vTimer = m.vanishTimer || "off";
         try {
             await updateDoc(doc(db, currentRoom, id), {
-                seenStatus: true,
-                seenBy: myAccountCode,
-                seenAtStr: nowTime,
-                seenMs: Date.now(),
+                seenStatus: true, seenBy: myAccountCode, seenAtStr: nowTime, seenMs: Date.now(),
                 ...(vTimer === "instant" ? { isDeletedEveryone: true, deletedByAudit: "Instant Snap Mode" } : {})
             });
         } catch (e) {} finally {
@@ -216,11 +335,7 @@ async function markVisibleMessagesSeen() {
     }
 }
 
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') markVisibleMessagesSeen();
-});
-
-function startAuthenticatedSession() {
+function startAuthenticatedSession(shouldApplyLock = true) {
     document.getElementById('my-top-name').innerText = myName;
     document.getElementById('my-top-id-tag').innerText = `My ID: ${myAccountCode}`;
     const dpEl = document.getElementById('my-top-dp');
@@ -231,11 +346,20 @@ function startAuthenticatedSession() {
         dpEl.style.backgroundImage = '';
         dpEl.innerHTML = `<span class="material-icons" style="font-size:20px;">person</span><div class="online-dot"></div>`;
     }
+    updateAppLockIconUI();
+    if (shouldApplyLock) lockAppIfEnabled();
 
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     unsubscribeAccountSync = onSnapshot(doc(db, "novahub_accounts", myAccountCode), (snap) => {
         if (!snap.exists()) return;
         const d = snap.data();
+        if (typeof d.appLockEnabled === 'boolean' && d.appLockPin) {
+            appLockEnabled = d.appLockEnabled;
+            appLockPin = d.appLockPin;
+            localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
+            localStorage.setItem('nova_app_lock_pin', appLockPin);
+            updateAppLockIconUI();
+        }
         if (d.savedRooms) {
             let updated = false;
             d.savedRooms.forEach(cloudRoom => {
@@ -245,10 +369,12 @@ function startAuthenticatedSession() {
                     updated = true;
                 }
             });
-            if (updated) localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
+            if (updated) {
+                localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
+                renderSidebarList();
+                renderActiveStrip();
+            }
         }
-        renderSidebarList();
-        renderActiveStrip();
     });
 
     renderSidebarList();
@@ -256,14 +382,12 @@ function startAuthenticatedSession() {
 
     const lastId = localStorage.getItem('nova_last_room');
     const bgRoom = savedRooms.find(r => r.id === lastId) || savedRooms[0];
-    if (bgRoom) {
-        selectRoom(bgRoom.id, false);
-    }
+    if (bgRoom) selectRoom(bgRoom.id, false);
 }
 
 if (myAccountCode && myName) {
     authScreen.style.display = 'none';
-    startAuthenticatedSession();
+    startAuthenticatedSession(true);
 }
 
 async function syncAccountToCloud() {
@@ -375,17 +499,19 @@ document.getElementById('pin-search-input').oninput = (e) => {
     renderSidebarList();
 };
 
-// GUARANTEED INSTANT BACK BUTTON
-document.getElementById('btn-mobile-back').onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+// BULLETPROOF BACK BUTTON (WORKS EVERY TIME ON IPHONE & ANDROID)
+function goBackToList(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    if (document.activeElement) document.activeElement.blur();
     isRoomActivelyOpen = false;
     document.getElementById('chat-view').classList.remove('open');
     document.getElementById('contact-info-drawer').style.display = 'none';
     document.getElementById('emoji-picker').classList.remove('show');
     document.getElementById('msg-overlay').style.display = 'none';
+    window.scrollTo(0, 0);
     renderSidebarList();
-};
+}
+document.getElementById('btn-mobile-back').addEventListener('click', goBackToList);
 
 function getRoomMeta(roomId) {
     return savedRooms.find(r => r.id === roomId) || { id: roomId, name: "Private Chat", locked: false, timer: "off" };
@@ -421,7 +547,8 @@ function selectRoom(roomId, openUI = true) {
     if (openUI) {
         isRoomActivelyOpen = true;
         document.getElementById('chat-view').classList.add('open');
-        updatePresence("online");
+        updatePresence("online", true);
+        window.scrollTo(0, 0);
     } else {
         isRoomActivelyOpen = false;
         document.getElementById('chat-view').classList.remove('open');
@@ -442,7 +569,7 @@ function selectRoom(roomId, openUI = true) {
 }
 
 // ============================================================================
-// 3. ENCRYPTION, NOTIFICATIONS, CURRENT + LIVE LOCATION & MESSAGES
+// 3. THROTTLED PRESENCE, ENCRYPTION, NOTIFICATIONS & LOCATION
 // ============================================================================
 function encryptText(plainText, key) {
     if (!key) return plainText;
@@ -464,10 +591,6 @@ function decryptText(cipherText, key) {
 }
 
 let audioCtx = null;
-document.addEventListener('touchstart', () => {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-}, { once: true });
-
 function playAlertBeep() {
     try {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -476,10 +599,17 @@ function playAlertBeep() {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
         osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.35);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
     } catch (e) {}
+}
+
+function showQuickToast(txt) {
+    const toast = document.getElementById('stealth-toast');
+    document.getElementById('toast-txt').innerText = txt;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2800);
 }
 
 async function triggerStealthAlert(type) {
@@ -497,11 +627,7 @@ async function triggerStealthAlert(type) {
     }
 
     if (!stealthNotifEnabled) return;
-
-    const toast = document.getElementById('stealth-toast');
-    document.getElementById('toast-txt').innerText = txt;
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3200);
+    showQuickToast(txt);
 
     if ("Notification" in window && Notification.permission === "granted" && !isChatActivelyVisible()) {
         try {
@@ -517,22 +643,29 @@ async function triggerStealthAlert(type) {
     }
 }
 
-async function updatePresence(statusStr = "online") {
+// THROTTLED PRESENCE (Stops flooding Firebase on every keystroke!)
+let lastPresStatus = "";
+let lastPresMs = 0;
+async function updatePresence(statusStr = "online", force = false) {
     if (!currentRoom || !myUid) return;
+    const nowMs = Date.now();
+    if (!force && statusStr === lastPresStatus && (nowMs - lastPresMs) < 3500) return;
+    lastPresStatus = statusStr;
+    lastPresMs = nowMs;
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     try {
         await setDoc(doc(db, "novahub_all_rooms", currentRoom), {
             roomId: currentRoom, pinCode: currentRoom, lastActive: new Date().toLocaleString(),
-            [`presence_${myUid}`]: { name: myName, status: statusStr, time: timeStr, updated: Date.now() }
+            [`presence_${myUid}`]: { name: myName, status: statusStr, time: timeStr, updated: nowMs }
         }, { merge: true });
     } catch (e) {}
 }
 
 let typTimer = null;
 document.getElementById('msg-input').oninput = () => {
-    updatePresence("typing...");
+    updatePresence("typing...", false);
     clearTimeout(typTimer);
-    typTimer = setTimeout(() => updatePresence("online"), 2200);
+    typTimer = setTimeout(() => updatePresence("online", true), 2800);
 };
 
 function listenToPresence(roomId) {
@@ -540,14 +673,14 @@ function listenToPresence(roomId) {
     unsubscribePresence = onSnapshot(doc(db, "novahub_all_rooms", roomId), (snap) => {
         if (!snap.exists()) return;
         const data = snap.data();
-        let txt = `Active • Tap for info`;
+        let txt = `Tap name for Info & Clear Chat`;
         for (let k in data) {
             if (k.startsWith('presence_') && k !== `presence_${myUid}`) {
                 const p = data[k];
                 const recent = (Date.now() - (p.updated || 0)) < 55000;
                 if (recent && (p.status === "typing..." || p.status === "recording audio...")) txt = `✍️ ${p.name} is ${p.status}`;
                 else if (recent && p.status === "online") txt = `🟢 Active now`;
-                else txt = `Last active today at ${p.time}`;
+                else txt = `Last active at ${p.time}`;
             }
         }
         document.getElementById('active-room-status').innerText = txt;
@@ -558,7 +691,7 @@ function getDateGroupLabel(d = new Date()) { return d.toLocaleDateString('en-GB'
 function getShortTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
 // ============================================================================
-// WHATSAPP-STYLE CURRENT & LIVE LOCATION ENGINE
+// CURRENT & LIVE LOCATION ENGINE
 // ============================================================================
 const locModal = document.getElementById('location-modal');
 const liveBanner = document.getElementById('active-live-banner');
@@ -584,9 +717,7 @@ async function stopLiveLocation(roomId, msgId) {
         delete activeLiveSessions[roomId];
     }
     if (roomId && msgId) {
-        try {
-            await updateDoc(doc(db, roomId, msgId), { isLiveActive: false, lastUpdatedStr: getShortTime(new Date()) });
-        } catch (e) {}
+        try { await updateDoc(doc(db, roomId, msgId), { isLiveActive: false, lastUpdatedStr: getShortTime(new Date()) }); } catch (e) {}
     }
     refreshLiveBanner();
 }
@@ -601,14 +732,11 @@ document.getElementById('btn-banner-stop-live').onclick = () => {
     if (sess) stopLiveLocation(currentRoom, sess.msgId);
 };
 
-const locBtn = document.getElementById('btn-share-location');
-if (locBtn) {
-    locBtn.onclick = () => {
-        if (!currentRoom) return alert("Please select a friend first!");
-        if (!navigator.geolocation) return alert("❌ Location is not supported on this device/browser.");
-        locModal.style.display = 'flex';
-    };
-}
+document.getElementById('btn-share-location').onclick = () => {
+    if (!currentRoom) return alert("Please select a friend first!");
+    if (!navigator.geolocation) return alert("❌ Location is not supported on this device.");
+    locModal.style.display = 'flex';
+};
 document.getElementById('btn-close-loc-modal').onclick = () => { locModal.style.display = 'none'; };
 locModal.onclick = (e) => { if (e.target === locModal) locModal.style.display = 'none'; };
 
@@ -625,7 +753,7 @@ document.getElementById('btn-send-current-loc').onclick = () => {
     const targetRoom = currentRoom;
     const inp = document.getElementById('msg-input');
     const prevPh = inp.placeholder;
-    inp.placeholder = "📍 Fetching GPS location...";
+    inp.placeholder = "📍 Fetching GPS...";
 
     navigator.geolocation.getCurrentPosition(async (pos) => {
         inp.placeholder = prevPh;
@@ -659,7 +787,7 @@ document.getElementById('btn-start-live-loc').onclick = () => {
     const hours = selectedLiveHours;
     const inp = document.getElementById('msg-input');
     const prevPh = inp.placeholder;
-    inp.placeholder = "🛰️ Starting Live Location...";
+    inp.placeholder = "🛰️ Starting Live GPS...";
 
     navigator.geolocation.getCurrentPosition(async (pos) => {
         inp.placeholder = prevPh;
@@ -692,7 +820,7 @@ document.getElementById('btn-start-live-loc').onclick = () => {
         session.watchId = navigator.geolocation.watchPosition(async (p) => {
             if (!activeLiveSessions[targetRoom] || activeLiveSessions[targetRoom].msgId !== docRef.id) return;
             if (expiresAt > 0 && Date.now() >= expiresAt) { stopLiveLocation(targetRoom, docRef.id); return; }
-            if (Date.now() - session.lastUpdateMs < 6000) return;
+            if (Date.now() - session.lastUpdateMs < 8000) return;
             session.lastUpdateMs = Date.now();
 
             const nLat = p.coords.latitude.toFixed(6);
@@ -704,7 +832,7 @@ document.getElementById('btn-start-live-loc').onclick = () => {
                     originalAuditText: `🛰️ Live Location (${durLabel}): ${nUrl}`
                 });
             } catch (e) {}
-        }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+        }, () => {}, { enableHighAccuracy: true, maximumAge: 6000, timeout: 15000 });
 
         if (expiresAt > 0) session.expireTimer = setTimeout(() => stopLiveLocation(targetRoom, docRef.id), hours * 3600000);
         activeLiveSessions[targetRoom] = session;
@@ -715,6 +843,9 @@ document.getElementById('btn-start-live-loc').onclick = () => {
     }, { enableHighAccuracy: true, timeout: 12000 });
 };
 
+// ============================================================================
+// SEND TEXT, MEDIA (FIXED VIDEO), & VOICE NOTES
+// ============================================================================
 async function sendMessage() {
     if (!currentRoom) return alert("Please add or select a friend first!");
     const inp = document.getElementById('msg-input');
@@ -745,6 +876,7 @@ async function sendMessage() {
     });
     replyTarget = null;
     document.getElementById('reply-bar').style.display = 'none';
+    updatePresence("online", true);
 }
 
 document.getElementById('btn-send-msg').onclick = sendMessage;
@@ -760,11 +892,11 @@ function compressImg(file) {
             const img = new Image();
             img.onload = () => {
                 const c = document.createElement('canvas');
-                let w = img.width, h = img.height, max = 1000;
+                let w = img.width, h = img.height, max = 960;
                 if (w > max) { h = Math.round((h * max) / w); w = max; }
                 c.width = w; c.height = h;
                 c.getContext('2d').drawImage(img, 0, 0, w, h);
-                res(c.toDataURL('image/jpeg', 0.7));
+                res(c.toDataURL('image/jpeg', 0.68));
             };
             img.src = e.target.result;
         };
@@ -790,16 +922,15 @@ document.getElementById('msg-file-input').onchange = async function() {
         if (!isVid) {
             url = await compressImg(file);
         } else {
+            const safeName = (file.name || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const fRef = sRef(storage, `chat_media/${currentRoom}/${Date.now()}_${safeName}`);
             try {
-                const fRef = sRef(storage, `chat_media/${currentRoom}/${Date.now()}_${file.name}`);
-                await uploadBytes(fRef, file);
+                await uploadBytes(fRef, file, { contentType: file.type || 'video/mp4' });
                 url = await getDownloadURL(fRef);
-            } catch (e) {
-                if (file.size > 680 * 1024) {
-                    inp.placeholder = prevPh;
-                    return alert("⚠️ Video upload failed! Firebase Storage enable/rules check karein, ya chhoti (<650KB) video bhejein.");
-                }
-                url = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+            } catch (storageErr) {
+                inp.placeholder = prevPh;
+                alert(`❌ Video Firebase Storage mein upload nahi ho paayi (${storageErr.code || 'Storage Error'}).\n\nFirebase Console > Storage > Rules mein 'allow read, write: if true;' set karein.`);
+                return;
             }
         }
         await addDoc(collection(db, currentRoom), {
@@ -811,7 +942,7 @@ document.getElementById('msg-file-input').onchange = async function() {
             reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
         });
     } catch (err) {
-        alert("⚠️ Media send failed. Please try a smaller file.");
+        alert("⚠️ Media send failed. Please try again.");
     }
     inp.placeholder = prevPh;
     isViewOnce = false; voBtn.classList.remove('active');
@@ -848,18 +979,18 @@ vnBtn.onclick = async () => {
             mediaRec.start();
             isRec = true; vnBtn.classList.add('rec');
             document.getElementById('vn-icon').innerText = 'stop';
-            updatePresence("recording audio...");
+            updatePresence("recording audio...", true);
         } catch (e) { alert("Mic permission needed."); }
     } else {
         mediaRec.stop();
         isRec = false; vnBtn.classList.remove('rec');
         document.getElementById('vn-icon').innerText = 'mic';
-        updatePresence("online");
+        updatePresence("online", true);
     }
 };
 
 // ============================================================================
-// INCREMENTAL MESSAGE RENDERER (NO VIDEO RELOAD / NO FLICKER / FAST SCROLL)
+// FAST INCREMENTAL MESSAGE RENDERER (NO VIDEO RELOAD / NO LAG)
 // ============================================================================
 function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
     if (m.type === 'live_location') {
@@ -907,7 +1038,12 @@ function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
                 : `<div class="view-once-pill"><span class="material-icons" style="font-size:15px;">looks_one</span> 1-Time ${m.type.toUpperCase()}</div>`;
         }
         if (m.type === 'video') {
-            return `<video src="${m.mediaUrl}" controls playsinline webkit-playsinline preload="metadata" class="msg-media" onclick="event.stopPropagation()"></video>`;
+            const rawUrl = m.mediaUrl || '';
+            const playUrl = rawUrl.startsWith('http') ? (rawUrl.includes('#') ? rawUrl : rawUrl + '#t=0.001') : rawUrl;
+            const openBtn = rawUrl.startsWith('http')
+                ? `<a href="${rawUrl}" target="_blank" rel="noopener" class="vid-open-link" onclick="event.stopPropagation()"><span class="material-icons" style="font-size:14px;">play_circle</span> Open / Play Video</a>`
+                : '';
+            return `<video src="${playUrl}" controls playsinline webkit-playsinline preload="metadata" class="msg-video" onclick="event.stopPropagation()"></video>${openBtn}`;
         }
         if (m.type === 'audio') {
             return `<audio src="${m.mediaUrl}" controls preload="metadata" style="width:195px; height:34px;" onclick="event.stopPropagation()"></audio>`;
@@ -932,13 +1068,13 @@ function listenToMessages(roomId) {
     const box = document.getElementById('msgs-container');
     box.innerHTML = '';
     cachedMessages = {};
+    domMap = new Map();
     isInitialLoad = true;
     const encKey = localStorage.getItem(`nova_enc_${roomId}`) || "";
-    const domMap = new Map();
     let lastDatePillText = "";
 
-    // Load last 60 messages for fast startup and smooth scrolling
-    const q = query(collection(db, roomId), orderBy("timestamp", "asc"), limitToLast(60));
+    // Use sentMs (always a number, never null) for fast, flicker-free live updates
+    const q = query(collection(db, roomId), orderBy("sentMs", "asc"), limitToLast(45));
 
     unsubscribeChat = onSnapshot(q, (snap) => {
         let mediaCount = 0, starCount = 0;
@@ -974,7 +1110,6 @@ function listenToMessages(roomId) {
             const bodySig = getBodySignature(m, encKey);
 
             if (domMap.has(id)) {
-                // UPDATE IN PLACE — NEVER DESTROYS <video> OR <img>!
                 const entry = domMap.get(id);
                 if (entry.bodySig !== bodySig) {
                     entry.bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey);
@@ -1051,12 +1186,15 @@ function listenToMessages(roomId) {
             }
         });
 
-        // Remove deleted messages from DOM
         for (const [id, entry] of domMap.entries()) {
             if (!visibleIds.has(id)) {
                 entry.wrap.remove();
                 domMap.delete(id);
             }
+        }
+        if (domMap.size === 0) {
+            box.innerHTML = '';
+            lastDatePillText = "";
         }
 
         document.getElementById('di-media-count').innerText = mediaCount;
@@ -1083,27 +1221,33 @@ function listenToMessages(roomId) {
 
 async function openViewOnceModal(id, m) {
     document.getElementById('modal-title').innerText = "➀ One-Time Media";
+    const playUrl = (m.mediaUrl || '').startsWith('http') ? m.mediaUrl + '#t=0.001' : m.mediaUrl;
     document.getElementById('modal-body').innerHTML = m.type === 'video'
-        ? `<video src="${m.mediaUrl}" controls autoplay playsinline webkit-playsinline style="width:100%; border-radius:8px;"></video>`
+        ? `<video src="${playUrl}" controls autoplay playsinline webkit-playsinline style="width:100%; border-radius:8px; background:#000;"></video>`
         : (m.type === 'audio' ? `<audio src="${m.mediaUrl}" controls autoplay style="width:100%;"></audio>` : `<img src="${m.mediaUrl}" style="width:100%; border-radius:8px;">`);
     document.getElementById('generic-modal').style.display = 'flex';
-    let v = m.viewedBy || [];
+    let v = [...(m.viewedBy || [])];
     if (!v.includes(myUid)) v.push(myUid);
     await updateDoc(doc(db, currentRoom, id), { viewedBy: v });
 }
 
-// Context Menu & Drawer
+// ============================================================================
+// CONTEXT MENU, CLEAR ALL CHAT & CONTACT DRAWER
+// ============================================================================
 const overlay = document.getElementById('msg-overlay');
+const clearModal = document.getElementById('clear-chat-modal');
+const drawer = document.getElementById('contact-info-drawer');
+
 function openContextMenu(e, id, m) {
     const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
     const dec = (m.type === 'location' || m.type === 'live_location') ? (m.mapUrl || m.text) : decryptText(m.text, encKey);
     selectedMsg = { id, ...m, decrypted: dec };
     overlay.style.display = 'block';
     const x = Math.max(10, Math.min(e.clientX - 90, window.innerWidth - 235));
-    const y = Math.max(60, Math.min(e.clientY, window.innerHeight - 310));
+    const y = Math.max(60, Math.min(e.clientY, window.innerHeight - 340));
     document.getElementById('react-pill').style.left = x + 'px';
     document.getElementById('react-pill').style.top = (y - 46) + 'px';
-    document.getElementById('ctx-menu').style.left = Math.min(x + 10, window.innerWidth - 205) + 'px';
+    document.getElementById('ctx-menu').style.left = Math.min(x + 10, window.innerWidth - 210) + 'px';
     document.getElementById('ctx-menu').style.top = y + 'px';
 }
 overlay.onclick = () => overlay.style.display = 'none';
@@ -1156,23 +1300,77 @@ document.getElementById('cm-seen').onclick = async () => {
         seenAtStr: next ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""
     });
 };
-document.getElementById('cm-del').onclick = async () => {
-    let ans = prompt("Delete message?\n1. Delete for me\n2. Delete for everyone");
-    if (!ans) return;
-    if (selectedMsg.type === 'live_location' && selectedMsg.isLiveActive && isMyMessage(selectedMsg)) {
-        await stopLiveLocation(currentRoom, selectedMsg.id);
-    }
-    if (ans.trim() === "1") {
-        let d = [...(selectedMsg.deletedFor || [])];
-        d.push(myUid);
-        await updateDoc(doc(db, currentRoom, selectedMsg.id), { deletedFor: d });
-    } else if (ans.trim() === "2") {
-        await updateDoc(doc(db, currentRoom, selectedMsg.id), { isDeletedEveryone: true, deletedByAudit: myName });
-    }
+
+// Single Message Delete using clean modal (no flaky iOS prompt!)
+document.getElementById('cm-del').onclick = () => {
+    const target = selectedMsg;
+    document.getElementById('modal-title').innerText = "Delete Message";
+    document.getElementById('modal-body').innerHTML = `
+        <button id="del-one-me" type="button" class="loc-action-btn" style="background:rgba(255,255,255,0.1); color:#fff; margin-bottom:10px;">🗑️ Delete for Me</button>
+        <button id="del-one-all" type="button" class="loc-action-btn" style="background:#dc2626; color:#fff;">🔥 Delete for Everyone</button>
+    `;
+    document.getElementById('generic-modal').style.display = 'flex';
+    document.getElementById('del-one-me').onclick = async () => {
+        document.getElementById('generic-modal').style.display = 'none';
+        let d = [...(target.deletedFor || [])];
+        if (!d.includes(myUid)) d.push(myUid);
+        await updateDoc(doc(db, currentRoom, target.id), { deletedFor: d });
+    };
+    document.getElementById('del-one-all').onclick = async () => {
+        document.getElementById('generic-modal').style.display = 'none';
+        if (target.type === 'live_location' && target.isLiveActive && isMyMessage(target)) {
+            await stopLiveLocation(currentRoom, target.id);
+        }
+        await updateDoc(doc(db, currentRoom, target.id), { isDeletedEveryone: true, deletedByAudit: myName });
+    };
 };
 
+// Clear All Chat Modal
+function openClearChatModal() {
+    if (!currentRoom) return;
+    drawer.style.display = 'none';
+    clearModal.style.display = 'flex';
+}
+document.getElementById('cm-clear-chat').onclick = openClearChatModal;
+document.getElementById('di-storage').onclick = openClearChatModal;
+document.getElementById('btn-close-clear-modal').onclick = () => { clearModal.style.display = 'none'; };
+clearModal.onclick = (e) => { if (e.target === clearModal) clearModal.style.display = 'none'; };
+
+async function runClearAllChat(forEveryone) {
+    if (!currentRoom) return;
+    const rId = currentRoom;
+    clearModal.style.display = 'none';
+    showQuickToast("🧹 Clearing chat...");
+    stopAllLiveSessions();
+    try {
+        const snap = await getDocs(collection(db, rId));
+        const ops = [];
+        snap.docs.forEach(d => {
+            const data = d.data();
+            if (forEveryone) {
+                if (!data.isDeletedEveryone) {
+                    ops.push(updateDoc(doc(db, rId, d.id), { isDeletedEveryone: true, isLiveActive: false, deletedByAudit: myName }).catch(() => {}));
+                }
+            } else {
+                const df = [...(data.deletedFor || [])];
+                if (!df.includes(myUid)) {
+                    df.push(myUid);
+                    ops.push(updateDoc(doc(db, rId, d.id), { deletedFor: df }).catch(() => {}));
+                }
+            }
+        });
+        await Promise.all(ops);
+        document.getElementById('msgs-container').innerHTML = '';
+        domMap.clear();
+        showQuickToast("✅ Saare messages clear ho gaye!");
+    } catch (e) {
+        alert("⚠️ Clear chat failed, please try again.");
+    }
+}
+document.getElementById('btn-clear-me').onclick = () => runClearAllChat(false);
+document.getElementById('btn-clear-all').onclick = () => runClearAllChat(true);
+
 // Drawer & Tabs
-const drawer = document.getElementById('contact-info-drawer');
 document.getElementById('open-contact-info').onclick = () => { if (currentRoom) drawer.style.display = 'flex'; };
 document.getElementById('btn-close-drawer').onclick = () => drawer.style.display = 'none';
 
@@ -1195,11 +1393,7 @@ document.getElementById('toggle-lock-chat').onchange = (e) => {
     syncAccountToCloud();
     renderSidebarList();
     renderActiveStrip();
-    if (meta.locked) {
-        drawer.style.display = 'none';
-        isRoomActivelyOpen = false;
-        document.getElementById('chat-view').classList.remove('open');
-    }
+    if (meta.locked) goBackToList();
 };
 
 document.getElementById('select-vanish-timer').onchange = (e) => {
@@ -1234,28 +1428,10 @@ document.getElementById('di-notif').onclick = async () => {
     triggerStealthAlert("text");
 };
 
-document.getElementById('di-storage').onclick = async () => {
-    let c = prompt("Clear Chat:\n1. Clear for me\n2. Clear for everyone");
-    if (!c) return;
-    const snap = await getDocs(query(collection(db, currentRoom)));
-    snap.forEach(async d => {
-        if (c.trim() === "1") {
-            let df = d.data().deletedFor || []; df.push(myUid);
-            await updateDoc(doc(db, currentRoom, d.id), { deletedFor: df });
-        } else if (c.trim() === "2") {
-            await updateDoc(doc(db, currentRoom, d.id), { isDeletedEveryone: true, deletedByAudit: myName });
-        }
-    });
-    drawer.style.display = 'none';
-};
-
 document.getElementById('di-remove-chat').onclick = () => {
     savedRooms = savedRooms.filter(r => r.id !== currentRoom);
     syncAccountToCloud();
-    drawer.style.display = 'none';
-    isRoomActivelyOpen = false;
-    document.getElementById('chat-view').classList.remove('open');
-    renderSidebarList();
+    goBackToList();
     renderActiveStrip();
 };
 
@@ -1276,20 +1452,14 @@ document.getElementById('tab-status').onclick = () => {
     loadStories();
 };
 
-// 0ms INSTANT PANIC SHIELD:
-// - Inside Game Widget: hides BOTH chat & lightning button immediately!
-// - Standalone chat.html: opens fake NOVA-OS decoy cover!
-const cyberGate = document.getElementById('cyber-gate-screen');
-const triggerInstantPanic = (e) => {
+// SHIELD BUTTON -> FAKE NOTICE BOARD (BOTH IN MAIN CHAT & IN GAMES)
+const openFakeNoticeBoard = (e) => {
     if (e) e.stopPropagation();
-    if (isWidgetMode) {
-        postToGame({ type: 'NOVA_PANIC_HIDE' });
-    } else {
-        cyberGate.style.display = 'flex';
-    }
+    if (document.activeElement) document.activeElement.blur();
+    cyberGate.style.display = 'flex';
 };
-document.getElementById('btn-panic-now').onclick = triggerInstantPanic;
-document.getElementById('btn-chat-panic').onclick = triggerInstantPanic;
+document.getElementById('btn-panic-now').onclick = openFakeNoticeBoard;
+document.getElementById('btn-chat-panic').onclick = openFakeNoticeBoard;
 
 let gTaps = 0, gTimer = null;
 document.getElementById('cyber-triple-tap').onclick = () => {
@@ -1478,7 +1648,6 @@ function listenToCalls(roomId) {
     });
 }
 
-// LAZY-LOAD EMOJI PICKER (Speeds up app & games dramatically!)
 let emojiPickerLoaded = false;
 document.getElementById('btn-emoji').onclick = async (e) => {
     e.stopPropagation();
@@ -1497,7 +1666,8 @@ document.getElementById('di-media').onclick = () => {
         const m = cachedMessages[id];
         if ((m.type === 'image' || m.type === 'video') && !m.isViewOnce && !m.isDeletedEveryone) {
             count++;
-            html += m.type === 'video' ? `<video src="${m.mediaUrl}" controls playsinline webkit-playsinline preload="metadata" style="width:100%; border-radius:8px;"></video>` : `<img src="${m.mediaUrl}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">`;
+            const pUrl = (m.mediaUrl || '').startsWith('http') ? m.mediaUrl + '#t=0.001' : m.mediaUrl;
+            html += m.type === 'video' ? `<video src="${pUrl}" controls playsinline webkit-playsinline preload="metadata" style="width:100%; border-radius:8px; background:#000;"></video>` : `<img src="${m.mediaUrl}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">`;
         }
     }
     html += '</div>';
@@ -1554,7 +1724,7 @@ window.inspectGod = async (rId) => {
     godRoom = rId;
     document.getElementById('god-room-title').innerText = `🕵️ Chat: ${rId}`;
     const box = document.getElementById('god-logs');
-    const snap = await getDocs(query(collection(db, rId), orderBy("timestamp", "asc")));
+    const snap = await getDocs(query(collection(db, rId), orderBy("sentMs", "asc")));
     let html = '';
     snap.forEach(d => {
         const m = d.data();
@@ -1569,7 +1739,7 @@ window.inspectGod = async (rId) => {
 
 document.getElementById('god-purge-btn').onclick = async () => {
     if (!godRoom) return;
-    const snap = await getDocs(query(collection(db, godRoom)));
+    const snap = await getDocs(collection(db, godRoom));
     for (const d of snap.docs) {
         if (d.data().isDeletedEveryone || (d.data().deletedFor && d.data().deletedFor.length > 0)) await deleteDoc(doc(db, godRoom, d.id));
     }
@@ -1578,7 +1748,7 @@ document.getElementById('god-purge-btn').onclick = async () => {
 
 document.getElementById('god-wipe-btn').onclick = async () => {
     if (!godRoom || !confirm("Wipe entire chat from Firebase permanently?")) return;
-    const snap = await getDocs(query(collection(db, godRoom)));
+    const snap = await getDocs(collection(db, godRoom));
     for (const d of snap.docs) await deleteDoc(doc(db, godRoom, d.id));
     window.inspectGod(godRoom);
 };
