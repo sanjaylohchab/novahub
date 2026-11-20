@@ -32,27 +32,34 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
-        html, body { width: 100%; height: 100%; overflow: hidden; background-color: var(--bg-main); color: var(--text-main); }
+        html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background-color: var(--bg-main); color: var(--text-main); }
         body { display: flex; flex-direction: column; }
-        button, .icon-btn, .chat-item, .story-bubble, .tab-item, .ctx-item { touch-action: manipulation; }
+        button, .icon-btn, .chat-item, .story-bubble, .tab-item, .ctx-item, .info-item { touch-action: manipulation; }
 
         #stealth-toast { position: fixed; top: -80px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1.5px solid #00f2fe; color: #fff; padding: 10px 20px; border-radius: 30px; z-index: 10080; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); transition: top 0.3s ease; pointer-events: none; white-space: nowrap; }
         #stealth-toast.show { top: 16px; }
 
-        #auth-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #16243d 0%, #050911 100%); z-index: 10050; display: flex; justify-content: center; align-items: center; padding: 16px; overflow-y: auto; }
-        .auth-card { background: rgba(17, 27, 43, 0.9); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 24px; width: 100%; max-width: 390px; padding: 24px 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.9); text-align: center; }
-        .auth-logo { width: 56px; height: 56px; border-radius: 18px; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; margin: 0 auto 12px auto; color: #04121a; }
-        .auth-tabs { display: flex; background: rgba(0,0,0,0.35); border-radius: 14px; padding: 4px; margin: 16px 0; border: 1px solid var(--border-col); }
+        /* AUTH SCREEN */
+        #auth-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #16243d 0%, #050911 100%); z-index: 10060; display: flex; justify-content: center; align-items: center; padding: 16px; overflow-y: auto; }
+        .auth-card { background: rgba(17, 27, 43, 0.92); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 24px; width: 100%; max-width: 380px; padding: 22px 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.9); text-align: center; }
+        .auth-logo { width: 54px; height: 54px; border-radius: 16px; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; margin: 0 auto 10px auto; color: #04121a; }
+        .auth-tabs { display: flex; background: rgba(0,0,0,0.35); border-radius: 14px; padding: 4px; margin: 14px 0; border: 1px solid var(--border-col); }
         .auth-tab { flex: 1; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 13px; color: var(--text-sub); cursor: pointer; }
         .auth-tab.active { background: var(--accent-grad); color: #04121a; }
         .auth-field { text-align: left; margin-bottom: 12px; }
         .auth-field label { display: block; font-size: 11px; font-weight: 700; color: #38bdf8; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .auth-input { width: 100%; background: rgba(8, 13, 23, 0.9); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 11px 13px; border-radius: 12px; font-size: 14.5px; outline: none; }
+        .auth-input { width: 100%; background: rgba(8, 13, 23, 0.92); border: 1px solid rgba(255,255,255,0.14); color: #fff; padding: 11px 13px; border-radius: 12px; font-size: 15px; outline: none; user-select: text; }
         .auth-input:focus { border-color: #00f2fe; }
         .auth-btn { width: 100%; background: var(--accent-grad); color: #04121a; border: none; padding: 12px; border-radius: 12px; font-weight: 800; font-size: 14.5px; cursor: pointer; margin-top: 6px; }
-        #auth-error-msg { color: #f87171; font-size: 12.5px; font-weight: 600; margin-bottom: 10px; min-height: 18px; }
+        #auth-error-msg { color: #f87171; font-size: 12.5px; font-weight: 600; margin-bottom: 8px; min-height: 18px; }
 
-        #cyber-gate-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%); z-index: 10040; display: none; flex-direction: column; padding: 18px; color: #e2e8f0; overflow-y: auto; }
+        /* APP ENTRY LOCK GATE (BLOCKS ALL CHATS UNTIL PIN ENTERED) */
+        #app-lock-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #132036 0%, #050911 100%); z-index: 10050; display: none; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
+        .lock-card { width: 100%; max-width: 340px; background: rgba(17, 27, 43, 0.92); border: 1.5px solid rgba(0, 242, 254, 0.3); border-radius: 22px; padding: 22px 18px; text-align: center; box-shadow: 0 20px 55px rgba(0,0,0,0.9); }
+        #lock-error-msg { color: #f87171; font-size: 12.5px; font-weight: 700; min-height: 18px; margin: 6px 0; }
+
+        /* FAKE NOTICE BOARD / SHIELD DECOY SCREEN */
+        #cyber-gate-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%); z-index: 10055; display: none; flex-direction: column; padding: 18px; color: #e2e8f0; overflow-y: auto; }
         .cyber-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 242, 254, 0.2); margin-bottom: 16px; }
         .cyber-card { background: rgba(30, 41, 59, 0.65); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
         .cyber-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
@@ -60,7 +67,7 @@
 
         .app-shell { display: flex; width: 100%; height: 100%; position: relative; overflow: hidden; }
         .sidebar { width: 100%; max-width: 410px; background: var(--bg-panel); border-right: 1px solid var(--border-col); display: flex; flex-direction: column; height: 100%; z-index: 10; }
-        .top-bar { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 6px; }
+        .top-bar { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 9px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 5px; }
         .my-profile-chip { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; overflow: hidden; min-width: 0; }
         .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; color: #04121a; font-weight: 800; background-size: cover; background-position: center; flex-shrink: 0; font-size: 14.5px; position: relative; }
         .online-dot { width: 10px; height: 10px; background: #10b981; border: 2px solid var(--bg-panel); border-radius: 50%; position: absolute; bottom: 0; right: 0; }
@@ -79,7 +86,7 @@
         .tab-item.active { color: #00f2fe; border-bottom-color: #00f2fe; }
 
         .search-bar { padding: 8px 10px; background: var(--bg-panel); display: flex; gap: 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
-        .search-input { flex: 1; background: var(--bg-nav); border: 1px solid var(--border-col); padding: 8px 12px; border-radius: 20px; color: var(--text-main); outline: none; font-size: 13px; min-width: 0; }
+        .search-input { flex: 1; background: var(--bg-nav); border: 1px solid var(--border-col); padding: 8px 12px; border-radius: 20px; color: var(--text-main); outline: none; font-size: 13px; min-width: 0; user-select: text; }
         .add-friend-btn { background: var(--accent-grad); color: #04121a; border: none; padding: 0 12px; height: 35px; border-radius: 20px; font-weight: 800; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
         .list-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -92,8 +99,8 @@
         .chat-item-sub { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .mode-badge { background: rgba(0, 242, 254, 0.15); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.35); font-size: 9.5px; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
 
-        /* CHAT VIEW: Uses absolute inside app-shell so iOS iframe NEVER freezes */
-        .chat-view { flex: 1; display: flex; flex-direction: column; height: 100%; background: var(--bg-chat); position: relative; z-index: 20; }
+        /* CHAT VIEW */
+        .chat-view { flex: 1; display: flex; flex-direction: column; height: 100%; background: var(--bg-chat); position: relative; z-index: 25; }
         .widget-only-btn { display: none; }
         body.widget-mode .widget-only-btn { display: flex; }
         body.widget-mode .standalone-only { display: none !important; }
@@ -107,7 +114,7 @@
         body.widget-mode .chat-view { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
         body.widget-mode .chat-view.open { display: flex; }
 
-        .chat-header { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 6px; position: relative; z-index: 5; }
+        .chat-header { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 6px; position: relative; z-index: 30; }
         .chat-header-left { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; overflow: hidden; min-width: 0; }
         .chat-title-name { font-weight: 700; font-size: 14px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
         .chat-title-status { font-size: 11px; color: #00f2fe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -133,7 +140,9 @@
         .seen-tick.read { color: #00f2fe; opacity: 1; }
         .msg-reactions { display: flex; gap: 2px; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; padding: 1px 6px; font-size: 12px; width: fit-content; margin-top: -6px; z-index: 2; align-self: flex-end; }
 
-        .msg-media { max-width: 220px; max-height: 240px; border-radius: 10px; display: block; margin-bottom: 3px; background: #000; }
+        .msg-media { max-width: 225px; max-height: 240px; border-radius: 10px; display: block; margin-bottom: 4px; background: #000; }
+        .msg-video { width: 225px; max-width: 100%; min-height: 135px; max-height: 240px; border-radius: 10px; display: block; background: #000; object-fit: contain; margin-bottom: 4px; }
+        .vid-open-link { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #00f2fe; text-decoration: none; background: rgba(0,242,254,0.12); padding: 4px 9px; border-radius: 8px; margin-bottom: 3px; }
         .view-once-pill { display: flex; align-items: center; gap: 6px; background: rgba(0,242,254,0.1); padding: 6px 11px; border-radius: 16px; border: 1px dashed #00f2fe; color: #00f2fe; font-weight: 600; font-size: 12px; }
         .view-once-pill.opened { border-color: var(--text-sub); color: var(--text-sub); background: transparent; font-style: italic; font-weight: normal; }
 
@@ -151,7 +160,7 @@
 
         .reply-preview-bar { background: var(--bg-nav); padding: 6px 12px; border-top: 1px solid var(--border-col); display: none; justify-content: space-between; align-items: center; font-size: 12px; flex-shrink: 0; }
         .chat-input-bar { padding: 7px 8px; background: var(--bg-nav); display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border-col); flex-shrink: 0; }
-        .msg-input { flex: 1; background: var(--bg-panel); border: 1px solid var(--border-col); color: var(--text-main); padding: 9px 12px; border-radius: 20px; outline: none; font-size: 13.5px; min-width: 0; }
+        .msg-input { flex: 1; background: var(--bg-panel); border: 1px solid var(--border-col); color: var(--text-main); padding: 9px 12px; border-radius: 20px; outline: none; font-size: 14px; min-width: 0; user-select: text; }
         .vo-toggle { width: 26px; height: 26px; border-radius: 50%; border: 1.5px dashed var(--text-sub); color: var(--text-sub); font-size: 11px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; }
         .vo-toggle.active { background: #00f2fe; color: #04121a; border-color: #00f2fe; }
         .circle-btn { width: 35px; height: 35px; border-radius: 50%; background: var(--accent-grad); color: #04121a; border: none; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; }
@@ -193,13 +202,13 @@
         #msg-overlay { position: fixed; inset: 0; z-index: 10015; display: none; }
         .react-pill { position: fixed; background: var(--bg-nav); border-radius: 30px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; box-shadow: 0 6px 25px rgba(0,0,0,0.7); border: 1px solid var(--border-col); }
         .react-emo { font-size: 20px; cursor: pointer; }
-        .ctx-menu { position: fixed; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; width: 195px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85); }
+        .ctx-menu { position: fixed; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; width: 200px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85); }
         .ctx-item { padding: 9px 13px; font-size: 13px; color: var(--text-main); display: flex; align-items: center; gap: 11px; cursor: pointer; border-bottom: 1px solid var(--border-col); }
 
         emoji-picker { position: fixed; bottom: 62px; right: 10px; width: 300px; max-width: calc(100vw - 20px); height: 270px; z-index: 10025; display: none; border-radius: 12px; }
         emoji-picker.show { display: block; }
 
-        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10030; display: none; justify-content: center; align-items: center; padding: 14px; }
+        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10040; display: none; justify-content: center; align-items: center; padding: 14px; }
         .modal-card { background: var(--bg-panel); border: 1px solid var(--border-col); border-radius: 16px; width: 100%; max-width: 360px; padding: 16px; max-height: 82vh; overflow-y: auto; color: var(--text-main); }
 
         #god-modal { position: fixed; inset: 0; background: #070000; z-index: 10090; display: none; flex-direction: column; font-family: monospace; color: #f87171; overflow-y: auto; }
@@ -210,6 +219,7 @@
     <div id="stealth-toast"><span class="material-icons" style="color:#00f2fe; font-size:18px;">sports_esports</span> <span id="toast-txt">New high score! Game khelo **</span></div>
     <audio id="remote-aud" autoplay></audio>
 
+    <!-- 1. LOGIN & SIGNUP -->
     <div id="auth-screen">
         <div class="auth-card">
             <div class="auth-logo"><span class="material-icons" style="font-size:32px;">bolt</span></div>
@@ -238,13 +248,34 @@
                 <input type="password" id="auth-pass" class="auth-input" placeholder="Enter your secret password">
             </div>
 
-            <button class="auth-btn" id="btn-auth-submit">LOGIN TO MY ACCOUNT</button>
+            <button class="auth-btn" id="btn-auth-submit" type="button">LOGIN TO MY ACCOUNT</button>
             <div class="standalone-only" style="margin-top:12px;">
                 <a href="index.html" style="color:var(--text-sub); font-size:12px; text-decoration:none;">⬅ Return to Arcade Games</a>
             </div>
         </div>
     </div>
 
+    <!-- 2. APP ENTRY LOCK SCREEN (PIN REQUIRED BEFORE SHOWING ANY CHATS) -->
+    <div id="app-lock-screen">
+        <div class="lock-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <button class="icon-btn" id="btn-lock-to-decoy" type="button" title="Notice Board"><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></button>
+                <span style="font-size:11px; color:#38bdf8; font-weight:800; letter-spacing:1px;">SECURITY GATE</span>
+                <button class="icon-btn widget-only-btn" id="btn-lock-close-widget" type="button" title="Close"><span class="material-icons" style="font-size:18px;">close</span></button>
+            </div>
+            <div class="auth-logo" style="width:50px; height:50px; margin-bottom:10px;"><span class="material-icons" style="font-size:26px;">lock</span></div>
+            <h3 style="font-size:17px; color:#fff; margin-bottom:4px;">Chats Locked</h3>
+            <p style="font-size:12px; color:var(--text-sub); margin-bottom:12px;">Enter your secret PIN to open messages</p>
+            <input type="password" id="lock-pin-input" class="auth-input" inputmode="numeric" placeholder="Enter Secret PIN..." style="text-align:center; letter-spacing:4px; font-size:18px;">
+            <div id="lock-error-msg"></div>
+            <button class="auth-btn" id="btn-unlock-app" type="button">🔓 UNLOCK MESSAGES</button>
+            <div class="standalone-only" style="margin-top:12px;">
+                <a href="index.html" style="color:var(--text-sub); font-size:12px; text-decoration:none;">⬅ Return to Games</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. FAKE NOTICE BOARD / SHIELD DECOY SCREEN (3-TAP TOP-LEFT TO UNLOCK) -->
     <div id="cyber-gate-screen">
         <div class="cyber-header">
             <div id="cyber-triple-tap" style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px;">
@@ -259,13 +290,14 @@
             <div class="cyber-stat-box"><div style="font-size:11px; color:#94a3b8;">ENGINE</div><div style="font-size:20px; font-weight:bold; color:#00f2fe; margin-top:4px;">120 Hz</div></div>
         </div>
         <div class="cyber-card">
-            <div style="font-size:12px; color:#94a3b8; font-weight:bold; margin-bottom:10px;">🏆 Global Season Telemetry</div>
+            <div style="font-size:12px; color:#94a3b8; font-weight:bold; margin-bottom:10px;">🏆 Global Season Notice Board</div>
             <div style="display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:#eab308; font-weight:bold;"><span>🥇 1. Cyber_Knight</span><span>14,920 XP</span></div>
             <div style="display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid rgba(255,255,255,0.06); color:#cbd5e1;"><span>🥈 2. Ludo_King_99</span><span>12,410 XP</span></div>
             <div style="display:flex; justify-content:space-between; padding:9px 0; color:#d97706;"><span>🥉 3. Shadow_X</span><span>11,880 XP</span></div>
         </div>
     </div>
 
+    <!-- 4. MESSENGER SHELL -->
     <div class="app-shell">
         <div class="sidebar">
             <div class="top-bar">
@@ -276,10 +308,10 @@
                         <div style="font-size:11px; color:#00f2fe; font-weight:700;" id="my-top-id-tag">ID: ---</div>
                     </div>
                 </div>
-                <div style="display:flex; gap:5px; flex-shrink:0;">
+                <div style="display:flex; gap:4px; flex-shrink:0;">
+                    <button class="icon-btn" id="btn-app-lock-toggle" type="button" title="Chat Entry Lock ON/OFF"><span class="material-icons" id="app-lock-icon" style="font-size:18px;">lock_open</span></button>
+                    <button class="icon-btn" id="btn-panic-now" type="button" title="Fake Notice Board (Shield)"><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></button>
                     <button class="icon-btn" id="btn-theme-mode" type="button" title="Day / Night Mode"><span class="material-icons" style="font-size:18px;">dark_mode</span></button>
-                    <button class="icon-btn" id="btn-panic-now" type="button" title="Instant Panic Hide"><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></button>
-                    <a href="chat-settings.html" class="icon-btn" title="Settings"><span class="material-icons" style="font-size:18px;">settings</span></a>
                     <button class="icon-btn" id="btn-logout-now" type="button" title="Logout" style="background:rgba(239,68,68,0.18); color:#f87171;"><span class="material-icons" style="font-size:18px;">logout</span></button>
                     <button class="icon-btn widget-only-btn" id="btn-widget-close-side" type="button" title="Close Chat"><span class="material-icons" style="font-size:18px;">close</span></button>
                 </div>
@@ -315,8 +347,7 @@
 
         <div class="chat-view" id="chat-view">
             <div class="chat-header">
-                <!-- BACK BUTTON COMPLETELY SEPARATE FROM CONTACT INFO -->
-                <button class="icon-btn" id="btn-mobile-back" type="button" title="Back to Chats" style="background:rgba(0,242,254,0.14); color:#00f2fe;"><span class="material-icons" style="font-size:20px;">arrow_back</span></button>
+                <button class="icon-btn" id="btn-mobile-back" type="button" title="Back to Chats" style="width:36px; height:36px; background:rgba(0,242,254,0.16); color:#00f2fe;"><span class="material-icons" style="font-size:20px;">arrow_back</span></button>
                 <div class="chat-header-left" id="open-contact-info">
                     <div class="avatar" id="active-room-dp"><span class="material-icons" style="font-size:19px;">person</span></div>
                     <div style="overflow:hidden; min-width:0;">
@@ -324,11 +355,11 @@
                             <span id="active-room-title">Select a Friend</span>
                             <span id="active-mode-badge" class="mode-badge" style="display:none;"></span>
                         </div>
-                        <div class="chat-title-status" id="active-room-status">Tap + Add ID to start private chat</div>
+                        <div class="chat-title-status" id="active-room-status">Tap name for Info & Clear Chat</div>
                     </div>
                 </div>
                 <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
-                    <button class="icon-btn" id="btn-chat-panic" type="button" title="1-Tap Instant Panic Hide"><span class="material-icons" style="font-size:19px; color:#eab308;">shield</span></button>
+                    <button class="icon-btn" id="btn-chat-panic" type="button" title="Fake Notice Board (Shield)"><span class="material-icons" style="font-size:19px; color:#eab308;">shield</span></button>
                     <button class="icon-btn" id="btn-voice-call" type="button" title="Voice Call"><span class="material-icons" style="font-size:19px; color:#10b981;">call</span></button>
                     <button class="icon-btn" id="btn-video-call" type="button" title="Video Call"><span class="material-icons" style="font-size:19px; color:#00f2fe;">videocam</span></button>
                     <button class="icon-btn widget-only-btn" id="btn-widget-close-chat" type="button" title="Close Chat"><span class="material-icons" style="font-size:19px;">close</span></button>
@@ -356,7 +387,7 @@
             <div class="chat-input-bar">
                 <span class="material-icons" id="btn-emoji" style="color:var(--text-sub); cursor:pointer; font-size:21px;">sentiment_satisfied_alt</span>
                 <span class="material-icons" id="btn-attach" style="color:var(--text-sub); cursor:pointer; font-size:21px;" title="Send Photo/Video">attach_file</span>
-                <span class="material-icons" id="btn-share-location" style="color:#10b981; cursor:pointer; font-size:21px;" title="Share Current or Live Location">location_on</span>
+                <span class="material-icons" id="btn-share-location" style="color:#10b981; cursor:pointer; font-size:21px;" title="Share Location">location_on</span>
                 <input type="file" id="msg-file-input" accept="image/*,video/*" style="display:none;">
                 <div class="vo-toggle" id="btn-vo-toggle" title="1-Time View Media">1</div>
                 <input type="text" id="msg-input" class="msg-input" placeholder="Message...">
@@ -366,6 +397,46 @@
         </div>
     </div>
 
+    <!-- APP LOCK SETTINGS MODAL (ON/OFF + PIN SETUP) -->
+    <div class="modal-bg" id="lock-settings-modal">
+        <div class="modal-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
+                <strong style="color:#00f2fe; display:flex; align-items:center; gap:6px;"><span class="material-icons" style="color:#10b981;">security</span> Chat Entry Lock</strong>
+                <span class="material-icons" style="cursor:pointer;" id="btn-close-lock-settings">close</span>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-nav); padding:12px; border-radius:12px; margin-bottom:12px;">
+                <div>
+                    <div style="font-size:13.5px; font-weight:700;">Require PIN to Open Chat</div>
+                    <div style="font-size:11px; color:var(--text-sub);">Locks automatically on close or refresh</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="toggle-app-lock-sw"><span class="slider"></span></label>
+            </div>
+
+            <div class="auth-field">
+                <label>Set / Change Secret PIN (Min 4 digits)</label>
+                <input type="password" id="set-app-lock-pin" class="auth-input" inputmode="numeric" placeholder="e.g. 1234">
+            </div>
+            <div id="lock-settings-msg" style="font-size:12px; color:#10b981; min-height:16px; margin-bottom:8px;"></div>
+            <button class="loc-action-btn" id="btn-save-lock-settings" type="button" style="background:var(--accent-grad); color:#04121a; margin-bottom:8px;">💾 Save Lock Settings</button>
+            <button class="loc-action-btn" id="btn-lock-now-manual" type="button" style="background:rgba(234,179,8,0.18); color:#fde047; border:1px solid #eab308;">🔒 Lock Right Now</button>
+        </div>
+    </div>
+
+    <!-- CLEAR ALL CHAT MODAL (1-TAP RELIABLE CLEAR) -->
+    <div class="modal-bg" id="clear-chat-modal">
+        <div class="modal-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
+                <strong style="color:#f87171; display:flex; align-items:center; gap:6px;"><span class="material-icons">delete_sweep</span> Clear All Messages</strong>
+                <span class="material-icons" style="cursor:pointer;" id="btn-close-clear-modal">close</span>
+            </div>
+            <p style="font-size:13px; color:var(--text-sub); margin-bottom:14px;">Saare messages is chat se ek baar mein delete karne ke liye option chunein:</p>
+            <button class="loc-action-btn" id="btn-clear-me" type="button" style="background:rgba(255,255,255,0.1); color:#fff; margin-bottom:10px;">🧹 Clear for Me Only</button>
+            <button class="loc-action-btn" id="btn-clear-all" type="button" style="background:#dc2626; color:#fff;">🔥 Delete All for Everyone</button>
+        </div>
+    </div>
+
+    <!-- LOCATION PICKER MODAL -->
     <div class="modal-bg" id="location-modal">
         <div class="modal-card">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
@@ -397,6 +468,7 @@
         </div>
     </div>
 
+    <!-- CONTACT INFO DRAWER -->
     <div id="contact-info-drawer">
         <div class="drawer-header">
             <button class="pill-top-btn" id="btn-close-drawer" type="button">❮ Back</button>
@@ -405,13 +477,13 @@
         </div>
 
         <div class="info-group">
+            <div class="info-item" id="di-storage" style="color:#f87171; font-weight:700;">
+                <div class="info-item-left"><span class="material-icons" style="color:#ef4444;">delete_sweep</span> <span>Clear All Messages</span></div>
+                <div class="info-item-right"><span style="color:#f87171;">Clear</span> <span class="material-icons" style="font-size:17px;">chevron_right</span></div>
+            </div>
             <div class="info-item" id="di-media">
                 <div class="info-item-left"><span class="material-icons" style="color:#38bdf8;">photo_library</span> <span>Media, photos & videos</span></div>
                 <div class="info-item-right"><span id="di-media-count">0</span> <span class="material-icons" style="font-size:17px;">chevron_right</span></div>
-            </div>
-            <div class="info-item" id="di-storage">
-                <div class="info-item-left"><span class="material-icons" style="color:#10b981;">cleaning_services</span> <span>Clear conversation</span></div>
-                <div class="info-item-right"><span>Clear</span> <span class="material-icons" style="font-size:17px;">chevron_right</span></div>
             </div>
             <div class="info-item" id="di-starred">
                 <div class="info-item-left"><span class="material-icons" style="color:#eab308;">star_outline</span> <span>Starred messages</span></div>
@@ -450,7 +522,7 @@
             <div class="info-item">
                 <div class="info-item-left">
                     <span class="material-icons" style="color:#00f2fe;">lock</span>
-                    <div><div>Lock & Hide Chat</div><div style="font-size:11px; color:var(--text-sub);">Type Lock PIN in Search Bar</div></div>
+                    <div><div>Hide This Chat</div><div style="font-size:11px; color:var(--text-sub);">Type Lock PIN in Search Bar</div></div>
                 </div>
                 <label class="switch"><input type="checkbox" id="toggle-lock-chat"><span class="slider"></span></label>
             </div>
@@ -510,7 +582,8 @@
             <div class="ctx-item" id="cm-star"><span class="material-icons" style="font-size:18px; color:#eab308;">star_outline</span> Star / Unstar</div>
             <div class="ctx-item" id="cm-edit"><span class="material-icons" style="font-size:18px;">edit</span> Edit</div>
             <div class="ctx-item" id="cm-seen"><span class="material-icons" style="font-size:18px; color:#00f2fe;">done_all</span> Seen / Unseen</div>
-            <div class="ctx-item" id="cm-del" style="color:#ef4444;"><span class="material-icons" style="font-size:18px;">delete_outline</span> Delete</div>
+            <div class="ctx-item" id="cm-del" style="color:#ef4444;"><span class="material-icons" style="font-size:18px;">delete_outline</span> Delete Message</div>
+            <div class="ctx-item" id="cm-clear-chat" style="color:#f87171;"><span class="material-icons" style="font-size:18px;">delete_sweep</span> Clear All Chat</div>
         </div>
     </div>
 
