@@ -1,5 +1,5 @@
 // ============================================================================
-// NOVAHUB UNIVERSAL CHAT BRIDGE (FAST 0ms OPEN/HIDE + INSTANT PANIC STEALTH)
+// NOVAHUB UNIVERSAL CHAT BRIDGE (Fast Load + Double-Tap Panic Hide + Auto-Lock)
 // ============================================================================
 (() => {
     if (document.getElementById('uchat-fab')) return;
@@ -21,10 +21,10 @@
 
         .uchat-badge { position: absolute; top: -4px; right: -4px; background: #ff0055; color: #fff; font-size: 11px; font-weight: 800; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 50%; display: none; justify-content: center; align-items: center; border: 2px solid #090d16; font-family: sans-serif; }
 
-        #uchat-secret-unhide-zone { position: fixed; top: 0; left: 0; width: 105px; height: 65px; z-index: 10010; background: transparent; pointer-events: none; touch-action: manipulation; }
+        #uchat-secret-unhide-zone { position: fixed; top: 0; left: 0; width: 110px; height: 70px; z-index: 10010; background: transparent; pointer-events: none; touch-action: manipulation; }
         #uchat-secret-unhide-zone.active-panic { pointer-events: auto; }
 
-        #uchat-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.38); z-index: 9990; display: none; touch-action: manipulation; }
+        #uchat-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.42); z-index: 9990; display: none; touch-action: manipulation; }
 
         #uchat-stealth-toast { position: fixed; top: -80px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.96); border: 1.5px solid #00f2fe; color: #fff; padding: 10px 18px; border-radius: 30px; z-index: 10012; font-family: 'Segoe UI', sans-serif; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 25px rgba(0,0,0,0.85); transition: top 0.3s ease; pointer-events: none; white-space: nowrap; }
         #uchat-stealth-toast.show { top: 16px; }
@@ -40,7 +40,7 @@
         <div id="uchat-secret-unhide-zone"></div>
         <div id="uchat-backdrop"></div>
         <div id="uchat-stealth-toast"><span class="material-icons" style="color:#00f2fe; font-size:18px;">sports_esports</span> <span id="uchat-toast-text">Game khelo **</span></div>
-        <div class="uchat-fab" id="uchat-fab" title="Tap: Open/Close Chat">
+        <div class="uchat-fab" id="uchat-fab" title="1 Tap: Open/Close | 2 Tap: Hide Completely">
             <span class="material-icons">bolt</span>
             <div class="uchat-badge" id="uchat-badge">0</div>
         </div>
@@ -96,16 +96,26 @@
         notifyIframeState();
     }
 
-    // 0ms Instant Tap to Open / Close (No 230ms lag!)
+    // 1 Tap = Open/Close Chat | Double Tap = Panic Hide Lightning Button Completely
+    let fabTapTimer = null;
     fab.addEventListener('click', (e) => {
         e.stopPropagation();
-        setOpen(!isOpen);
+        if (fabTapTimer) {
+            clearTimeout(fabTapTimer);
+            fabTapTimer = null;
+            triggerPanicHide();
+        } else {
+            fabTapTimer = setTimeout(() => {
+                fabTapTimer = null;
+                setOpen(!isOpen);
+            }, 220);
+        }
     });
 
-    // Tap anywhere outside chat box -> Instant Close (0ms)
+    // Tap anywhere outside chat box -> Instant Close (and auto-locks if Lock PIN is ON)
     backdrop.addEventListener('click', () => setOpen(false));
 
-    // Top-left 3-tap to unhide after Panic Hide
+    // Top-left 3-tap to unhide Lightning Button after Double-Tap Panic Hide
     let unhideTaps = 0, unhideTimer = null;
     unhideZone.addEventListener('click', () => {
         unhideTaps++;
