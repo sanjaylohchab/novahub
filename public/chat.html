@@ -31,48 +31,54 @@
             --bubble-other: #ffffff; --border-col: #e2e8f0;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
-        html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background-color: var(--bg-main); color: var(--text-main); }
-        body { display: flex; flex-direction: column; }
-        button, .icon-btn, .chat-item, .story-bubble, .tab-item, .ctx-item, .info-item { touch-action: manipulation; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+        html, body { width: 100%; height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; background-color: var(--bg-main); color: var(--text-main); }
+        body { position: relative; }
+        button, .icon-btn, .chat-item, .story-bubble, .tab-item, .ctx-item, .info-item, .dur-chip { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 
-        #stealth-toast { position: fixed; top: -80px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1.5px solid #00f2fe; color: #fff; padding: 10px 20px; border-radius: 30px; z-index: 10080; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); transition: top 0.3s ease; pointer-events: none; white-space: nowrap; }
-        #stealth-toast.show { top: 16px; }
+        /* SAFE OVERLAY LAYER SYSTEM: Zero invisible click-blockers */
+        .overlay-layer { position: absolute; inset: 0; display: none; pointer-events: none; }
+        .overlay-layer.is-open { display: flex; pointer-events: auto; }
+        #msg-overlay.is-open { display: block; pointer-events: auto; }
 
-        /* AUTH SCREEN */
-        #auth-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #16243d 0%, #050911 100%); z-index: 10060; display: flex; justify-content: center; align-items: center; padding: 16px; overflow-y: auto; }
-        .auth-card { background: rgba(17, 27, 43, 0.92); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 24px; width: 100%; max-width: 380px; padding: 22px 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.9); text-align: center; }
-        .auth-logo { width: 54px; height: 54px; border-radius: 16px; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; margin: 0 auto 10px auto; color: #04121a; }
+        #stealth-toast { position: absolute; top: -70px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1.5px solid #00f2fe; color: #fff; padding: 9px 18px; border-radius: 30px; z-index: 900; font-size: 12.5px; display: flex; align-items: center; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); transition: top 0.25s ease; pointer-events: none; white-space: nowrap; }
+        #stealth-toast.show { top: 14px; }
+
+        /* 1. AUTH SCREEN */
+        #auth-screen { background: radial-gradient(circle at top, #16243d 0%, #050911 100%); z-index: 700; justify-content: center; align-items: center; padding: 16px; overflow-y: auto; }
+        .auth-card { background: rgba(17, 27, 43, 0.94); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 22px; width: 100%; max-width: 380px; padding: 22px 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.9); text-align: center; }
+        .auth-logo { width: 52px; height: 52px; border-radius: 16px; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; margin: 0 auto 10px auto; color: #04121a; }
         .auth-tabs { display: flex; background: rgba(0,0,0,0.35); border-radius: 14px; padding: 4px; margin: 14px 0; border: 1px solid var(--border-col); }
         .auth-tab { flex: 1; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 13px; color: var(--text-sub); cursor: pointer; }
         .auth-tab.active { background: var(--accent-grad); color: #04121a; }
         .auth-field { text-align: left; margin-bottom: 12px; }
         .auth-field label { display: block; font-size: 11px; font-weight: 700; color: #38bdf8; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .auth-input { width: 100%; background: rgba(8, 13, 23, 0.92); border: 1px solid rgba(255,255,255,0.14); color: #fff; padding: 11px 13px; border-radius: 12px; font-size: 15px; outline: none; user-select: text; }
+        .auth-input { width: 100%; background: rgba(8, 13, 23, 0.92); border: 1px solid rgba(255,255,255,0.14); color: #fff; padding: 11px 13px; border-radius: 12px; font-size: 15px; outline: none; }
         .auth-input:focus { border-color: #00f2fe; }
         .auth-btn { width: 100%; background: var(--accent-grad); color: #04121a; border: none; padding: 12px; border-radius: 12px; font-weight: 800; font-size: 14.5px; cursor: pointer; margin-top: 6px; }
         #auth-error-msg { color: #f87171; font-size: 12.5px; font-weight: 600; margin-bottom: 8px; min-height: 18px; }
 
-        /* APP ENTRY LOCK GATE (BLOCKS ALL CHATS UNTIL PIN ENTERED) */
-        #app-lock-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #132036 0%, #050911 100%); z-index: 10050; display: none; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
-        .lock-card { width: 100%; max-width: 340px; background: rgba(17, 27, 43, 0.92); border: 1.5px solid rgba(0, 242, 254, 0.3); border-radius: 22px; padding: 22px 18px; text-align: center; box-shadow: 0 20px 55px rgba(0,0,0,0.9); }
+        /* 2. APP ENTRY LOCK SCREEN */
+        #app-lock-screen { background: radial-gradient(circle at top, #132036 0%, #050911 100%); z-index: 650; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
+        .lock-card { width: 100%; max-width: 340px; background: rgba(17, 27, 43, 0.94); border: 1.5px solid rgba(0, 242, 254, 0.3); border-radius: 22px; padding: 20px 18px; text-align: center; box-shadow: 0 20px 55px rgba(0,0,0,0.9); }
         #lock-error-msg { color: #f87171; font-size: 12.5px; font-weight: 700; min-height: 18px; margin: 6px 0; }
 
-        /* FAKE NOTICE BOARD / SHIELD DECOY SCREEN */
-        #cyber-gate-screen { position: fixed; inset: 0; background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%); z-index: 10055; display: none; flex-direction: column; padding: 18px; color: #e2e8f0; overflow-y: auto; }
+        /* 3. FAKE NOTICE BOARD / SHIELD DECOY SCREEN */
+        #cyber-gate-screen { background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%); z-index: 680; flex-direction: column; padding: 18px; color: #e2e8f0; overflow-y: auto; }
         .cyber-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 242, 254, 0.2); margin-bottom: 16px; }
         .cyber-card { background: rgba(30, 41, 59, 0.65); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
         .cyber-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
         .cyber-stat-box { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(0, 242, 254, 0.15); padding: 12px; border-radius: 12px; text-align: center; }
 
+        /* 4. MAIN APP SHELL */
         .app-shell { display: flex; width: 100%; height: 100%; position: relative; overflow: hidden; }
-        .sidebar { width: 100%; max-width: 410px; background: var(--bg-panel); border-right: 1px solid var(--border-col); display: flex; flex-direction: column; height: 100%; z-index: 10; }
-        .top-bar { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 9px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 5px; }
+        .sidebar { width: 100%; max-width: 410px; background: var(--bg-panel); border-right: 1px solid var(--border-col); display: flex; flex-direction: column; height: 100%; position: relative; z-index: 10; }
+        .top-bar { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 9px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 5px; position: relative; z-index: 60; transform: translate3d(0,0,0); }
         .my-profile-chip { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; overflow: hidden; min-width: 0; }
         .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--accent-grad); display: flex; justify-content: center; align-items: center; color: #04121a; font-weight: 800; background-size: cover; background-position: center; flex-shrink: 0; font-size: 14.5px; position: relative; }
         .online-dot { width: 10px; height: 10px; background: #10b981; border: 2px solid var(--bg-panel); border-radius: 50%; position: absolute; bottom: 0; right: 0; }
-        .icon-btn { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.07); display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-sub); text-decoration: none; border: none; flex-shrink: 0; }
-        .icon-btn:active { transform: scale(0.92); background: rgba(0, 242, 254, 0.22); }
+        .icon-btn { width: 35px; height: 35px; border-radius: 50%; background: rgba(255,255,255,0.08); display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-sub); text-decoration: none; border: none; flex-shrink: 0; }
+        .icon-btn:active { transform: scale(0.9); background: rgba(0, 242, 254, 0.25); }
 
         .stories-strip { display: flex; gap: 12px; padding: 9px 12px; overflow-x: auto; background: var(--bg-panel); border-bottom: 1px solid var(--border-col); flex-shrink: 0; scrollbar-width: none; }
         .stories-strip::-webkit-scrollbar { display: none; }
@@ -86,10 +92,10 @@
         .tab-item.active { color: #00f2fe; border-bottom-color: #00f2fe; }
 
         .search-bar { padding: 8px 10px; background: var(--bg-panel); display: flex; gap: 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
-        .search-input { flex: 1; background: var(--bg-nav); border: 1px solid var(--border-col); padding: 8px 12px; border-radius: 20px; color: var(--text-main); outline: none; font-size: 13px; min-width: 0; user-select: text; }
+        .search-input { flex: 1; background: var(--bg-nav); border: 1px solid var(--border-col); padding: 8px 12px; border-radius: 20px; color: var(--text-main); outline: none; font-size: 13.5px; min-width: 0; }
         .add-friend-btn { background: var(--accent-grad); color: #04121a; border: none; padding: 0 12px; height: 35px; border-radius: 20px; font-weight: 800; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
-        .list-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .list-area { flex: 1; overflow-y: auto; position: relative; z-index: 1; }
         .empty-inbox { padding: 36px 20px; text-align: center; color: var(--text-sub); font-size: 13px; line-height: 1.6; }
         .chat-item { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-bottom: 1px solid var(--border-col); cursor: pointer; }
         .chat-item:active, .chat-item.active { background: rgba(0, 242, 254, 0.1); }
@@ -99,8 +105,8 @@
         .chat-item-sub { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .mode-badge { background: rgba(0, 242, 254, 0.15); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.35); font-size: 9.5px; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
 
-        /* CHAT VIEW */
-        .chat-view { flex: 1; display: flex; flex-direction: column; height: 100%; background: var(--bg-chat); position: relative; z-index: 25; }
+        /* CONVERSATION VIEW */
+        .chat-view { flex: 1; display: flex; flex-direction: column; height: 100%; background: var(--bg-chat); position: relative; z-index: 30; }
         .widget-only-btn { display: none; }
         body.widget-mode .widget-only-btn { display: flex; }
         body.widget-mode .standalone-only { display: none !important; }
@@ -114,15 +120,16 @@
         body.widget-mode .chat-view { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
         body.widget-mode .chat-view.open { display: flex; }
 
-        .chat-header { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 6px; position: relative; z-index: 30; }
-        .chat-header-left { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; overflow: hidden; min-width: 0; }
+        /* ISOLATED COMPOSITOR LAYER FOR HEADER -> NEVER FREEZES ON iOS */
+        .chat-header { height: 58px; background: var(--bg-nav); display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-bottom: 1px solid var(--border-col); flex-shrink: 0; gap: 6px; position: relative; z-index: 80; transform: translate3d(0,0,0); }
+        .chat-header-left { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; overflow: hidden; min-width: 0; padding: 4px 0; }
         .chat-title-name { font-weight: 700; font-size: 14px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
         .chat-title-status { font-size: 11px; color: #00f2fe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        #active-live-banner { background: rgba(16, 185, 129, 0.16); border-bottom: 1px solid rgba(16, 185, 129, 0.4); padding: 7px 12px; display: none; justify-content: space-between; align-items: center; font-size: 12px; color: #a7f3d0; flex-shrink: 0; }
+        #active-live-banner { background: rgba(16, 185, 129, 0.16); border-bottom: 1px solid rgba(16, 185, 129, 0.4); padding: 7px 12px; display: none; justify-content: space-between; align-items: center; font-size: 12px; color: #a7f3d0; flex-shrink: 0; position: relative; z-index: 40; }
         .live-pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; margin-right: 6px; animation: pulse 1s infinite; }
 
-        .msgs-container { flex: 1; padding: 12px; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 6px; background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 0); background-size: 22px 22px; }
+        .msgs-container { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 0); background-size: 22px 22px; position: relative; z-index: 1; isolation: isolate; }
         .date-pill { align-self: center; background: var(--bg-nav); color: var(--text-sub); font-size: 10.5px; font-weight: 600; padding: 3px 11px; border-radius: 12px; margin: 6px 0; border: 1px solid var(--border-col); }
 
         .msg-wrap { display: flex; flex-direction: column; max-width: 82%; position: relative; margin-bottom: 4px; }
@@ -140,13 +147,13 @@
         .seen-tick.read { color: #00f2fe; opacity: 1; }
         .msg-reactions { display: flex; gap: 2px; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; padding: 1px 6px; font-size: 12px; width: fit-content; margin-top: -6px; z-index: 2; align-self: flex-end; }
 
-        .msg-media { max-width: 225px; max-height: 240px; border-radius: 10px; display: block; margin-bottom: 4px; background: #000; }
-        .msg-video { width: 225px; max-width: 100%; min-height: 135px; max-height: 240px; border-radius: 10px; display: block; background: #000; object-fit: contain; margin-bottom: 4px; }
+        .msg-media { max-width: 220px; max-height: 230px; border-radius: 10px; display: block; margin-bottom: 4px; background: #000; }
+        .msg-video { width: 220px; max-width: 100%; min-height: 130px; max-height: 230px; border-radius: 10px; display: block; background: #000; object-fit: contain; margin-bottom: 4px; }
         .vid-open-link { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #00f2fe; text-decoration: none; background: rgba(0,242,254,0.12); padding: 4px 9px; border-radius: 8px; margin-bottom: 3px; }
         .view-once-pill { display: flex; align-items: center; gap: 6px; background: rgba(0,242,254,0.1); padding: 6px 11px; border-radius: 16px; border: 1px dashed #00f2fe; color: #00f2fe; font-weight: 600; font-size: 12px; }
         .view-once-pill.opened { border-color: var(--text-sub); color: var(--text-sub); background: transparent; font-style: italic; font-weight: normal; }
 
-        .loc-card { display: flex; align-items: center; gap: 10px; background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); padding: 9px 12px; border-radius: 12px; color: #fff; text-decoration: none; margin-bottom: 4px; min-width: 205px; }
+        .loc-card { display: flex; align-items: center; gap: 10px; background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); padding: 9px 12px; border-radius: 12px; color: #fff; text-decoration: none; margin-bottom: 4px; min-width: 200px; }
         .loc-card.live-active { background: rgba(16, 185, 129, 0.16); border-color: #10b981; }
         .loc-card.live-ended { background: rgba(148, 163, 184, 0.1); border-color: rgba(148, 163, 184, 0.3); opacity: 0.85; }
         .live-tag { display: inline-flex; align-items: center; gap: 4px; background: #ef4444; color: #fff; font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 8px; margin-left: 5px; }
@@ -158,16 +165,17 @@
         .dur-chip { padding: 9px 8px; border-radius: 10px; background: var(--bg-panel); border: 1.5px solid var(--border-col); color: var(--text-sub); font-size: 12px; font-weight: 700; text-align: center; cursor: pointer; }
         .dur-chip.active { background: rgba(16, 185, 129, 0.18); border-color: #10b981; color: #10b981; }
 
-        .reply-preview-bar { background: var(--bg-nav); padding: 6px 12px; border-top: 1px solid var(--border-col); display: none; justify-content: space-between; align-items: center; font-size: 12px; flex-shrink: 0; }
-        .chat-input-bar { padding: 7px 8px; background: var(--bg-nav); display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border-col); flex-shrink: 0; }
-        .msg-input { flex: 1; background: var(--bg-panel); border: 1px solid var(--border-col); color: var(--text-main); padding: 9px 12px; border-radius: 20px; outline: none; font-size: 14px; min-width: 0; user-select: text; }
+        .reply-preview-bar { background: var(--bg-nav); padding: 6px 12px; border-top: 1px solid var(--border-col); display: none; justify-content: space-between; align-items: center; font-size: 12px; flex-shrink: 0; position: relative; z-index: 40; }
+        .chat-input-bar { padding: 7px 8px; background: var(--bg-nav); display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border-col); flex-shrink: 0; position: relative; z-index: 50; transform: translate3d(0,0,0); }
+        .msg-input { flex: 1; background: var(--bg-panel); border: 1px solid var(--border-col); color: var(--text-main); padding: 9px 12px; border-radius: 20px; outline: none; font-size: 14px; min-width: 0; }
         .vo-toggle { width: 26px; height: 26px; border-radius: 50%; border: 1.5px dashed var(--text-sub); color: var(--text-sub); font-size: 11px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; }
         .vo-toggle.active { background: #00f2fe; color: #04121a; border-color: #00f2fe; }
         .circle-btn { width: 35px; height: 35px; border-radius: 50%; background: var(--accent-grad); color: #04121a; border: none; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; }
         .circle-btn.rec { background: #ef4444; color: #fff; animation: pulse 0.8s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-        #contact-info-drawer { position: fixed; top: 0; right: 0; width: 100%; max-width: 420px; height: 100%; background: var(--bg-main); z-index: 10010; display: none; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; border-left: 1px solid var(--border-col); padding-bottom: 50px; }
+        /* CONTACT INFO DRAWER */
+        #contact-info-drawer { left: auto; width: 100%; max-width: 420px; background: var(--bg-main); z-index: 300; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--border-col); padding-bottom: 50px; }
         .drawer-header { padding: 12px 14px; background: var(--bg-panel); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--border-col); flex-shrink: 0; }
         .pill-top-btn { background: var(--bg-nav); border: 1px solid var(--border-col); color: var(--text-main); padding: 5px 12px; border-radius: 18px; font-weight: 600; font-size: 12.5px; cursor: pointer; }
         .info-group { background: var(--bg-panel); border-radius: 14px; margin: 9px 12px; border: 1px solid var(--border-col); flex-shrink: 0; }
@@ -184,8 +192,10 @@
         input:checked + .slider { background-color: #00a884; }
         input:checked + .slider:before { transform: translateX(20px); }
 
-        #call-hud { position: fixed; top: 62px; right: 12px; width: 245px; background: rgba(15, 23, 42, 0.96); border: 1.5px solid #00f2fe; border-radius: 16px; z-index: 10020; display: none; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.9); color: #fff; }
-        #call-hud.fullscreen { inset: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; z-index: 10035 !important; }
+        /* CALL HUD */
+        #call-hud { position: absolute; top: 62px; right: 10px; width: 245px; background: rgba(15, 23, 42, 0.96); border: 1.5px solid #00f2fe; border-radius: 16px; z-index: 420; display: none; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.9); color: #fff; }
+        #call-hud.is-open { display: flex; pointer-events: auto; }
+        #call-hud.fullscreen { inset: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; z-index: 690 !important; }
         .call-vid-box { position: relative; width: 100%; height: 150px; background: #000; display: none; justify-content: center; align-items: center; }
         #call-hud.fullscreen .call-vid-box { flex: 1; height: calc(100% - 58px); }
         #remote-vid { width: 100%; height: 100%; object-fit: cover; }
@@ -199,19 +209,20 @@
         .c-btn.muted { background: #ef4444 !important; box-shadow: 0 0 12px #ef4444; }
         .c-btn.cut { background: #dc2626; }
 
-        #msg-overlay { position: fixed; inset: 0; z-index: 10015; display: none; }
-        .react-pill { position: fixed; background: var(--bg-nav); border-radius: 30px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; box-shadow: 0 6px 25px rgba(0,0,0,0.7); border: 1px solid var(--border-col); }
+        /* CONTEXT MENU & MODALS */
+        #msg-overlay { z-index: 350; background: rgba(0,0,0,0.25); }
+        .react-pill { position: absolute; background: var(--bg-nav); border-radius: 30px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; box-shadow: 0 6px 25px rgba(0,0,0,0.7); border: 1px solid var(--border-col); }
         .react-emo { font-size: 20px; cursor: pointer; }
-        .ctx-menu { position: fixed; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; width: 200px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85); }
+        .ctx-menu { position: absolute; background: var(--bg-nav); border: 1px solid var(--border-col); border-radius: 12px; width: 200px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85); }
         .ctx-item { padding: 9px 13px; font-size: 13px; color: var(--text-main); display: flex; align-items: center; gap: 11px; cursor: pointer; border-bottom: 1px solid var(--border-col); }
 
-        emoji-picker { position: fixed; bottom: 62px; right: 10px; width: 300px; max-width: calc(100vw - 20px); height: 270px; z-index: 10025; display: none; border-radius: 12px; }
+        emoji-picker { position: absolute; bottom: 60px; right: 10px; width: 300px; max-width: calc(100% - 20px); height: 265px; z-index: 400; display: none; border-radius: 12px; }
         emoji-picker.show { display: block; }
 
-        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10040; display: none; justify-content: center; align-items: center; padding: 14px; }
-        .modal-card { background: var(--bg-panel); border: 1px solid var(--border-col); border-radius: 16px; width: 100%; max-width: 360px; padding: 16px; max-height: 82vh; overflow-y: auto; color: var(--text-main); }
+        .modal-bg { background: rgba(0,0,0,0.82); z-index: 500; justify-content: center; align-items: center; padding: 14px; }
+        .modal-card { background: var(--bg-panel); border: 1px solid var(--border-col); border-radius: 16px; width: 100%; max-width: 355px; padding: 16px; max-height: 82%; overflow-y: auto; color: var(--text-main); }
 
-        #god-modal { position: fixed; inset: 0; background: #070000; z-index: 10090; display: none; flex-direction: column; font-family: monospace; color: #f87171; overflow-y: auto; }
+        #god-modal { background: #070000; z-index: 800; flex-direction: column; font-family: monospace; color: #f87171; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -220,9 +231,9 @@
     <audio id="remote-aud" autoplay></audio>
 
     <!-- 1. LOGIN & SIGNUP -->
-    <div id="auth-screen">
+    <div id="auth-screen" class="overlay-layer is-open">
         <div class="auth-card">
-            <div class="auth-logo"><span class="material-icons" style="font-size:32px;">bolt</span></div>
+            <div class="auth-logo"><span class="material-icons" style="font-size:30px;">bolt</span></div>
             <h2 style="font-size:20px; font-weight:800; color:#fff;">NovaMessenger Pro</h2>
             <p style="font-size:12px; color:var(--text-sub); margin-top:3px;">100% Private End-to-End Personal Messenger</p>
 
@@ -255,15 +266,15 @@
         </div>
     </div>
 
-    <!-- 2. APP ENTRY LOCK SCREEN (PIN REQUIRED BEFORE SHOWING ANY CHATS) -->
-    <div id="app-lock-screen">
+    <!-- 2. APP ENTRY LOCK SCREEN -->
+    <div id="app-lock-screen" class="overlay-layer">
         <div class="lock-card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <button class="icon-btn" id="btn-lock-to-decoy" type="button" title="Notice Board"><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></button>
                 <span style="font-size:11px; color:#38bdf8; font-weight:800; letter-spacing:1px;">SECURITY GATE</span>
                 <button class="icon-btn widget-only-btn" id="btn-lock-close-widget" type="button" title="Close"><span class="material-icons" style="font-size:18px;">close</span></button>
             </div>
-            <div class="auth-logo" style="width:50px; height:50px; margin-bottom:10px;"><span class="material-icons" style="font-size:26px;">lock</span></div>
+            <div class="auth-logo" style="width:48px; height:48px; margin-bottom:10px;"><span class="material-icons" style="font-size:25px;">lock</span></div>
             <h3 style="font-size:17px; color:#fff; margin-bottom:4px;">Chats Locked</h3>
             <p style="font-size:12px; color:var(--text-sub); margin-bottom:12px;">Enter your secret PIN to open messages</p>
             <input type="password" id="lock-pin-input" class="auth-input" inputmode="numeric" placeholder="Enter Secret PIN..." style="text-align:center; letter-spacing:4px; font-size:18px;">
@@ -275,8 +286,8 @@
         </div>
     </div>
 
-    <!-- 3. FAKE NOTICE BOARD / SHIELD DECOY SCREEN (3-TAP TOP-LEFT TO UNLOCK) -->
-    <div id="cyber-gate-screen">
+    <!-- 3. FAKE NOTICE BOARD / SHIELD SCREEN -->
+    <div id="cyber-gate-screen" class="overlay-layer">
         <div class="cyber-header">
             <div id="cyber-triple-tap" style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px;">
                 <span class="material-icons" style="color:#00f2fe;">memory</span>
@@ -301,7 +312,7 @@
     <div class="app-shell">
         <div class="sidebar">
             <div class="top-bar">
-                <div class="my-profile-chip" onclick="window.location.href='chat-settings.html'" title="Profile & Settings">
+                <div class="my-profile-chip" id="my-profile-chip-btn" title="Profile & Settings">
                     <div class="avatar" id="my-top-dp"><span class="material-icons" style="font-size:20px;">person</span><div class="online-dot"></div></div>
                     <div style="overflow:hidden;">
                         <div style="font-weight:800; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="my-top-name">Not Logged In</div>
@@ -310,7 +321,7 @@
                 </div>
                 <div style="display:flex; gap:4px; flex-shrink:0;">
                     <button class="icon-btn" id="btn-app-lock-toggle" type="button" title="Chat Entry Lock ON/OFF"><span class="material-icons" id="app-lock-icon" style="font-size:18px;">lock_open</span></button>
-                    <button class="icon-btn" id="btn-panic-now" type="button" title="Fake Notice Board (Shield)"><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></button>
+                    <button class="icon-btn" id="btn-panic-now" type="button" title="Fake Notice Board"><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></button>
                     <button class="icon-btn" id="btn-theme-mode" type="button" title="Day / Night Mode"><span class="material-icons" style="font-size:18px;">dark_mode</span></button>
                     <button class="icon-btn" id="btn-logout-now" type="button" title="Logout" style="background:rgba(239,68,68,0.18); color:#f87171;"><span class="material-icons" style="font-size:18px;">logout</span></button>
                     <button class="icon-btn widget-only-btn" id="btn-widget-close-side" type="button" title="Close Chat"><span class="material-icons" style="font-size:18px;">close</span></button>
@@ -359,7 +370,7 @@
                     </div>
                 </div>
                 <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
-                    <button class="icon-btn" id="btn-chat-panic" type="button" title="Fake Notice Board (Shield)"><span class="material-icons" style="font-size:19px; color:#eab308;">shield</span></button>
+                    <button class="icon-btn" id="btn-chat-panic" type="button" title="Fake Notice Board"><span class="material-icons" style="font-size:19px; color:#eab308;">shield</span></button>
                     <button class="icon-btn" id="btn-voice-call" type="button" title="Voice Call"><span class="material-icons" style="font-size:19px; color:#10b981;">call</span></button>
                     <button class="icon-btn" id="btn-video-call" type="button" title="Video Call"><span class="material-icons" style="font-size:19px; color:#00f2fe;">videocam</span></button>
                     <button class="icon-btn widget-only-btn" id="btn-widget-close-chat" type="button" title="Close Chat"><span class="material-icons" style="font-size:19px;">close</span></button>
@@ -397,8 +408,8 @@
         </div>
     </div>
 
-    <!-- APP LOCK SETTINGS MODAL (ON/OFF + PIN SETUP) -->
-    <div class="modal-bg" id="lock-settings-modal">
+    <!-- APP LOCK SETTINGS MODAL -->
+    <div class="overlay-layer modal-bg" id="lock-settings-modal">
         <div class="modal-card">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
                 <strong style="color:#00f2fe; display:flex; align-items:center; gap:6px;"><span class="material-icons" style="color:#10b981;">security</span> Chat Entry Lock</strong>
@@ -423,8 +434,8 @@
         </div>
     </div>
 
-    <!-- CLEAR ALL CHAT MODAL (1-TAP RELIABLE CLEAR) -->
-    <div class="modal-bg" id="clear-chat-modal">
+    <!-- CLEAR ALL CHAT MODAL -->
+    <div class="overlay-layer modal-bg" id="clear-chat-modal">
         <div class="modal-card">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
                 <strong style="color:#f87171; display:flex; align-items:center; gap:6px;"><span class="material-icons">delete_sweep</span> Clear All Messages</strong>
@@ -437,7 +448,7 @@
     </div>
 
     <!-- LOCATION PICKER MODAL -->
-    <div class="modal-bg" id="location-modal">
+    <div class="overlay-layer modal-bg" id="location-modal">
         <div class="modal-card">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:10px; margin-bottom:12px;">
                 <strong style="color:#00f2fe; display:flex; align-items:center; gap:6px;"><span class="material-icons" style="color:#10b981;">location_on</span> Share Location</strong>
@@ -469,7 +480,7 @@
     </div>
 
     <!-- CONTACT INFO DRAWER -->
-    <div id="contact-info-drawer">
+    <div id="contact-info-drawer" class="overlay-layer">
         <div class="drawer-header">
             <button class="pill-top-btn" id="btn-close-drawer" type="button">❮ Back</button>
             <strong style="font-size:15px;" id="drawer-room-name">Friend Info</strong>
@@ -543,6 +554,7 @@
         </div>
     </div>
 
+    <!-- CALL HUD -->
     <div id="call-hud">
         <div class="call-vid-box" id="call-vid-box">
             <video id="remote-vid" autoplay playsinline></video>
@@ -565,7 +577,8 @@
 
     <emoji-picker class="dark" id="emoji-picker"></emoji-picker>
 
-    <div id="msg-overlay">
+    <!-- MESSAGE CONTEXT MENU -->
+    <div id="msg-overlay" class="overlay-layer">
         <div class="react-pill" id="react-pill">
             <span class="react-emo" data-emo="👍">👍</span>
             <span class="react-emo" data-emo="❤️">❤️</span>
@@ -587,20 +600,22 @@
         </div>
     </div>
 
-    <div class="modal-bg" id="generic-modal">
+    <!-- GENERIC MODAL -->
+    <div class="overlay-layer modal-bg" id="generic-modal">
         <div class="modal-card">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-col); padding-bottom:8px; margin-bottom:10px;">
                 <strong id="modal-title" style="color:#00f2fe;">Details</strong>
-                <span class="material-icons" style="cursor:pointer;" onclick="document.getElementById('generic-modal').style.display='none'">close</span>
+                <span class="material-icons" style="cursor:pointer;" id="btn-close-generic-modal">close</span>
             </div>
             <div id="modal-body" style="font-size:13.5px; line-height:1.6;"></div>
         </div>
     </div>
 
-    <div id="god-modal">
+    <!-- GOD DASHBOARD -->
+    <div id="god-modal" class="overlay-layer">
         <div style="padding:14px 18px; background:#1f0000; border-bottom:2px solid #ef4444; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10;">
             <strong>🚨 MASTER GOD OVERRIDE (god4499)</strong>
-            <button onclick="document.getElementById('god-modal').style.display='none'" type="button" style="background:#ef4444; color:#fff; border:none; padding:5px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">EXIT</button>
+            <button id="btn-close-god-modal" type="button" style="background:#ef4444; color:#fff; border:none; padding:5px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">EXIT</button>
         </div>
         <div style="padding:14px;">
             <div style="border:1px solid #ef4444; padding:12px; border-radius:8px; margin-bottom:14px;">
