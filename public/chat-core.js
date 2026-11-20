@@ -1,6 +1,6 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Fast Throttled Sync | App PIN Lock | Fake Notice Shield | Fixed Video & Clear
+// Zero-Freeze iOS Layer Architecture | Fast Tap | PIN Lock | Live Location
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -31,9 +31,40 @@ let domMap = new Map();
 if (isWidgetMode) document.body.classList.add('widget-mode');
 if (localStorage.getItem('nova_theme_mode') === 'light') document.body.classList.add('light-mode');
 
-// iOS Safari keyboard viewport reset fix (prevents header/Back button dead-zone!)
+// Clean Layer Open/Close (Guarantees pointer-events: none when closed!)
+function openLayer(el) {
+    if (!el) return;
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur();
+    el.classList.add('is-open');
+}
+function closeLayer(el) {
+    if (!el) return;
+    el.classList.remove('is-open');
+}
+function isLayerOpen(el) {
+    return !!(el && el.classList.contains('is-open'));
+}
+
+// Fast & Reliable Tap Helper for iOS Safari + Android (prevents missed clicks)
+function onTap(el, handler) {
+    if (!el) return;
+    let lastFire = 0;
+    const run = (e) => {
+        const now = Date.now();
+        if (now - lastFire < 300) return;
+        lastFire = now;
+        handler(e);
+    };
+    el.addEventListener('touchend', (e) => {
+        if (e.cancelable) e.preventDefault();
+        run(e);
+    }, { passive: false });
+    el.addEventListener('click', run);
+}
+
+// Reset iOS viewport drift after keyboard closes
 document.addEventListener('focusout', () => {
-    setTimeout(() => { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; }, 50);
+    setTimeout(() => { window.scrollTo(0, 0); }, 40);
 });
 
 function postToGame(payload) {
@@ -43,12 +74,15 @@ function postToGame(payload) {
 }
 
 ['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget', 'btn-lock-close-widget'].forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) btn.onclick = (e) => {
+    onTap(document.getElementById(id), (e) => {
         e.stopPropagation();
         if (document.activeElement) document.activeElement.blur();
         postToGame({ type: 'NOVA_CLOSE_WIDGET' });
-    };
+    });
+});
+
+onTap(document.getElementById('my-profile-chip-btn'), () => {
+    window.location.href = 'chat-settings.html';
 });
 
 // ============================================================================
@@ -69,6 +103,13 @@ const authScreen = document.getElementById('auth-screen');
 const appLockScreen = document.getElementById('app-lock-screen');
 const lockSettingsModal = document.getElementById('lock-settings-modal');
 const cyberGate = document.getElementById('cyber-gate-screen');
+const genericModal = document.getElementById('generic-modal');
+const godModal = document.getElementById('god-modal');
+const drawer = document.getElementById('contact-info-drawer');
+const clearModal = document.getElementById('clear-chat-modal');
+const locModal = document.getElementById('location-modal');
+const overlay = document.getElementById('msg-overlay');
+
 const errEl = document.getElementById('auth-error-msg');
 const codeInp = document.getElementById('auth-code');
 const nameInp = document.getElementById('auth-name');
@@ -92,13 +133,16 @@ function lockAppIfEnabled() {
     if (!myAccountCode || !appLockEnabled || !appLockPin) return;
     isAppUnlocked = false;
     isRoomActivelyOpen = false;
-    if (document.activeElement) document.activeElement.blur();
     document.getElementById('chat-view').classList.remove('open');
-    document.getElementById('contact-info-drawer').style.display = 'none';
-    document.getElementById('msg-overlay').style.display = 'none';
+    closeLayer(drawer);
+    closeLayer(overlay);
+    closeLayer(locModal);
+    closeLayer(clearModal);
+    closeLayer(genericModal);
+    document.getElementById('emoji-picker').classList.remove('show');
     document.getElementById('lock-pin-input').value = '';
     document.getElementById('lock-error-msg').innerText = '';
-    appLockScreen.style.display = 'flex';
+    openLayer(appLockScreen);
 }
 
 function unlockAppWithPin() {
@@ -107,7 +151,7 @@ function unlockAppWithPin() {
         isAppUnlocked = true;
         document.getElementById('lock-pin-input').value = '';
         document.getElementById('lock-error-msg').innerText = '';
-        appLockScreen.style.display = 'none';
+        closeLayer(appLockScreen);
         window.scrollTo(0, 0);
     } else {
         document.getElementById('lock-error-msg').innerText = '❌ Galat PIN! Dobara koshish karein.';
@@ -115,21 +159,20 @@ function unlockAppWithPin() {
     }
 }
 
-document.getElementById('btn-unlock-app').onclick = unlockAppWithPin;
+onTap(document.getElementById('btn-unlock-app'), unlockAppWithPin);
 document.getElementById('lock-pin-input').onkeypress = e => { if (e.key === 'Enter') unlockAppWithPin(); };
-document.getElementById('btn-lock-to-decoy').onclick = () => { cyberGate.style.display = 'flex'; };
+onTap(document.getElementById('btn-lock-to-decoy'), () => openLayer(cyberGate));
 
-// Open App Lock ON/OFF Modal
-document.getElementById('btn-app-lock-toggle').onclick = () => {
+onTap(document.getElementById('btn-app-lock-toggle'), () => {
     updateAppLockIconUI();
     document.getElementById('set-app-lock-pin').value = appLockPin;
     document.getElementById('lock-settings-msg').innerText = '';
-    lockSettingsModal.style.display = 'flex';
-};
-document.getElementById('btn-close-lock-settings').onclick = () => { lockSettingsModal.style.display = 'none'; };
-lockSettingsModal.onclick = (e) => { if (e.target === lockSettingsModal) lockSettingsModal.style.display = 'none'; };
+    openLayer(lockSettingsModal);
+});
+onTap(document.getElementById('btn-close-lock-settings'), () => closeLayer(lockSettingsModal));
+lockSettingsModal.onclick = (e) => { if (e.target === lockSettingsModal) closeLayer(lockSettingsModal); };
 
-document.getElementById('btn-save-lock-settings').onclick = async () => {
+onTap(document.getElementById('btn-save-lock-settings'), async () => {
     const wantsLock = document.getElementById('toggle-app-lock-sw').checked;
     const newPin = document.getElementById('set-app-lock-pin').value.trim();
     const msgEl = document.getElementById('lock-settings-msg');
@@ -139,7 +182,6 @@ document.getElementById('btn-save-lock-settings').onclick = async () => {
         msgEl.innerText = '⚠️ Kam se kam 4 digit ka PIN daalein!';
         return;
     }
-
     appLockEnabled = wantsLock;
     if (newPin.length >= 4) appLockPin = newPin;
     localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
@@ -150,23 +192,22 @@ document.getElementById('btn-save-lock-settings').onclick = async () => {
     updateAppLockIconUI();
     msgEl.style.color = '#10b981';
     msgEl.innerText = appLockEnabled ? '✅ Chat Entry Lock ON ho gaya!' : '🔓 Chat Entry Lock OFF ho gaya!';
-    setTimeout(() => { lockSettingsModal.style.display = 'none'; }, 750);
-};
+    setTimeout(() => closeLayer(lockSettingsModal), 650);
+});
 
-document.getElementById('btn-lock-now-manual').onclick = () => {
+onTap(document.getElementById('btn-lock-now-manual'), () => {
     if (!appLockPin || appLockPin.length < 4) {
         document.getElementById('lock-settings-msg').style.color = '#f87171';
-        document.getElementById('lock-settings-msg').innerText = '⚠️ Pehle upar 4+ digit PIN daal kar Save karein!';
+        document.getElementById('lock-settings-msg').innerText = '⚠️ Pehle 4+ digit PIN daal kar Save karein!';
         return;
     }
     appLockEnabled = true;
     localStorage.setItem('nova_app_lock_enabled', 'true');
     updateAppLockIconUI();
-    lockSettingsModal.style.display = 'none';
+    closeLayer(lockSettingsModal);
     lockAppIfEnabled();
-};
+});
 
-// Auto-lock when widget closes or browser tab goes background
 window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
@@ -184,39 +225,36 @@ window.addEventListener('message', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-        lockAppIfEnabled();
-    } else if (document.visibilityState === 'visible' && isAppUnlocked) {
-        markVisibleMessagesSeen();
-    }
+    if (document.visibilityState === 'hidden') lockAppIfEnabled();
+    else if (document.visibilityState === 'visible' && isAppUnlocked) markVisibleMessagesSeen();
 });
 
-document.getElementById('tab-btn-login').onclick = () => {
+onTap(document.getElementById('tab-btn-login'), () => {
     authMode = 'login';
     document.getElementById('tab-btn-login').classList.add('active');
     document.getElementById('tab-btn-signup').classList.remove('active');
     document.getElementById('signup-name-field').style.display = 'none';
     document.getElementById('btn-auth-submit').innerText = 'LOGIN TO MY ACCOUNT';
     errEl.innerText = '';
-};
+});
 
-document.getElementById('tab-btn-signup').onclick = () => {
+onTap(document.getElementById('tab-btn-signup'), () => {
     authMode = 'signup';
     document.getElementById('tab-btn-signup').classList.add('active');
     document.getElementById('tab-btn-login').classList.remove('active');
     document.getElementById('signup-name-field').style.display = 'block';
     document.getElementById('btn-auth-submit').innerText = 'CREATE NEW PERMANENT ID';
     errEl.innerText = '';
-};
+});
 
-document.getElementById('btn-auth-submit').onclick = async () => {
+onTap(document.getElementById('btn-auth-submit'), async () => {
     const code = codeInp.value.trim();
     const pass = passInp.value.trim();
     const name = nameInp.value.trim();
     errEl.innerText = '';
 
     if (!code) { errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
-    if (code.toLowerCase() === 'god4499') { authScreen.style.display = 'none'; openGodDashboard(); return; }
+    if (code.toLowerCase() === 'god4499') { closeLayer(authScreen); openGodDashboard(); return; }
     if (!pass) { errEl.innerText = '⚠️ Please enter your secret password!'; return; }
 
     const accRef = doc(db, "novahub_accounts", code);
@@ -240,11 +278,11 @@ document.getElementById('btn-auth-submit').onclick = async () => {
         savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
     }
 
-    isAppUnlocked = true; // Fresh login unlocks immediately
+    isAppUnlocked = true;
     saveSessionToLocal();
-    authScreen.style.display = 'none';
+    closeLayer(authScreen);
     startAuthenticatedSession(false);
-};
+});
 
 function wipeLocalSessionData() {
     ['nova_account_code', 'nova_uid', 'nova_username', 'nova_dp', 'nova_lock_pin', 'nova_app_lock_enabled', 'nova_app_lock_pin', 'nova_saved_rooms', 'nova_last_room'].forEach(k => localStorage.removeItem(k));
@@ -261,14 +299,14 @@ function saveSessionToLocal() {
     localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
 }
 
-document.getElementById('btn-logout-now').onclick = () => {
+onTap(document.getElementById('btn-logout-now'), () => {
     if (!confirm(`Logout from ID "${myAccountCode}" (${myName})?`)) return;
     stopAllLiveSessions();
     if (unsubscribeChat) unsubscribeChat();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     wipeLocalSessionData();
     window.location.reload();
-};
+});
 
 // ============================================================================
 // 2. 1-ON-1 MESSENGER, INBOX SYNC & STRICT SEEN DETECTION
@@ -309,9 +347,7 @@ function isChatActivelyVisible() {
     if (!currentRoom || !isRoomActivelyOpen || !isAppUnlocked) return false;
     if (document.visibilityState !== 'visible') return false;
     if (isWidgetMode && !isWidgetOpen) return false;
-    if (authScreen.style.display !== 'none') return false;
-    if (appLockScreen.style.display === 'flex') return false;
-    if (cyberGate.style.display === 'flex') return false;
+    if (isLayerOpen(authScreen) || isLayerOpen(appLockScreen) || isLayerOpen(cyberGate)) return false;
     if ((isWidgetMode || window.innerWidth <= 768) && !document.getElementById('chat-view').classList.contains('open')) return false;
     return true;
 }
@@ -386,7 +422,7 @@ function startAuthenticatedSession(shouldApplyLock = true) {
 }
 
 if (myAccountCode && myName) {
-    authScreen.style.display = 'none';
+    closeLayer(authScreen);
     startAuthenticatedSession(true);
 }
 
@@ -401,13 +437,16 @@ async function syncAccountToCloud() {
 function renderActiveStrip() {
     const strip = document.getElementById('messenger-active-strip');
     strip.innerHTML = `
-        <div class="story-bubble" onclick="document.getElementById('tab-status').click()">
+        <div class="story-bubble" id="my-story-shortcut">
             <div class="story-ring" style="background:rgba(255,255,255,0.15);">
                 <div class="avatar"><span class="material-icons" style="font-size:20px;">add</span></div>
             </div>
             <span class="story-name">My Story</span>
         </div>
     `;
+    const stBtn = document.getElementById('my-story-shortcut');
+    if (stBtn) stBtn.onclick = () => document.getElementById('tab-status').click();
+
     savedRooms.forEach(r => {
         if (r.locked) return;
         const init = (r.name || 'U').charAt(0).toUpperCase();
@@ -464,7 +503,7 @@ function renderSidebarList() {
     });
 }
 
-document.getElementById('btn-add-room').onclick = async () => {
+onTap(document.getElementById('btn-add-room'), async () => {
     let friendCode = document.getElementById('pin-search-input').value.trim();
     if (!friendCode) friendCode = prompt("👤 Enter Friend's Unique ID Number / Code:");
     if (!friendCode) return;
@@ -492,26 +531,29 @@ document.getElementById('btn-add-room').onclick = async () => {
     }
 
     selectRoom(dmRoomId, true);
-};
+});
 
 document.getElementById('pin-search-input').oninput = (e) => {
     if (e.target.value.trim().toLowerCase() === 'god4499') { e.target.value = ''; openGodDashboard(); return; }
     renderSidebarList();
 };
 
-// BULLETPROOF BACK BUTTON (WORKS EVERY TIME ON IPHONE & ANDROID)
+// UNBREAKABLE BACK BUTTON
 function goBackToList(e) {
-    if (e) { e.preventDefault(); e.stopPropagation(); }
+    if (e) e.stopPropagation();
     if (document.activeElement) document.activeElement.blur();
     isRoomActivelyOpen = false;
     document.getElementById('chat-view').classList.remove('open');
-    document.getElementById('contact-info-drawer').style.display = 'none';
+    closeLayer(drawer);
+    closeLayer(overlay);
+    closeLayer(locModal);
+    closeLayer(clearModal);
+    closeLayer(genericModal);
     document.getElementById('emoji-picker').classList.remove('show');
-    document.getElementById('msg-overlay').style.display = 'none';
     window.scrollTo(0, 0);
     renderSidebarList();
 }
-document.getElementById('btn-mobile-back').addEventListener('click', goBackToList);
+onTap(document.getElementById('btn-mobile-back'), goBackToList);
 
 function getRoomMeta(roomId) {
     return savedRooms.find(r => r.id === roomId) || { id: roomId, name: "Private Chat", locked: false, timer: "off" };
@@ -643,13 +685,12 @@ async function triggerStealthAlert(type) {
     }
 }
 
-// THROTTLED PRESENCE (Stops flooding Firebase on every keystroke!)
 let lastPresStatus = "";
 let lastPresMs = 0;
 async function updatePresence(statusStr = "online", force = false) {
     if (!currentRoom || !myUid) return;
     const nowMs = Date.now();
-    if (!force && statusStr === lastPresStatus && (nowMs - lastPresMs) < 3500) return;
+    if (!force && statusStr === lastPresStatus && (nowMs - lastPresMs) < 4000) return;
     lastPresStatus = statusStr;
     lastPresMs = nowMs;
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -665,7 +706,7 @@ let typTimer = null;
 document.getElementById('msg-input').oninput = () => {
     updatePresence("typing...", false);
     clearTimeout(typTimer);
-    typTimer = setTimeout(() => updatePresence("online", true), 2800);
+    typTimer = setTimeout(() => updatePresence("online", true), 3000);
 };
 
 function listenToPresence(roomId) {
@@ -693,7 +734,6 @@ function getShortTime(d = new Date()) { return d.toLocaleTimeString([], { hour: 
 // ============================================================================
 // CURRENT & LIVE LOCATION ENGINE
 // ============================================================================
-const locModal = document.getElementById('location-modal');
 const liveBanner = document.getElementById('active-live-banner');
 const liveBannerText = document.getElementById('active-live-text');
 let selectedLiveHours = 1;
@@ -727,29 +767,29 @@ function stopAllLiveSessions() {
     Object.keys(activeLiveSessions).forEach(rId => stopLiveLocation(rId, activeLiveSessions[rId].msgId));
 }
 
-document.getElementById('btn-banner-stop-live').onclick = () => {
+onTap(document.getElementById('btn-banner-stop-live'), () => {
     const sess = activeLiveSessions[currentRoom];
     if (sess) stopLiveLocation(currentRoom, sess.msgId);
-};
+});
 
-document.getElementById('btn-share-location').onclick = () => {
-    if (!currentRoom) return alert("Please select a friend first!");
-    if (!navigator.geolocation) return alert("❌ Location is not supported on this device.");
-    locModal.style.display = 'flex';
-};
-document.getElementById('btn-close-loc-modal').onclick = () => { locModal.style.display = 'none'; };
-locModal.onclick = (e) => { if (e.target === locModal) locModal.style.display = 'none'; };
+onTap(document.getElementById('btn-share-location'), () => {
+    if (!currentRoom) return showQuickToast("Please select a friend first!");
+    if (!navigator.geolocation) return showQuickToast("Location not supported on this browser.");
+    openLayer(locModal);
+});
+onTap(document.getElementById('btn-close-loc-modal'), () => closeLayer(locModal));
+locModal.onclick = (e) => { if (e.target === locModal) closeLayer(locModal); };
 
 document.querySelectorAll('.dur-chip').forEach(chip => {
-    chip.onclick = () => {
+    onTap(chip, () => {
         document.querySelectorAll('.dur-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         selectedLiveHours = Number(chip.getAttribute('data-hours'));
-    };
+    });
 });
 
-document.getElementById('btn-send-current-loc').onclick = () => {
-    locModal.style.display = 'none';
+onTap(document.getElementById('btn-send-current-loc'), () => {
+    closeLayer(locModal);
     const targetRoom = currentRoom;
     const inp = document.getElementById('msg-input');
     const prevPh = inp.placeholder;
@@ -777,12 +817,12 @@ document.getElementById('btn-send-current-loc').onclick = () => {
         document.getElementById('reply-bar').style.display = 'none';
     }, () => {
         inp.placeholder = prevPh;
-        alert("⚠️ Location permission denied or GPS is off.");
+        showQuickToast("⚠️ GPS off ya Location permission denied!");
     }, { enableHighAccuracy: true, timeout: 12000 });
-};
+});
 
-document.getElementById('btn-start-live-loc').onclick = () => {
-    locModal.style.display = 'none';
+onTap(document.getElementById('btn-start-live-loc'), () => {
+    closeLayer(locModal);
     const targetRoom = currentRoom;
     const hours = selectedLiveHours;
     const inp = document.getElementById('msg-input');
@@ -839,15 +879,15 @@ document.getElementById('btn-start-live-loc').onclick = () => {
         refreshLiveBanner();
     }, () => {
         inp.placeholder = prevPh;
-        alert("⚠️ Location permission denied or GPS is off.");
+        showQuickToast("⚠️ GPS off ya Location permission denied!");
     }, { enableHighAccuracy: true, timeout: 12000 });
-};
+});
 
 // ============================================================================
-// SEND TEXT, MEDIA (FIXED VIDEO), & VOICE NOTES
+// SEND TEXT, MEDIA (15s STORAGE TIMEOUT), & VOICE NOTES
 // ============================================================================
 async function sendMessage() {
-    if (!currentRoom) return alert("Please add or select a friend first!");
+    if (!currentRoom) return showQuickToast("Please select a friend first!");
     const inp = document.getElementById('msg-input');
     const rawText = inp.value.trim();
     if (!rawText) return;
@@ -879,11 +919,11 @@ async function sendMessage() {
     updatePresence("online", true);
 }
 
-document.getElementById('btn-send-msg').onclick = sendMessage;
+onTap(document.getElementById('btn-send-msg'), sendMessage);
 document.getElementById('msg-input').onkeypress = e => { if (e.key === 'Enter') sendMessage(); };
 
 const voBtn = document.getElementById('btn-vo-toggle');
-voBtn.onclick = () => { isViewOnce = !isViewOnce; voBtn.classList.toggle('active', isViewOnce); };
+onTap(voBtn, () => { isViewOnce = !isViewOnce; voBtn.classList.toggle('active', isViewOnce); });
 
 function compressImg(file) {
     return new Promise((res) => {
@@ -892,11 +932,11 @@ function compressImg(file) {
             const img = new Image();
             img.onload = () => {
                 const c = document.createElement('canvas');
-                let w = img.width, h = img.height, max = 960;
+                let w = img.width, h = img.height, max = 800;
                 if (w > max) { h = Math.round((h * max) / w); w = max; }
                 c.width = w; c.height = h;
                 c.getContext('2d').drawImage(img, 0, 0, w, h);
-                res(c.toDataURL('image/jpeg', 0.68));
+                res(c.toDataURL('image/jpeg', 0.62));
             };
             img.src = e.target.result;
         };
@@ -904,9 +944,16 @@ function compressImg(file) {
     });
 }
 
+function uploadWithTimeout(fRef, file, ms = 15000) {
+    return Promise.race([
+        uploadBytes(fRef, file, { contentType: file.type || 'video/mp4' }).then(() => getDownloadURL(fRef)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Storage timeout / not enabled')), ms))
+    ]);
+}
+
 document.getElementById('btn-attach').onclick = () => document.getElementById('msg-file-input').click();
 document.getElementById('msg-file-input').onchange = async function() {
-    if (!currentRoom) return alert("Select a friend first!");
+    if (!currentRoom) return showQuickToast("Select a friend first!");
     const file = this.files[0];
     if (!file) return;
     this.value = '';
@@ -925,11 +972,15 @@ document.getElementById('msg-file-input').onchange = async function() {
             const safeName = (file.name || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_');
             const fRef = sRef(storage, `chat_media/${currentRoom}/${Date.now()}_${safeName}`);
             try {
-                await uploadBytes(fRef, file, { contentType: file.type || 'video/mp4' });
-                url = await getDownloadURL(fRef);
+                url = await uploadWithTimeout(fRef, file, 15000);
             } catch (storageErr) {
                 inp.placeholder = prevPh;
-                alert(`❌ Video Firebase Storage mein upload nahi ho paayi (${storageErr.code || 'Storage Error'}).\n\nFirebase Console > Storage > Rules mein 'allow read, write: if true;' set karein.`);
+                document.getElementById('modal-title').innerText = "🎥 Video Upload Issue";
+                document.getElementById('modal-body').innerHTML = `
+                    <p style="margin-bottom:8px;">Firebase Storage par video upload nahi ho paayi (${storageErr.code || storageErr.message}).</p>
+                    <p style="color:#00f2fe; font-size:12.5px;">Fix: Firebase Console me <b>Storage</b> on karein aur Rules me <code>allow read, write: if true;</code> publish kar dein.</p>
+                `;
+                openLayer(genericModal);
                 return;
             }
         }
@@ -942,7 +993,7 @@ document.getElementById('msg-file-input').onchange = async function() {
             reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
         });
     } catch (err) {
-        alert("⚠️ Media send failed. Please try again.");
+        showQuickToast("⚠️ Media send failed.");
     }
     inp.placeholder = prevPh;
     isViewOnce = false; voBtn.classList.remove('active');
@@ -950,8 +1001,8 @@ document.getElementById('msg-file-input').onchange = async function() {
 
 let mediaRec = null, vnChunks = [], isRec = false;
 const vnBtn = document.getElementById('btn-vn-rec');
-vnBtn.onclick = async () => {
-    if (!currentRoom) return alert("Select a friend first!");
+onTap(vnBtn, async () => {
+    if (!currentRoom) return showQuickToast("Select a friend first!");
     if (!isRec) {
         try {
             const st = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -980,17 +1031,17 @@ vnBtn.onclick = async () => {
             isRec = true; vnBtn.classList.add('rec');
             document.getElementById('vn-icon').innerText = 'stop';
             updatePresence("recording audio...", true);
-        } catch (e) { alert("Mic permission needed."); }
+        } catch (e) { showQuickToast("Mic permission needed."); }
     } else {
         mediaRec.stop();
         isRec = false; vnBtn.classList.remove('rec');
         document.getElementById('vn-icon').innerText = 'mic';
         updatePresence("online", true);
     }
-};
+});
 
 // ============================================================================
-// FAST INCREMENTAL MESSAGE RENDERER (NO VIDEO RELOAD / NO LAG)
+// FAST INCREMENTAL MESSAGE RENDERER
 // ============================================================================
 function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
     if (m.type === 'live_location') {
@@ -1073,8 +1124,7 @@ function listenToMessages(roomId) {
     const encKey = localStorage.getItem(`nova_enc_${roomId}`) || "";
     let lastDatePillText = "";
 
-    // Use sentMs (always a number, never null) for fast, flicker-free live updates
-    const q = query(collection(db, roomId), orderBy("sentMs", "asc"), limitToLast(45));
+    const q = query(collection(db, roomId), orderBy("sentMs", "asc"), limitToLast(30));
 
     unsubscribeChat = onSnapshot(q, (snap) => {
         let mediaCount = 0, starCount = 0;
@@ -1225,7 +1275,7 @@ async function openViewOnceModal(id, m) {
     document.getElementById('modal-body').innerHTML = m.type === 'video'
         ? `<video src="${playUrl}" controls autoplay playsinline webkit-playsinline style="width:100%; border-radius:8px; background:#000;"></video>`
         : (m.type === 'audio' ? `<audio src="${m.mediaUrl}" controls autoplay style="width:100%;"></audio>` : `<img src="${m.mediaUrl}" style="width:100%; border-radius:8px;">`);
-    document.getElementById('generic-modal').style.display = 'flex';
+    openLayer(genericModal);
     let v = [...(m.viewedBy || [])];
     if (!v.includes(myUid)) v.push(myUid);
     await updateDoc(doc(db, currentRoom, id), { viewedBy: v });
@@ -1234,26 +1284,29 @@ async function openViewOnceModal(id, m) {
 // ============================================================================
 // CONTEXT MENU, CLEAR ALL CHAT & CONTACT DRAWER
 // ============================================================================
-const overlay = document.getElementById('msg-overlay');
-const clearModal = document.getElementById('clear-chat-modal');
-const drawer = document.getElementById('contact-info-drawer');
+onTap(document.getElementById('btn-close-generic-modal'), () => closeLayer(genericModal));
+genericModal.onclick = (e) => { if (e.target === genericModal) closeLayer(genericModal); };
 
 function openContextMenu(e, id, m) {
     const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
     const dec = (m.type === 'location' || m.type === 'live_location') ? (m.mapUrl || m.text) : decryptText(m.text, encKey);
     selectedMsg = { id, ...m, decrypted: dec };
-    overlay.style.display = 'block';
-    const x = Math.max(10, Math.min(e.clientX - 90, window.innerWidth - 235));
-    const y = Math.max(60, Math.min(e.clientY, window.innerHeight - 340));
+    openLayer(overlay);
+    const w = document.body.clientWidth || window.innerWidth;
+    const h = document.body.clientHeight || window.innerHeight;
+    const x = Math.max(10, Math.min((e.clientX || w / 2) - 95, w - 230));
+    const y = Math.max(65, Math.min(e.clientY || h / 2, h - 340));
     document.getElementById('react-pill').style.left = x + 'px';
     document.getElementById('react-pill').style.top = (y - 46) + 'px';
-    document.getElementById('ctx-menu').style.left = Math.min(x + 10, window.innerWidth - 210) + 'px';
+    document.getElementById('ctx-menu').style.left = Math.min(x + 8, w - 210) + 'px';
     document.getElementById('ctx-menu').style.top = y + 'px';
 }
-overlay.onclick = () => overlay.style.display = 'none';
+overlay.onclick = () => closeLayer(overlay);
 
 document.querySelectorAll('.react-emo').forEach(el => {
-    el.onclick = async () => {
+    el.onclick = async (e) => {
+        e.stopPropagation();
+        closeLayer(overlay);
         const emo = el.getAttribute('data-emo');
         let r = { ...(selectedMsg.reactions || {}) };
         if (r[myUid] === emo) delete r[myUid]; else r[myUid] = emo;
@@ -1261,15 +1314,24 @@ document.querySelectorAll('.react-emo').forEach(el => {
     };
 });
 
-document.getElementById('cm-reply').onclick = () => {
+document.getElementById('cm-reply').onclick = (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
     replyTarget = { name: selectedMsg.name, text: selectedMsg.decrypted };
     document.getElementById('reply-title').innerText = `Replying to ${selectedMsg.name}`;
     document.getElementById('reply-text').innerText = selectedMsg.decrypted;
     document.getElementById('reply-bar').style.display = 'flex';
 };
-document.getElementById('btn-cancel-reply').onclick = () => { replyTarget = null; editingMsgId = null; document.getElementById('reply-bar').style.display = 'none'; };
-document.getElementById('cm-copy').onclick = () => navigator.clipboard.writeText(selectedMsg.decrypted || '');
-document.getElementById('cm-info').onclick = () => {
+onTap(document.getElementById('btn-cancel-reply'), () => { replyTarget = null; editingMsgId = null; document.getElementById('reply-bar').style.display = 'none'; });
+document.getElementById('cm-copy').onclick = (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
+    navigator.clipboard.writeText(selectedMsg.decrypted || '').catch(() => {});
+    showQuickToast("📋 Copied!");
+};
+document.getElementById('cm-info').onclick = (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
     document.getElementById('modal-title').innerText = "Message Info";
     document.getElementById('modal-body').innerHTML = `
         <div>👤 <b>Sender:</b> ${selectedMsg.name} (ID: ${selectedMsg.accountCode || ''})</div>
@@ -1277,15 +1339,19 @@ document.getElementById('cm-info').onclick = () => {
         <hr style="margin:8px 0; border-color:var(--border-col);">
         <div>👀 <b>Seen Status:</b> ${selectedMsg.seenStatus ? `✓✓ Seen (${selectedMsg.seenAtStr || 'Read'})` : '✓ Not Seen Yet'}</div>
     `;
-    document.getElementById('generic-modal').style.display = 'flex';
+    openLayer(genericModal);
 };
-document.getElementById('cm-star').onclick = async () => {
+document.getElementById('cm-star').onclick = async (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
     let s = [...(selectedMsg.starredBy || [])];
     const i = s.indexOf(myUid);
     if (i > -1) s.splice(i, 1); else s.push(myUid);
     await updateDoc(doc(db, currentRoom, selectedMsg.id), { starredBy: s });
 };
-document.getElementById('cm-edit').onclick = () => {
+document.getElementById('cm-edit').onclick = (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
     if (selectedMsg.type !== 'text') return;
     editingMsgId = selectedMsg.id;
     document.getElementById('reply-title').innerText = "Editing Message";
@@ -1293,7 +1359,9 @@ document.getElementById('cm-edit').onclick = () => {
     document.getElementById('reply-bar').style.display = 'flex';
     document.getElementById('msg-input').value = selectedMsg.decrypted;
 };
-document.getElementById('cm-seen').onclick = async () => {
+document.getElementById('cm-seen').onclick = async (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
     const next = !selectedMsg.seenStatus;
     await updateDoc(doc(db, currentRoom, selectedMsg.id), {
         seenStatus: next, manualUnseen: !next,
@@ -1301,45 +1369,47 @@ document.getElementById('cm-seen').onclick = async () => {
     });
 };
 
-// Single Message Delete using clean modal (no flaky iOS prompt!)
-document.getElementById('cm-del').onclick = () => {
+document.getElementById('cm-del').onclick = (e) => {
+    e.stopPropagation();
+    closeLayer(overlay);
     const target = selectedMsg;
     document.getElementById('modal-title').innerText = "Delete Message";
     document.getElementById('modal-body').innerHTML = `
         <button id="del-one-me" type="button" class="loc-action-btn" style="background:rgba(255,255,255,0.1); color:#fff; margin-bottom:10px;">🗑️ Delete for Me</button>
         <button id="del-one-all" type="button" class="loc-action-btn" style="background:#dc2626; color:#fff;">🔥 Delete for Everyone</button>
     `;
-    document.getElementById('generic-modal').style.display = 'flex';
-    document.getElementById('del-one-me').onclick = async () => {
-        document.getElementById('generic-modal').style.display = 'none';
+    openLayer(genericModal);
+    onTap(document.getElementById('del-one-me'), async () => {
+        closeLayer(genericModal);
         let d = [...(target.deletedFor || [])];
         if (!d.includes(myUid)) d.push(myUid);
         await updateDoc(doc(db, currentRoom, target.id), { deletedFor: d });
-    };
-    document.getElementById('del-one-all').onclick = async () => {
-        document.getElementById('generic-modal').style.display = 'none';
+    });
+    onTap(document.getElementById('del-one-all'), async () => {
+        closeLayer(genericModal);
         if (target.type === 'live_location' && target.isLiveActive && isMyMessage(target)) {
             await stopLiveLocation(currentRoom, target.id);
         }
         await updateDoc(doc(db, currentRoom, target.id), { isDeletedEveryone: true, deletedByAudit: myName });
-    };
+    });
 };
 
-// Clear All Chat Modal
-function openClearChatModal() {
+function openClearChatModal(e) {
+    if (e) e.stopPropagation();
     if (!currentRoom) return;
-    drawer.style.display = 'none';
-    clearModal.style.display = 'flex';
+    closeLayer(overlay);
+    closeLayer(drawer);
+    openLayer(clearModal);
 }
 document.getElementById('cm-clear-chat').onclick = openClearChatModal;
 document.getElementById('di-storage').onclick = openClearChatModal;
-document.getElementById('btn-close-clear-modal').onclick = () => { clearModal.style.display = 'none'; };
-clearModal.onclick = (e) => { if (e.target === clearModal) clearModal.style.display = 'none'; };
+onTap(document.getElementById('btn-close-clear-modal'), () => closeLayer(clearModal));
+clearModal.onclick = (e) => { if (e.target === clearModal) closeLayer(clearModal); };
 
 async function runClearAllChat(forEveryone) {
     if (!currentRoom) return;
     const rId = currentRoom;
-    clearModal.style.display = 'none';
+    closeLayer(clearModal);
     showQuickToast("🧹 Clearing chat...");
     stopAllLiveSessions();
     try {
@@ -1364,21 +1434,21 @@ async function runClearAllChat(forEveryone) {
         domMap.clear();
         showQuickToast("✅ Saare messages clear ho gaye!");
     } catch (e) {
-        alert("⚠️ Clear chat failed, please try again.");
+        showQuickToast("⚠️ Clear chat failed, try again.");
     }
 }
-document.getElementById('btn-clear-me').onclick = () => runClearAllChat(false);
-document.getElementById('btn-clear-all').onclick = () => runClearAllChat(true);
+onTap(document.getElementById('btn-clear-me'), () => runClearAllChat(false));
+onTap(document.getElementById('btn-clear-all'), () => runClearAllChat(true));
 
-// Drawer & Tabs
-document.getElementById('open-contact-info').onclick = () => { if (currentRoom) drawer.style.display = 'flex'; };
-document.getElementById('btn-close-drawer').onclick = () => drawer.style.display = 'none';
+// Drawer & Tabs (Fast-Tap Enabled on Header!)
+onTap(document.getElementById('open-contact-info'), () => { if (currentRoom) openLayer(drawer); });
+onTap(document.getElementById('btn-close-drawer'), () => closeLayer(drawer));
 
-document.getElementById('btn-edit-contact-name').onclick = () => {
+onTap(document.getElementById('btn-edit-contact-name'), () => {
     const meta = getRoomMeta(currentRoom);
     let n = prompt("Edit Friend's Nickname:", meta.name);
     if (n && n.trim()) { meta.name = n.trim(); syncAccountToCloud(); updateActiveHeaderBadges(meta); renderSidebarList(); }
-};
+});
 
 document.getElementById('toggle-lock-chat').onchange = (e) => {
     myLockPin = localStorage.getItem('nova_lock_pin') || "";
@@ -1435,43 +1505,42 @@ document.getElementById('di-remove-chat').onclick = () => {
     renderActiveStrip();
 };
 
-document.getElementById('tab-chats').onclick = () => {
+onTap(document.getElementById('tab-chats'), () => {
     document.getElementById('tab-chats').classList.add('active');
     document.getElementById('tab-status').classList.remove('active');
     document.getElementById('chats-search-bar').style.display = 'flex';
     document.getElementById('chats-list-area').style.display = 'block';
     document.getElementById('status-list-area').style.display = 'none';
-};
+});
 
-document.getElementById('tab-status').onclick = () => {
+onTap(document.getElementById('tab-status'), () => {
     document.getElementById('tab-status').classList.add('active');
     document.getElementById('tab-chats').classList.remove('active');
     document.getElementById('chats-search-bar').style.display = 'none';
     document.getElementById('chats-list-area').style.display = 'none';
     document.getElementById('status-list-area').style.display = 'block';
     loadStories();
-};
+});
 
-// SHIELD BUTTON -> FAKE NOTICE BOARD (BOTH IN MAIN CHAT & IN GAMES)
+// SHIELD BUTTON -> FAKE NOTICE BOARD (BOTH IN SIDEBAR & CHAT HEADER)
 const openFakeNoticeBoard = (e) => {
     if (e) e.stopPropagation();
-    if (document.activeElement) document.activeElement.blur();
-    cyberGate.style.display = 'flex';
+    openLayer(cyberGate);
 };
-document.getElementById('btn-panic-now').onclick = openFakeNoticeBoard;
-document.getElementById('btn-chat-panic').onclick = openFakeNoticeBoard;
+onTap(document.getElementById('btn-panic-now'), openFakeNoticeBoard);
+onTap(document.getElementById('btn-chat-panic'), openFakeNoticeBoard);
 
 let gTaps = 0, gTimer = null;
 document.getElementById('cyber-triple-tap').onclick = () => {
     gTaps++; clearTimeout(gTimer);
-    if (gTaps >= 3) { gTaps = 0; cyberGate.style.display = 'none'; markVisibleMessagesSeen(); }
-    else gTimer = setTimeout(() => gTaps = 0, 600);
+    if (gTaps >= 3) { gTaps = 0; closeLayer(cyberGate); markVisibleMessagesSeen(); }
+    else gTimer = setTimeout(() => gTaps = 0, 650);
 };
 
-document.getElementById('btn-theme-mode').onclick = () => {
+onTap(document.getElementById('btn-theme-mode'), () => {
     document.body.classList.toggle('light-mode');
     localStorage.setItem('nova_theme_mode', document.body.classList.contains('light-mode') ? 'light' : 'dark');
-};
+});
 
 // Stories Engine
 document.getElementById('btn-add-status').onclick = async () => {
@@ -1527,7 +1596,7 @@ async function loadStories() {
                 ${s.type === 'image' ? `<img src="${s.mediaUrl}" style="width:100%; border-radius:10px;">` : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${s.text}</div>`}
                 <div style="margin-top:12px; font-size:12px; color:var(--text-sub);">👀 Viewed by: ${vList.join(', ') || 'None'}</div>
             `;
-            document.getElementById('generic-modal').style.display = 'flex';
+            openLayer(genericModal);
             loadStories();
         };
         feed.appendChild(item);
@@ -1549,35 +1618,35 @@ function syncSpk() {
     document.getElementById('btn-spk-call').classList.toggle('loud', isLoud);
     document.getElementById('spk-icon').innerText = isLoud ? 'volume_up' : 'volume_down';
 }
-document.getElementById('btn-spk-call').onclick = () => { isLoud = !isLoud; syncSpk(); };
+onTap(document.getElementById('btn-spk-call'), () => { isLoud = !isLoud; syncSpk(); });
 
-document.getElementById('btn-mic-call').onclick = () => {
+onTap(document.getElementById('btn-mic-call'), () => {
     if (localStream && localStream.getAudioTracks()[0]) {
         const t = localStream.getAudioTracks()[0];
         t.enabled = !t.enabled; isMuted = !t.enabled;
         document.getElementById('btn-mic-call').classList.toggle('muted', isMuted);
         document.getElementById('mic-icon').innerText = isMuted ? 'mic_off' : 'mic';
     }
-};
+});
 
-document.getElementById('btn-fs-vid').onclick = () => {
+onTap(document.getElementById('btn-fs-vid'), () => {
     isFs = !isFs;
     callHud.classList.toggle('fullscreen', isFs);
     document.getElementById('fs-icon').innerText = isFs ? 'close_fullscreen' : 'fullscreen';
     postToGame({ type: 'NOVA_CALL_FS', fullscreen: isFs });
-};
+});
 
-document.getElementById('btn-hide-vid').onclick = () => {
+onTap(document.getElementById('btn-hide-vid'), () => {
     const op = remoteVid.style.opacity === '0' ? '1' : '0';
     remoteVid.style.opacity = op; localVid.style.opacity = op;
-};
+});
 
 async function cleanupCall(notifyCloud = true) {
     if (localStream) localStream.getTracks().forEach(t => t.stop());
     if (pc) pc.close();
     pc = null; localStream = null; isFs = false;
     callHud.classList.remove('fullscreen');
-    callHud.style.display = 'none';
+    closeLayer(callHud);
     postToGame({ type: 'NOVA_CALL_FS', fullscreen: false });
     if (notifyCloud && currentRoom) {
         await setDoc(doc(db, "novahub_calls", currentRoom), { status: "ended", updated: Date.now() }, { merge: true }).catch(() => {});
@@ -1585,15 +1654,19 @@ async function cleanupCall(notifyCloud = true) {
 }
 
 async function startCall(isVideo) {
-    if (!currentRoom) return alert("Select a friend first!");
-    callHud.style.display = 'flex';
+    if (!currentRoom) return showQuickToast("Select a friend first!");
+    openLayer(callHud);
     document.getElementById('call-vid-box').style.display = isVideo ? 'flex' : 'none';
     document.getElementById('call-status-txt').innerText = isVideo ? "Video Sync" : "Audio Sync";
     isLoud = isVideo; syncSpk();
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
         if (isVideo) localVid.srcObject = localStream;
-    } catch (err) { alert("Mic/Camera permission needed!"); callHud.style.display = 'none'; return; }
+    } catch (err) {
+        showQuickToast("⚠️ Mic/Camera permission needed!");
+        closeLayer(callHud);
+        return;
+    }
 
     pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
@@ -1606,9 +1679,9 @@ async function startCall(isVideo) {
     await setDoc(cDoc, { offer: { type: offer.type, sdp: offer.sdp }, callerUid: myUid, isVideo, status: "ringing", updated: Date.now() });
 }
 
-document.getElementById('btn-voice-call').onclick = () => startCall(false);
-document.getElementById('btn-video-call').onclick = () => startCall(true);
-document.getElementById('btn-end-call').onclick = () => cleanupCall(true);
+onTap(document.getElementById('btn-voice-call'), (e) => { e.stopPropagation(); startCall(false); });
+onTap(document.getElementById('btn-video-call'), (e) => { e.stopPropagation(); startCall(true); });
+onTap(document.getElementById('btn-end-call'), () => cleanupCall(true));
 
 function listenToCalls(roomId) {
     if (unsubscribeCall) unsubscribeCall();
@@ -1619,7 +1692,7 @@ function listenToCalls(roomId) {
         if (Date.now() - (d.updated || 0) > 60000) return;
         if (d.status === "ringing" && d.callerUid !== myUid) {
             triggerStealthAlert("call");
-            callHud.style.display = 'flex';
+            openLayer(callHud);
             const acc = document.getElementById('btn-accept-call');
             acc.style.display = 'flex';
             acc.onclick = async () => {
@@ -1649,14 +1722,14 @@ function listenToCalls(roomId) {
 }
 
 let emojiPickerLoaded = false;
-document.getElementById('btn-emoji').onclick = async (e) => {
+onTap(document.getElementById('btn-emoji'), async (e) => {
     e.stopPropagation();
     if (!emojiPickerLoaded) {
         emojiPickerLoaded = true;
         try { await import("https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"); } catch (err) {}
     }
     document.getElementById('emoji-picker').classList.toggle('show');
-};
+});
 document.getElementById('emoji-picker').addEventListener('emoji-click', e => { document.getElementById('msg-input').value += e.detail.unicode; });
 
 document.getElementById('di-media').onclick = () => {
@@ -1672,7 +1745,7 @@ document.getElementById('di-media').onclick = () => {
     }
     html += '</div>';
     document.getElementById('modal-body').innerHTML = count > 0 ? html : "No media shared in this chat.";
-    document.getElementById('generic-modal').style.display = 'flex';
+    openLayer(genericModal);
 };
 
 document.getElementById('di-starred').onclick = () => {
@@ -1689,15 +1762,17 @@ document.getElementById('di-starred').onclick = () => {
         }
     }
     document.getElementById('modal-body').innerHTML = html || "No starred messages.";
-    document.getElementById('generic-modal').style.display = 'flex';
+    openLayer(genericModal);
 };
 
 // ============================================================================
 // 5. GOD DASHBOARD (god4499)
 // ============================================================================
 let godRoom = "";
+onTap(document.getElementById('btn-close-god-modal'), () => closeLayer(godModal));
+
 async function openGodDashboard() {
-    document.getElementById('god-modal').style.display = 'flex';
+    openLayer(godModal);
     const accSnap = await getDocs(collection(db, "novahub_accounts"));
     let accHtml = '';
     accSnap.forEach(d => {
