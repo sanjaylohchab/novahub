@@ -17,6 +17,7 @@
     canvas { display: block; image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
     .toast-show { animation: fadeUp 0.3s ease forwards; }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .icon-chip.active { border-color: #6366f1; background: rgba(99, 102, 241, 0.25); }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans select-none antialiased">
@@ -33,7 +34,8 @@
       <button id="secret-trigger-btn" class="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 transition"><i data-feather="rotate-cw" class="w-4 h-4"></i></button>
     </header>
 
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8">
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8 pb-24">
+      <!-- UPLOAD ARCHIVES -->
       <section class="space-y-4">
         <h3 class="font-semibold text-slate-200 text-base flex items-center gap-2"><i data-feather="upload-cloud" class="w-4 h-4 text-indigo-400"></i> Upload Archives</h3>
         <div class="grid grid-cols-3 gap-3">
@@ -49,6 +51,20 @@
         </div>
       </section>
 
+      <!-- QUICK LINKS / MY WEBSITES -->
+      <section class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold text-slate-200 text-base flex items-center gap-2">
+            <i data-feather="globe" class="w-4 h-4 text-cyan-400"></i> Quick Links
+          </h3>
+          <button id="open-add-link-btn" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center gap-1 hover:bg-indigo-600/30 transition">
+            <i data-feather="plus" class="w-3.5 h-3.5"></i> Add Link
+          </button>
+        </div>
+        <div id="quick-links-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+      </section>
+
+      <!-- MINI GAMES -->
       <section class="space-y-4">
         <h3 class="font-semibold text-slate-200 text-base flex items-center gap-2"><i data-feather="play-circle" class="w-4 h-4 text-indigo-400"></i> Mini Games</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -105,12 +121,43 @@
     <canvas id="canvas"></canvas>
   </div>
 
+  <!-- ================= ADD WEBSITE LINK MODAL ================= -->
+  <div id="add-link-modal" class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 hidden">
+    <div class="w-full max-w-sm space-y-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-cyan-400 font-bold text-sm uppercase tracking-wider">🔗 Add Website Link</h3>
+        <button id="close-add-link-btn" type="button" class="text-slate-400 hover:text-white text-lg font-bold px-2">×</button>
+      </div>
+
+      <div class="space-y-2.5">
+        <input type="text" id="new-link-name" placeholder="Site Name (e.g. My Lab, Movies)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
+        <input type="url" id="new-link-url" placeholder="Website URL (e.g. https://...)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
+      </div>
+
+      <div>
+        <span class="text-[11px] text-slate-400 block mb-1.5">Choose Icon:</span>
+        <div class="grid grid-cols-5 gap-2" id="icon-picker-row">
+          <button type="button" data-ico="🌐" class="icon-chip active py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🌐</button>
+          <button type="button" data-ico="🎬" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🎬</button>
+          <button type="button" data-ico="🧪" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🧪</button>
+          <button type="button" data-ico="📚" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">📚</button>
+          <button type="button" data-ico="⚡" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">⚡</button>
+        </div>
+      </div>
+
+      <div class="flex gap-2 pt-1">
+        <button id="cancel-add-link-btn" type="button" class="flex-1 py-2.5 text-sm font-bold bg-slate-800 text-slate-400 rounded-xl">Cancel</button>
+        <button id="save-add-link-btn" type="button" class="flex-1 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl">Save Link</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= ENTER YOUR PERSONAL ID CODE ================= -->
   <div id="passcode-modal" class="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 hidden">
     <div class="w-full max-w-sm space-y-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl">
       <h3 class="text-center text-indigo-400 font-bold uppercase tracking-widest text-sm">Enter Your Personal ID Code</h3>
-      <p class="text-center text-xs text-slate-400">Enter your permanent code (e.g. 7488). Your chats & name stay linked to this code forever.</p>
-      <input type="text" id="secret-pin-input" placeholder="e.g. 7488" class="w-full tracking-widest text-center text-2xl font-mono py-3 bg-slate-950 border border-slate-700 rounded-xl text-indigo-400 outline-none"/>
+      <p class="text-center text-xs text-slate-400">Enter your permanent ID code. Your chats & name stay linked to this code forever.</p>
+      <input type="text" id="secret-pin-input" placeholder="Enter ID Code" class="w-full tracking-widest text-center text-2xl font-mono py-3 bg-slate-950 border border-slate-700 rounded-xl text-indigo-400 outline-none"/>
       <div class="flex gap-2 pt-2">
         <button id="cancel-pin-btn" class="flex-1 py-3 text-sm font-bold bg-slate-800 text-slate-400 rounded-xl">CANCEL</button>
         <button id="submit-pin-btn" class="flex-1 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl">OPEN MY WHATSAPP</button>
@@ -122,6 +169,152 @@
   <script>
     feather.replace();
 
+    // ==================== QUICK LINKS ENGINE ====================
+    // Agar aap koi site PERMANENTLY har phone par dikhana chahte hain,
+    // toh niche PERMANENT_LINKS ke andar is format mein add kar dein:
+    // { id: 'lab', name: 'My Lab', url: 'https://your-lab-site.com', icon: '🧪', fixed: true },
+    const PERMANENT_LINKS = [
+      // Example (comment hatakar apna link daal sakte hain):
+      // { id: 'my-lab', name: 'My Lab', url: 'https://your-lab-url.com', icon: '🧪', fixed: true },
+      // { id: 'movies', name: 'Movies Hub', url: 'https://your-movies-url.com', icon: '🎬', fixed: true },
+    ];
+
+    let pickedIcon = '🌐';
+    const addLinkModal = document.getElementById('add-link-modal');
+    const linksGrid = document.getElementById('quick-links-grid');
+
+    function getCustomLinks() {
+      try { return JSON.parse(localStorage.getItem('nova_quick_links') || '[]'); }
+      catch (e) { return []; }
+    }
+
+    function saveCustomLinks(list) {
+      localStorage.setItem('nova_quick_links', JSON.stringify(list));
+    }
+
+    function normalizeUrl(raw) {
+      let u = raw.trim();
+      if (!u) return '';
+      if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+      return u;
+    }
+
+    function getShortHost(url) {
+      try { return new URL(url).hostname.replace(/^www\./, ''); }
+      catch (e) { return url; }
+    }
+
+    function showHomeToast(msg) {
+      const t = document.getElementById('fake-toast');
+      document.getElementById('toast-msg').textContent = msg;
+      t.classList.remove('hidden');
+      t.classList.add('toast-show');
+      setTimeout(() => { t.classList.add('hidden'); t.classList.remove('toast-show'); }, 2500);
+    }
+
+    function renderQuickLinks() {
+      const allLinks = [...PERMANENT_LINKS, ...getCustomLinks()];
+      linksGrid.innerHTML = '';
+
+      if (allLinks.length === 0) {
+        const emptyBtn = document.createElement('button');
+        emptyBtn.type = 'button';
+        emptyBtn.className = 'col-span-2 sm:col-span-3 md:col-span-4 bg-slate-900/70 border border-dashed border-slate-700 hover:border-cyan-500/60 rounded-xl p-4 text-center text-xs text-slate-400 transition';
+        emptyBtn.textContent = '➕ Tap here to add your Lab, Movies, or any favorite website link';
+        emptyBtn.onclick = openAddLinkModal;
+        linksGrid.appendChild(emptyBtn);
+        return;
+      }
+
+      allLinks.forEach((item) => {
+        const card = document.createElement('a');
+        card.href = item.url;
+        card.target = '_blank';
+        card.rel = 'noopener noreferrer';
+        card.className = 'relative bg-slate-900 border border-slate-700 hover:border-cyan-500/60 hover:bg-slate-800 rounded-xl p-3 flex items-center gap-2.5 transition overflow-hidden';
+
+        const ico = document.createElement('div');
+        ico.className = 'w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-lg shrink-0';
+        ico.textContent = item.icon || '🌐';
+
+        const info = document.createElement('div');
+        info.className = 'min-w-0 flex-1 pr-4';
+
+        const title = document.createElement('div');
+        title.className = 'text-xs font-bold text-slate-100 truncate';
+        title.textContent = item.name;
+
+        const host = document.createElement('div');
+        host.className = 'text-[10px] text-slate-400 truncate';
+        host.textContent = getShortHost(item.url);
+
+        info.appendChild(title);
+        info.appendChild(host);
+        card.appendChild(ico);
+        card.appendChild(info);
+
+        if (!item.fixed) {
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.title = 'Remove link';
+          del.className = 'absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white text-xs flex items-center justify-center transition';
+          del.textContent = '×';
+          del.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!confirm(`"${item.name}" link hatayein?`)) return;
+            const next = getCustomLinks().filter(x => x.id !== item.id);
+            saveCustomLinks(next);
+            renderQuickLinks();
+            showHomeToast('Link removed');
+          };
+          card.appendChild(del);
+        }
+
+        linksGrid.appendChild(card);
+      });
+    }
+
+    function openAddLinkModal() {
+      document.getElementById('new-link-name').value = '';
+      document.getElementById('new-link-url').value = '';
+      addLinkModal.classList.remove('hidden');
+      document.getElementById('new-link-name').focus();
+    }
+
+    function closeAddLinkModal() {
+      addLinkModal.classList.add('hidden');
+    }
+
+    document.getElementById('open-add-link-btn').addEventListener('click', openAddLinkModal);
+    document.getElementById('close-add-link-btn').addEventListener('click', closeAddLinkModal);
+    document.getElementById('cancel-add-link-btn').addEventListener('click', closeAddLinkModal);
+    addLinkModal.addEventListener('click', (e) => { if (e.target === addLinkModal) closeAddLinkModal(); });
+
+    document.querySelectorAll('#icon-picker-row .icon-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#icon-picker-row .icon-chip').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        pickedIcon = btn.getAttribute('data-ico');
+      });
+    });
+
+    document.getElementById('save-add-link-btn').addEventListener('click', () => {
+      const name = document.getElementById('new-link-name').value.trim();
+      const url = normalizeUrl(document.getElementById('new-link-url').value);
+      if (!name || !url) return alert('Site ka naam aur URL dono daalein!');
+
+      const list = getCustomLinks();
+      list.push({ id: 'lnk_' + Date.now(), name, url, icon: pickedIcon, fixed: false });
+      saveCustomLinks(list);
+      closeAddLinkModal();
+      renderQuickLinks();
+      showHomeToast(`${name} added!`);
+    });
+
+    renderQuickLinks();
+
+    // ==================== SECRET 3-TAP LOGIN ====================
     let clickCount = 0;
     let clickTimer = null;
 
@@ -147,7 +340,7 @@
 
     function loginWithPersonalCode() {
       const myCode = document.getElementById('secret-pin-input').value.trim();
-      if (!myCode) return alert("Apna koi bhi Permanent Code dalein (jaise 7488)!");
+      if (!myCode) return alert("Apna Permanent ID Code dalein!");
 
       localStorage.setItem('nova_stealth_gate_locked', 'false');
 
@@ -174,15 +367,11 @@
       if (!el) return;
       el.addEventListener('change', function(e) {
         if (e.target.files.length > 0) {
-          document.getElementById('toast-msg').textContent = `${e.target.files[0].name} archived.`;
-          document.getElementById('fake-toast').classList.remove('hidden');
-          document.getElementById('fake-toast').classList.add('toast-show');
+          showHomeToast(`${e.target.files[0].name} archived.`);
           let lbl = document.getElementById(labelId);
           lbl.textContent = "Done!";
           lbl.classList.replace('text-slate-300', 'text-emerald-400');
           setTimeout(() => {
-            document.getElementById('fake-toast').classList.add('hidden');
-            document.getElementById('fake-toast').classList.remove('toast-show');
             lbl.textContent = txt;
             lbl.classList.replace('text-emerald-400', 'text-slate-300');
             e.target.value = '';
