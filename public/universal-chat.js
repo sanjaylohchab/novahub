@@ -1,5 +1,5 @@
 // ============================================================================
-// NOVAHUB UNIVERSAL CHAT BRIDGE (Fast Load + Double-Tap Panic Hide + Auto-Lock)
+// NOVAHUB UNIVERSAL CHAT BRIDGE (iOS Hit-Test Safe + Double-Tap Panic Hide)
 // ============================================================================
 (() => {
     if (document.getElementById('uchat-fab')) return;
@@ -31,7 +31,7 @@
 
         .uchat-box { position: fixed; bottom: 84px; right: 12px; width: 365px; max-width: calc(100vw - 24px); height: 540px; max-height: calc(100dvh - 105px); background: #060b13; border: 1.5px solid rgba(0, 242, 254, 0.35); border-radius: 18px; display: none; z-index: 9993; box-shadow: 0 18px 55px rgba(0,0,0,0.92); overflow: hidden; }
         .uchat-box.fullscreen-widget { top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; z-index: 10008 !important; }
-        #uchat-iframe { width: 100%; height: 100%; border: none; display: block; background: #060b13; }
+        #uchat-iframe { width: 100%; height: 100%; border: none; display: block; background: #060b13; overflow: hidden; }
     `;
     document.head.appendChild(style);
 
@@ -45,7 +45,7 @@
             <div class="uchat-badge" id="uchat-badge">0</div>
         </div>
         <div class="uchat-box" id="uchat-box">
-            <iframe id="uchat-iframe" src="chat.html?widget=1" allow="camera; microphone; geolocation; autoplay; clipboard-read; clipboard-write; fullscreen"></iframe>
+            <iframe id="uchat-iframe" src="chat.html?widget=1" scrolling="no" allow="camera; microphone; geolocation; autoplay; clipboard-read; clipboard-write; fullscreen"></iframe>
         </div>
     `;
     document.body.appendChild(wrap);
@@ -96,7 +96,7 @@
         notifyIframeState();
     }
 
-    // 1 Tap = Open/Close Chat | Double Tap = Panic Hide Lightning Button Completely
+    // 1 Tap = Open/Close Chat | Double Tap = Hide Lightning Button Completely
     let fabTapTimer = null;
     fab.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -112,10 +112,9 @@
         }
     });
 
-    // Tap anywhere outside chat box -> Instant Close (and auto-locks if Lock PIN is ON)
     backdrop.addEventListener('click', () => setOpen(false));
 
-    // Top-left 3-tap to unhide Lightning Button after Double-Tap Panic Hide
+    // Top-left 3-tap to bring back Lightning Button after Double-Tap Hide
     let unhideTaps = 0, unhideTimer = null;
     unhideZone.addEventListener('click', () => {
         unhideTaps++;
