@@ -1,6 +1,6 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Crash-Proof Init Order | Zero Dead Buttons | PIN Lock | Live Location
+// Crash-Proof Init | Accurate Last Seen | Cross-Device Live Location | PIN Lock
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -45,6 +45,7 @@ let savedRooms = JSON.parse(localStorage.getItem('nova_saved_rooms') || '[]').fi
 let currentRoom = "";
 let unsubscribeChat = null;
 let unsubscribePresence = null;
+let presenceRefreshTimer = null;
 let unsubscribeCall = null;
 let unsubscribeAccountSync = null;
 let cachedMessages = {};
@@ -186,7 +187,7 @@ function saveSessionToLocal() {
 }
 
 // ============================================================================
-// 2. HELPERS: ENCRYPTION, ALERTS, PRESENCE, LOCATION
+// 2. HELPERS: ENCRYPTION, ALERTS, ACCURATE PRESENCE & CROSS-DEVICE LIVE LOC
 // ============================================================================
 function make1on1RoomId(codeA, codeB) {
     const pair = [String(codeA).trim(), String(codeB).trim()].sort();
@@ -209,7 +210,21 @@ function isChatActivelyVisible() {
 }
 
 function getDateGroupLabel(d = new Date()) { return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
-function getShortTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function getShortTime(d = new Date()) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+
+function formatLastSeen(ms) {
+    if (!ms) return "";
+    const d = new Date(ms);
+    const now = new Date();
+    const timePart = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const todayStr = now.toDateString();
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    if (d.toDateString() === todayStr) return `Last seen today at ${timePart}`;
+    if (d.toDateString() === yest.toDateString()) return `Last seen yesterday at ${timePart}`;
+    const datePart = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return `Last seen ${datePart}, ${timePart}`;
+}
 
 function encryptText(plainText, key) {
     if (!key) return plainText;
@@ -285,17 +300,23 @@ async function triggerStealthAlert(type) {
 async function updatePresence(statusStr = "online", force = false) {
     if (!currentRoom || !myUid) return;
     const nowMs = Date.now();
-    if (!force && statusStr === lastPresStatus && (nowMs - lastPresMs) < 4000) return;
+    if (!force && statusStr === lastPresStatus && (nowMs - lastPresMs) < 15000) return;
     lastPresStatus = statusStr;
     lastPresMs = nowMs;
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = new Date(nowMs).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
     try {
         await setDoc(doc(db, "novahub_all_rooms", currentRoom), {
             roomId: currentRoom, pinCode: currentRoom, lastActive: new Date().toLocaleString(),
-            [`presence_${myUid}`]: { name: myName, status: statusStr, time: timeStr, updated: nowMs }
+            [`presence_${myUid}`]: { accountCode: myAccountCode, name: myName, status: statusStr, time: timeStr, updated: nowMs }
         }, { merge: true });
     } catch (e) {}
 }
+
+setInterval(() => {
+    if (isChatActivelyVisible()) updatePresence("online", true);
+}, 25000);
+
+window.addEventListener('pagehide', () => updatePresence("offline", true));
 
 function refreshLiveBanner() {
     if (!liveBanner) return;
@@ -308,22 +329,78 @@ function refreshLiveBanner() {
     }
 }
 
-async function stopLiveLocation(roomId, msgId) {
+async function saveLiveShareCloud(roomId, shareObj) {
+    if (!myAccountCode || !roomId) return;
+    try {
+        await setDoc(doc(db, "novahub_accounts", myAccountCode), {
+            activeLiveShares: { [roomId]: shareObj }
+        }, { merge: true });
+    } catch (e) {}
+}
+
+function clearLocalLiveWatcher(roomId) {
     const sess = activeLiveSessions[roomId];
-    if (sess && (!msgId || sess.msgId === msgId)) {
-        if (sess.watchId !== null) navigator.geolocation.clearWatch(sess.watchId);
-        if (sess.expireTimer) clearTimeout(sess.expireTimer);
-        delete activeLiveSessions[roomId];
+    if (!sess) return;
+    if (sess.watchId !== null) navigator.geolocation.clearWatch(sess.watchId);
+    if (sess.expireTimer) clearTimeout(sess.expireTimer);
+    delete activeLiveSessions[roomId];
+    refreshLiveBanner();
+}
+
+function attachLiveLocationWatcher(targetRoom, msgId, expiresAt, durLabel) {
+    if (!navigator.geolocation || !targetRoom || !msgId) return;
+    if (activeLiveSessions[targetRoom] && activeLiveSessions[targetRoom].msgId === msgId) return;
+    if (activeLiveSessions[targetRoom]) clearLocalLiveWatcher(targetRoom);
+
+    const pushCoords = async (p) => {
+        if (!activeLiveSessions[targetRoom] || activeLiveSessions[targetRoom].msgId !== msgId) return;
+        if (expiresAt > 0 && Date.now() >= expiresAt) { stopLiveLocation(targetRoom, msgId); return; }
+        const nLat = p.coords.latitude.toFixed(6);
+        const nLng = p.coords.longitude.toFixed(6);
+        const nUrl = `https://www.google.com/maps?q=${nLat},${nLng}`;
+        const updStr = new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+        try {
+            await updateDoc(doc(db, targetRoom, msgId), {
+                lat: nLat, lng: nLng, mapUrl: nUrl, isLiveActive: true, lastUpdatedStr: updStr,
+                originalAuditText: `🛰️ Live Location (${durLabel}): ${nUrl}`
+            });
+        } catch (e) {}
+    };
+
+    const session = { msgId, watchId: null, expireTimer: null, label: durLabel, lastUpdateMs: 0 };
+    activeLiveSessions[targetRoom] = session;
+
+    // Login / Resume hote hi turant nayi location bhej dega
+    navigator.geolocation.getCurrentPosition(p => { session.lastUpdateMs = Date.now(); pushCoords(p); }, () => {}, { enableHighAccuracy: true, timeout: 15000 });
+
+    session.watchId = navigator.geolocation.watchPosition(p => {
+        if (Date.now() - session.lastUpdateMs < 8000) return;
+        session.lastUpdateMs = Date.now();
+        pushCoords(p);
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 6000, timeout: 15000 });
+
+    if (expiresAt > 0) {
+        const rem = expiresAt - Date.now();
+        if (rem <= 0) { stopLiveLocation(targetRoom, msgId); return; }
+        session.expireTimer = setTimeout(() => stopLiveLocation(targetRoom, msgId), rem);
     }
+    refreshLiveBanner();
+}
+
+async function stopLiveLocation(roomId, msgId) {
+    clearLocalLiveWatcher(roomId);
+    await saveLiveShareCloud(roomId, null);
     if (roomId && msgId) {
-        try { await updateDoc(doc(db, roomId, msgId), { isLiveActive: false, lastUpdatedStr: getShortTime(new Date()) }); } catch (e) {}
+        const endStr = new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+        try { await updateDoc(doc(db, roomId, msgId), { isLiveActive: false, lastUpdatedStr: endStr }); } catch (e) {}
     }
     refreshLiveBanner();
 }
 window.stopLiveLocation = stopLiveLocation;
 
 function stopAllLiveSessions() {
-    Object.keys(activeLiveSessions).forEach(rId => stopLiveLocation(rId, activeLiveSessions[rId].msgId));
+    // Logout par sirf is phone ka GPS watcher rukega; cloud live location active rahegi!
+    Object.keys(activeLiveSessions).forEach(rId => clearLocalLiveWatcher(rId));
 }
 
 // ============================================================================
@@ -493,21 +570,39 @@ async function markVisibleMessagesSeen() {
 
 function listenToPresence(roomId) {
     if (unsubscribePresence) unsubscribePresence();
+    if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
+    let latestPeer = null;
+
+    const paintPresence = () => {
+        if (!latestPeer) {
+            $('active-room-status').innerText = `Tap name for Info & Clear Chat`;
+            return;
+        }
+        const recent = (Date.now() - (latestPeer.updated || 0)) < 50000;
+        if (recent && (latestPeer.status === "typing..." || latestPeer.status === "recording audio...")) {
+            $('active-room-status').innerText = `✍️ ${latestPeer.name} is ${latestPeer.status}`;
+        } else if (recent && latestPeer.status === "online") {
+            $('active-room-status').innerText = `🟢 Active now`;
+        } else {
+            $('active-room-status').innerText = formatLastSeen(latestPeer.updated) || `Last active at ${latestPeer.time}`;
+        }
+    };
+
     unsubscribePresence = onSnapshot(doc(db, "novahub_all_rooms", roomId), (snap) => {
         if (!snap.exists()) return;
         const data = snap.data();
-        let txt = `Tap name for Info & Clear Chat`;
+        latestPeer = null;
         for (let k in data) {
-            if (k.startsWith('presence_') && k !== `presence_${myUid}`) {
-                const p = data[k];
-                const recent = (Date.now() - (p.updated || 0)) < 55000;
-                if (recent && (p.status === "typing..." || p.status === "recording audio...")) txt = `✍️ ${p.name} is ${p.status}`;
-                else if (recent && p.status === "online") txt = `🟢 Active now`;
-                else txt = `Last active at ${p.time}`;
-            }
+            if (!k.startsWith('presence_')) continue;
+            if (k === `presence_${myUid}` || k === `presence_user_${myAccountCode}`) continue;
+            const p = data[k];
+            if (!p || (p.accountCode && String(p.accountCode) === String(myAccountCode))) continue;
+            if (!latestPeer || (p.updated || 0) > (latestPeer.updated || 0)) latestPeer = p;
         }
-        $('active-room-status').innerText = txt;
+        paintPresence();
     });
+
+    presenceRefreshTimer = setInterval(paintPresence, 15000);
 }
 
 function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
@@ -827,7 +922,9 @@ async function runClearAllChat(forEveryone) {
     const rId = currentRoom;
     closeLayer(clearModal);
     showQuickToast("🧹 Clearing chat...");
-    stopAllLiveSessions();
+    if (forEveryone && activeLiveSessions[rId]) {
+        await stopLiveLocation(rId, activeLiveSessions[rId].msgId);
+    }
     try {
         const snap = await getDocs(collection(db, rId));
         const ops = [];
@@ -1086,9 +1183,11 @@ bindClick('btn-auth-submit', async () => {
 });
 bindClick('btn-logout-now', () => {
     if (!confirm(`Logout from ID "${myAccountCode}" (${myName})?`)) return;
+    updatePresence("offline", true);
     stopAllLiveSessions();
     if (unsubscribeChat) unsubscribeChat();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
+    if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
     wipeLocalSessionData();
     window.location.reload();
 });
@@ -1360,20 +1459,8 @@ bindClick('btn-start-live-loc', () => {
         });
         replyTarget = null; $('reply-bar').style.display = 'none';
 
-        const session = { msgId: docRef.id, watchId: null, expireTimer: null, label: durLabel, lastUpdateMs: Date.now() };
-        session.watchId = navigator.geolocation.watchPosition(async (p) => {
-            if (!activeLiveSessions[targetRoom] || activeLiveSessions[targetRoom].msgId !== docRef.id) return;
-            if (expiresAt > 0 && Date.now() >= expiresAt) { stopLiveLocation(targetRoom, docRef.id); return; }
-            if (Date.now() - session.lastUpdateMs < 8000) return;
-            session.lastUpdateMs = Date.now();
-            const nLat = p.coords.latitude.toFixed(6), nLng = p.coords.longitude.toFixed(6);
-            const nUrl = `https://www.google.com/maps?q=${nLat},${nLng}`;
-            try { await updateDoc(doc(db, targetRoom, docRef.id), { lat: nLat, lng: nLng, mapUrl: nUrl, lastUpdatedStr: getShortTime(new Date()), originalAuditText: `🛰️ Live Location (${durLabel}): ${nUrl}` }); } catch (e) {}
-        }, () => {}, { enableHighAccuracy: true, maximumAge: 6000, timeout: 15000 });
-
-        if (expiresAt > 0) session.expireTimer = setTimeout(() => stopLiveLocation(targetRoom, docRef.id), hours * 3600000);
-        activeLiveSessions[targetRoom] = session;
-        refreshLiveBanner();
+        await saveLiveShareCloud(targetRoom, { msgId: docRef.id, expiresAt, label: durLabel });
+        attachLiveLocationWatcher(targetRoom, docRef.id, expiresAt, durLabel);
     }, () => { inp.placeholder = prevPh; showQuickToast("⚠️ GPS off ya Location permission denied!"); }, { enableHighAccuracy: true, timeout: 12000 });
 });
 
@@ -1425,7 +1512,7 @@ bindClick('cm-edit', (e) => {
 bindClick('cm-seen', async (e) => {
     e.stopPropagation(); closeLayer(overlay);
     const next = !selectedMsg.seenStatus;
-    await updateDoc(doc(db, currentRoom, selectedMsg.id), { seenStatus: next, manualUnseen: !next, seenAtStr: next ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "" });
+    await updateDoc(doc(db, currentRoom, selectedMsg.id), { seenStatus: next, manualUnseen: !next, seenAtStr: next ? new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : "" });
 });
 bindClick('cm-del', (e) => {
     e.stopPropagation(); closeLayer(overlay);
@@ -1532,14 +1619,14 @@ bindClick('btn-add-status', async () => {
     if (typeChoice === "1") {
         let txt = prompt("Enter Story Text:");
         if (!txt) return;
-        await addDoc(collection(db, "novahub_stories"), { uid: myUid, accountCode: myAccountCode, name: myName, type: "text", text: txt, timeStr: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), views: [], timestamp: serverTimestamp() });
+        await addDoc(collection(db, "novahub_stories"), { uid: myUid, accountCode: myAccountCode, name: myName, type: "text", text: txt, timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }), views: [], timestamp: serverTimestamp() });
         loadStories();
     } else if (typeChoice === "2") $('status-file-input')?.click();
 });
 if ($('status-file-input')) $('status-file-input').addEventListener('change', async function() {
     const file = this.files[0]; if (!file) return;
     const url = await compressImg(file);
-    await addDoc(collection(db, "novahub_stories"), { uid: myUid, accountCode: myAccountCode, name: myName, type: "image", mediaUrl: url, text: "📷 Story", timeStr: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), views: [], timestamp: serverTimestamp() });
+    await addDoc(collection(db, "novahub_stories"), { uid: myUid, accountCode: myAccountCode, name: myName, type: "image", mediaUrl: url, text: "📷 Story", timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }), views: [], timestamp: serverTimestamp() });
     loadStories();
 });
 
@@ -1598,8 +1685,13 @@ window.addEventListener('message', (e) => {
     }
 });
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') lockAppIfEnabled();
-    else if (document.visibilityState === 'visible' && isAppUnlocked) markVisibleMessagesSeen();
+    if (document.visibilityState === 'hidden') {
+        updatePresence("offline", true);
+        lockAppIfEnabled();
+    } else if (document.visibilityState === 'visible' && isAppUnlocked) {
+        updatePresence("online", true);
+        markVisibleMessagesSeen();
+    }
 });
 
 // ============================================================================
@@ -1636,6 +1728,13 @@ function startAuthenticatedSession(shouldApplyLock = true) {
                 renderSidebarList();
                 renderActiveStrip();
             }
+        }
+        if (d.activeLiveShares) {
+            Object.entries(d.activeLiveShares).forEach(([rId, share]) => {
+                if (!share || !share.msgId) { clearLocalLiveWatcher(rId); return; }
+                if (share.expiresAt > 0 && Date.now() >= share.expiresAt) { stopLiveLocation(rId, share.msgId); return; }
+                attachLiveLocationWatcher(rId, share.msgId, share.expiresAt, share.label || 'Live');
+            });
         }
     });
 
