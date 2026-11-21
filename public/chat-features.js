@@ -1,5 +1,5 @@
 // ============================================================================
-// NOVAMESSENGER MODULE 3: PUSH, PRESENCE, LIVE LOCATION & STORIES (chat-features.js)
+// NOVAMESSENGER MODULE 3: PUSH, PRESENCE, LIVE LOCATION, STORIES & EXTRAS
 // ============================================================================
 import {
     app, db, FCM_VAPID_KEY, PUSH_RELAY_URL, state, hooks, $, bindClick,
@@ -53,10 +53,10 @@ function applyAndroidApkViewportFix() {
         inp.parentElement.style.paddingBottom = 'max(10px, env(safe-area-inset-bottom, 10px))';
     }
 }
-
+applyAndroidApkViewportFix();
 
 // ============================================================================
-// 1. FCM STEALTH PUSH & IN-APP / OS ALERTS (RESPECTS MUTE)
+// 1. FCM STEALTH PUSH & IN-APP / OS ALERTS (SUPPRESSED WHEN CHAT IS OPEN)
 // ============================================================================
 export async function initStealthFCM() {
     if (!state.myAccountCode || !("Notification" in window) || !("serviceWorker" in navigator)) return;
@@ -226,19 +226,19 @@ export function listenToPresence(roomId) {
 }
 
 // ============================================================================
-// 3. CROSS-DEVICE LIVE LOCATION & CURRENT LOCATION PICKER
+// 3. CROSS-DEVICE LIVE LOCATION (NO TOP BANNER + GREEN/RED ICON INDICATOR)
 // ============================================================================
 export function refreshLiveBanner() {
     const liveBanner = $('active-live-banner');
-    const liveBannerText = $('active-live-text');
-    if (!liveBanner) return;
-    const sess = state.activeLiveSessions[state.currentRoom];
-    if (sess) {
-        if (liveBannerText) liveBannerText.innerText = `Sharing Live Location (${sess.label})`;
-        liveBanner.style.display = 'flex';
-    } else {
-        liveBanner.style.display = 'none';
-    }
+    if (liveBanner) liveBanner.style.display = 'none';
+
+    const locBtn = $('btn-share-location');
+    if (!locBtn) return;
+
+    const isLive = !!state.activeLiveSessions[state.currentRoom];
+    locBtn.style.color = isLive ? '#10b981' : '#ef4444';
+    locBtn.style.filter = isLive ? 'drop-shadow(0 0 6px rgba(16,185,129,0.8))' : 'none';
+    locBtn.title = isLive ? 'Live Location Active' : 'Share Location';
 }
 
 export async function saveLiveShareCloud(roomId, shareObj) {
@@ -317,6 +317,7 @@ export function stopAllLiveSessions() {
 }
 
 export function initLocationControls() {
+    refreshLiveBanner();
     const locModal = $('location-modal');
 
     bindClick('btn-share-location', () => {
@@ -366,7 +367,7 @@ export function initLocationControls() {
             sendStealthPushToPeer(targetRoom, "media");
         }, () => {
             if (inp) inp.placeholder = prevPh;
-            showQuickToast("⚠️ GPS off ya Location permission denied!");
+            showQuickToast("⚠️ GPS off or Location permission denied!");
         }, { enableHighAccuracy: true, timeout: 12000 });
     });
 
@@ -409,7 +410,7 @@ export function initLocationControls() {
             sendStealthPushToPeer(targetRoom, "media");
         }, () => {
             if (inp) inp.placeholder = prevPh;
-            showQuickToast("⚠️ GPS off ya Location permission denied!");
+            showQuickToast("⚠️ GPS off or Location permission denied!");
         }, { enableHighAccuracy: true, timeout: 12000 });
     });
 }
@@ -421,14 +422,14 @@ const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function deleteStoryById(storyId) {
     if (!storyId) return;
-    if (!confirm("Kya aap is story ko delete karna chahte hain?")) return;
+    if (!confirm("Delete this story?")) return;
     try {
         await deleteDoc(doc(db, "novahub_stories", storyId));
         closeLayer($('generic-modal'));
-        showQuickToast("🗑️ Story delete ho gayi!");
+        showQuickToast("🗑️ Story deleted!");
         loadStories();
     } catch (e) {
-        showQuickToast("⚠️ Story delete nahi ho paayi.");
+        showQuickToast("⚠️ Failed to delete story.");
     }
 }
 
@@ -446,7 +447,6 @@ export async function loadStories() {
         const s = d.data();
         const storyMs = s.createdAtMs || (s.timestamp && typeof s.timestamp.toMillis === 'function' ? s.timestamp.toMillis() : 0);
 
-        // 24 ghante se purani story auto-delete karein
         if (storyMs > 0 && (nowMs - storyMs) > STORY_TTL_MS) {
             deleteDoc(doc(db, "novahub_stories", d.id)).catch(() => {});
             return;
@@ -496,7 +496,7 @@ export async function loadStories() {
     });
 
     if (shownCount === 0) {
-        feed.innerHTML = `<div class="empty-inbox">✨ Koi active story nahi hai (stories 24 ghante mein auto-delete ho jati hain).</div>`;
+        feed.innerHTML = `<div class="empty-inbox">✨ No active stories (stories auto-delete after 24 hours).</div>`;
     }
 }
 
@@ -550,7 +550,6 @@ function initScheme2KeypadAndPanic() {
         const st = document.createElement('style');
         st.id = 'nova-scheme2-styles';
         st.textContent = `
-            /* Bigger Return to Arcade Button on Login & Lock Screens */
             #auth-screen a[href*="index"], #auth-screen .return-btn, #btn-return-arcade-big {
                 display: flex !important;
                 align-items: center;
@@ -573,7 +572,6 @@ function initScheme2KeypadAndPanic() {
                 background: rgba(255,255,255,0.16) !important;
             }
 
-            /* 4-Digit Mobile Keypad UI */
             #nova-keypad-wrap { width: 100%; max-width: 280px; margin: 12px auto 0; text-align: center; }
             .kp-dots { display: flex; justify-content: center; gap: 14px; margin: 14px 0 18px; }
             .kp-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #38bdf8; background: transparent; transition: all 0.15s; }
@@ -588,7 +586,6 @@ function initScheme2KeypadAndPanic() {
             .kp-key:active { background: rgba(16,185,129,0.3); transform: scale(0.95); }
             .kp-key.kp-fn { font-size: 15px; color: #94a3b8; }
 
-            /* Draggable Floating Panic Exit Button */
             #nova-top-arcade-exit {
                 position: fixed; bottom: 86px; right: 14px; z-index: 9995;
                 background: rgba(15,23,42,0.88); border: 1.5px solid rgba(239,68,68,0.65);
@@ -603,7 +600,6 @@ function initScheme2KeypadAndPanic() {
         document.head.appendChild(st);
     }
 
-    // 1. Convert App Lock Screen into 4-Digit Mobile Keypad
     const lockInp = $('lock-pin-input');
     const unlockBtn = $('btn-unlock-app');
     if (lockInp && unlockBtn && !document.getElementById('nova-keypad-wrap')) {
@@ -651,7 +647,6 @@ function initScheme2KeypadAndPanic() {
         bindClick('btn-return-arcade-big', exitToArcadeNow);
     }
 
-    // 2. Draggable Floating Panic Exit Button (Saves Position)
     if (!document.getElementById('nova-top-arcade-exit')) {
         const exitBtn = document.createElement('button');
         exitBtn.id = 'nova-top-arcade-exit';
@@ -659,7 +654,6 @@ function initScheme2KeypadAndPanic() {
         exitBtn.innerHTML = '🎮 Exit';
         document.body.appendChild(exitBtn);
 
-        // Restore saved position if available
         try {
             const saved = JSON.parse(localStorage.getItem('nova_exit_btn_pos') || 'null');
             if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
@@ -722,7 +716,8 @@ function initScheme2KeypadAndPanic() {
         window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
         window.addEventListener('mouseup', onEnd);
     }
-    // 3. Shake-to-Panic Exit (Android + iPhone Motion Permission)
+
+    // Shake-to-Panic Exit (Android + iPhone Motion Permission)
     let lastShakeMs = 0;
     let shakeAttached = false;
 
@@ -741,29 +736,28 @@ function initScheme2KeypadAndPanic() {
     }
 
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        // iPhone / iOS: Pehle tap par Apple Motion Permission maangega
         const askIosMotion = async () => {
             try {
                 const res = await DeviceMotionEvent.requestPermission();
                 if (res === 'granted') {
                     startShakeListener();
-                    showQuickToast('📱 Shake-to-Exit ON ho gaya!');
+                    showQuickToast('📱 Shake-to-Exit Enabled!');
                 }
             } catch (e) {}
         };
         document.addEventListener('click', askIosMotion, { once: true });
     } else {
-        // Android / Other devices: Direct ON
         startShakeListener();
     }
 }
 initScheme2KeypadAndPanic();
+
 // ============================================================================
 // 6. SLEEP GUARD (INACTIVITY AUTO-EXIT TIMER - 100% ENGLISH UI)
 // ============================================================================
 function initSleepGuard() {
-    let sgEnabled = localStorage.getItem('nova_sg_enabled') !== 'false'; // Default ON
-    let sgMinutes = Math.max(1, parseInt(localStorage.getItem('nova_sg_minutes') || '2', 10) || 2); // Default 2 min
+    let sgEnabled = localStorage.getItem('nova_sg_enabled') !== 'false';
+    let sgMinutes = Math.max(1, parseInt(localStorage.getItem('nova_sg_minutes') || '2', 10) || 2);
     let sgTimer = null;
 
     if (!document.getElementById('nova-sg-styles')) {
@@ -814,7 +808,6 @@ function initSleepGuard() {
         document.head.appendChild(st);
     }
 
-    // 1. Add Sleep Guard Button next to App Lock button in Sidebar Header
     const lockBtn = $('btn-app-lock-toggle');
     let sgBtn = document.getElementById('btn-sleep-guard-top');
     if (!sgBtn && lockBtn && lockBtn.parentElement) {
@@ -825,7 +818,6 @@ function initSleepGuard() {
         lockBtn.parentElement.insertBefore(sgBtn, lockBtn);
     }
 
-    // 2. Inject Sleep Guard Settings Modal (English Only)
     if (!document.getElementById('sleep-guard-modal')) {
         const modal = document.createElement('div');
         modal.id = 'sleep-guard-modal';
@@ -882,7 +874,6 @@ function initSleepGuard() {
         }, sgMinutes * 60 * 1000);
     }
 
-    // Bind UI Events
     if (sgBtn) {
         sgBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -913,7 +904,6 @@ function initSleepGuard() {
         showQuickToast(sgEnabled ? `🌙 Sleep Guard ON (${sgMinutes} min)` : '🌙 Sleep Guard OFF');
     });
 
-    // Reset timer on any user activity
     ['touchstart', 'click', 'keydown', 'scroll', 'input'].forEach(evt => {
         window.addEventListener(evt, resetSleepTimer, { passive: true });
     });
@@ -922,6 +912,7 @@ function initSleepGuard() {
     resetSleepTimer();
 }
 initSleepGuard();
+
 // ============================================================================
 // 7. SMART CLEAR CHAT (KEEP STARRED VS DELETE ALL - ENGLISH UI)
 // ============================================================================
