@@ -30,7 +30,7 @@ function applyAndroidApkViewportFix() {
                 max-height: 100dvh !important;
                 overflow: hidden !important;
             }
-            #chat-view {
+            #chat-view.open {
                 height: 100% !important;
                 height: 100dvh !important;
                 max-height: 100dvh !important;
@@ -39,7 +39,7 @@ function applyAndroidApkViewportFix() {
                 box-sizing: border-box !important;
                 padding-bottom: env(safe-area-inset-bottom, 0px) !important;
             }
-            #msgs-container {
+            #chat-view.open #msgs-container {
                 flex: 1 1 auto !important;
                 min-height: 0 !important;
                 overflow-y: auto !important;
@@ -53,7 +53,7 @@ function applyAndroidApkViewportFix() {
         inp.parentElement.style.paddingBottom = 'max(10px, env(safe-area-inset-bottom, 10px))';
     }
 }
-applyAndroidApkViewportFix();
+
 
 // ============================================================================
 // 1. FCM STEALTH PUSH & IN-APP / OS ALERTS (RESPECTS MUTE)
