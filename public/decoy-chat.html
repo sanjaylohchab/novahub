@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NovaMessenger</title>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  html, body { height: 100%; height: 100dvh; overflow: hidden; background: #0b141a; color: #e9edef; }
+  .app { display: flex; height: 100%; width: 100%; position: relative; }
+
+  /* Sidebar */
+  .sidebar { width: 100%; height: 100%; display: flex; flex-direction: column; background: #111b21; }
+  .top-bar {
+    height: 58px; padding: 0 14px; background: #202c33; display: flex; align-items: center;
+    justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+  }
+  .brand { font-size: 17px; font-weight: 700; color: #e9edef; display: flex; align-items: center; gap: 8px; }
+  .brand span.dot { width: 9px; height: 9px; border-radius: 50%; background: #00a884; display: inline-block; }
+  .exit-pill {
+    background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.5); color: #fca5a5;
+    border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .search-wrap { padding: 8px 12px; background: #111b21; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .search-box {
+    width: 100%; padding: 8px 12px; border-radius: 10px; border: none; outline: none;
+    background: #202c33; color: #e9edef; font-size: 13.5px;
+  }
+  .chat-list { flex: 1; overflow-y: auto; }
+  .chat-item {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .chat-item:active { background: #202c33; }
+  .avatar {
+    width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 20px; font-weight: 700; flex-shrink: 0; background: #2a3942;
+  }
+  .ci-info { flex: 1; min-width: 0; }
+  .ci-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .ci-name { font-size: 15px; font-weight: 600; color: #e9edef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ci-time { font-size: 11px; color: #8696a0; flex-shrink: 0; margin-left: 8px; }
+  .ci-sub { font-size: 13px; color: #8696a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; justify-content: space-between; align-items: center; }
+  .badge { background: #00a884; color: #111b21; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; margin-left: 6px; }
+
+  /* Chat View */
+  .chat-view {
+    position: fixed; inset: 0; background: #0b141a; display: none; flex-direction: column; z-index: 20;
+    height: 100dvh; padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .chat-view.open { display: flex; }
+  .cv-head {
+    height: 58px; padding: 0 10px; background: #202c33; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .back-btn { background: none; border: none; color: #e9edef; cursor: pointer; display: flex; align-items: center; padding: 4px; }
+  .cv-meta { flex: 1; min-width: 0; }
+  .cv-title { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cv-members { font-size: 11.5px; color: #8696a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .msgs {
+    flex: 1; overflow-y: auto; padding: 12px 12px 16px; display: flex; flex-direction: column; gap: 6px;
+    background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .date-pill {
+    align-self: center; background: #182229; color: #8696a0; font-size: 11.5px;
+    padding: 4px 12px; border-radius: 8px; margin: 6px 0;
+  }
+  .msg-wrap { display: flex; flex-direction: column; max-width: 82%; }
+  .msg-wrap.other { align-self: flex-start; }
+  .msg-wrap.me { align-self: flex-end; }
+  .bubble {
+    padding: 7px 10px 6px; border-radius: 10px; font-size: 14px; line-height: 1.38; position: relative;
+    word-wrap: break-word;
+  }
+  .other .bubble { background: #202c33; border-top-left-radius: 2px; }
+  .me .bubble { background: #005c4b; border-top-right-radius: 2px; }
+  .sender { font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+  .meta { font-size: 10.5px; color: rgba(233,237,239,0.62); float: right; margin: 4px 0 -2px 8px; }
+
+  .input-bar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px max(10px, env(safe-area-inset-bottom, 10px));
+    background: #202c33; flex-shrink: 0;
+  }
+  .input-bar input {
+    flex: 1; padding: 10px 14px; border-radius: 999px; border: none; outline: none;
+    background: #2a3942; color: #e9edef; font-size: 14px;
+  }
+  .send-btn {
+    width: 40px; height: 40px; border-radius: 50%; border: none; background: #00a884;
+    color: #111b21; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="top-bar">
+      <div class="brand"><span class="dot"></span> Lab Staff Messenger</div>
+      <button class="exit-pill" onclick="window.location.href='index.html'">🎮 Exit</button>
+    </div>
+    <div class="search-wrap">
+      <input type="text" class="search-box" id="search-box" placeholder="Search lab groups..." oninput="renderList()">
+    </div>
+    <div class="chat-list" id="chat-list"></div>
+  </div>
+
+  <!-- CHAT VIEW -->
+  <div class="chat-view" id="chat-view">
+    <div class="cv-head">
+      <button class="back-btn" onclick="closeChat()"><span class="material-icons">arrow_back</span></button>
+      <div class="avatar" id="cv-ava" style="width:38px;height:38px;font-size:17px;">🧪</div>
+      <div class="cv-meta">
+        <div class="cv-title" id="cv-title">Microbiology Lab</div>
+        <div class="cv-members" id="cv-members">Sangeeta, Deepak, Deepika, Dinesh Sharma, Ankit...</div>
+      </div>
+    </div>
+    <div class="msgs" id="msgs"></div>
+    <div class="input-bar">
+      <input type="text" id="msg-inp" placeholder="Message..." onkeypress="if(event.key==='Enter')sendFake()">
+      <button class="send-btn" onclick="sendFake()"><span class="material-icons" style="font-size:20px;">send</span></button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  "Sangeeta": "#38bdf8",
+  "Deepak": "#34d399",
+  "Deepika": "#f472b6",
+  "Dinesh Sharma": "#fbbf24",
+  "Ankit": "#a78bfa",
+  "Ravi": "#fb7185",
+  "Pooja": "#2dd4bf",
+  "Manish": "#f97316",
+  "Sunita": "#c084fc",
+  "Vikram": "#60a5fa"
+};
+
+const GROUPS = [
+  {
+    id: "micro",
+    name: "Microbiology Lab",
+    icon: "🧫",
+    time: "11:42 AM",
+    unread: 2,
+    members: "Sangeeta, Deepak, Deepika, Dinesh Sharma, Ankit, Ravi, Pooja, Manish, Sunita, Vikram",
+    messages: [
+      { s: "Sangeeta", t: "Good morning sabko, aaj subah ka micro ka saman aa gaya kya store se?", tm: "9:15 AM" },
+      { s: "Sangeeta", t: "MacConkey aur Blood Agar plates kam pad rahi hain, aaj urine culture zyada aaye hain", tm: "9:16 AM" },
+      { s: "Sangeeta", t: "Kisi ne media dekha hai kahan rakha hai? Niche wale fridge mein nahi mil raha", tm: "9:17 AM" },
+      { s: "Sangeeta", t: "Kal evening shift mein jo stock aaya tha uski slip bhi table par nahi hai", tm: "9:18 AM" },
+      { s: "Deepak", t: "Media kal Dinesh ji ne left wale chhote fridge ke top rack mein shift kar diya tha kyunki bada fridge defrost ho raha tha", tm: "9:24 AM" },
+      { s: "Deepika", t: "Haan maine bhi subah wahin dekha tha, 2 pack MacConkey aur 1 Blood Agar rakha hai wahan", tm: "9:27 AM" },
+      { s: "Dinesh Sharma", t: "Haan bilkul, left fridge mein hi hai. Aur 10ml wali syringe nahi mil rahi counter par, kisi ne drawer mein rakhi hai kya?", tm: "9:35 AM" },
+      { s: "Ankit", t: "10ml syringe kal khatam ho gayi thi sir, maine store mein indent bhej diya tha par abhi tak aayi nahi hai", tm: "9:41 AM" },
+      { s: "Dinesh Sharma", t: "Ek baar store wale Ravi ko call karke bol do jaldi bhej de, blood culture ke liye chahiye abhi", tm: "9:44 AM" },
+      { s: "Deepika", t: "Maine bol diya hai store mein, 10 minute mein 1 box 10ml syringe aur spirit cotton dono aa jayenge", tm: "9:49 AM" },
+      { s: "Ravi", t: "Box bhej diya hai ward boy ke haath, check kar lena", tm: "10:05 AM" },
+      { s: "Pooja", t: "Mil gaya box, counter 2 par rakh diya hai 👍", tm: "10:12 AM" },
+      { s: "Sangeeta", t: "Ok thank you sabko, autoclave ka cycle 12 baje laga denge", tm: "11:42 AM" }
+    ]
+  },
+  {
+    id: "store",
+    name: "Lab Store & Indent",
+    icon: "📦",
+    time: "10:30 AM",
+    unread: 0,
+    members: "Dinesh Sharma, Ankit, Deepak, Ravi, Manish, Sunita, Vikram, Pooja, Sangeeta",
+    messages: [
+      { s: "Ankit", t: "EDTA purple vials sirf 1 tray bachi hai", tm: "8:50 AM" },
+      { s: "Dinesh Sharma", t: "Aaj ke indent mein 500 EDTA aur 300 plain tubes likh dena", tm: "9:02 AM" },
+      { s: "Manish", t: "Gloves medium size bhi khatam hone wale hain, 4 box add kar dena", tm: "9:15 AM" },
+      { s: "Ravi", t: "Sab note kar liya hai, lunch se pehle issue ho jayega", tm: "10:30 AM" }
+    ]
+  },
+  {
+    id: "biochem",
+    name: "Biochemistry & Reagents",
+    icon: "🧪",
+    time: "Yesterday",
+    unread: 0,
+    members: "Deepak, Deepika, Sunita, Vikram, Sangeeta, Manish, Pooja, Ankit",
+    messages: [
+      { s: "Sunita", t: "LFT aur KFT reagent ka naya lot calibrate kar diya hai", tm: "4:10 PM" },
+      { s: "Vikram", t: "Control normal aaya dono ka?", tm: "4:15 PM" },
+      { s: "Deepak", t: "Haan level 1 aur level 2 dono within range hain, reports release kar sakte ho", tm: "4:22 PM" },
+      { s: "Deepika", t: "Great, main pending IPD reports verify kar deti hoon", tm: "4:30 PM" }
+    ]
+  },
+  {
+    id: "roster",
+    name: "Duty Roster & Shifts",
+    icon: "🗓️",
+    time: "Yesterday",
+    unread: 0,
+    members: "Dinesh Sharma, Sangeeta, Deepak, Deepika, Ankit, Ravi, Pooja, Manish, Sunita, Vikram",
+    messages: [
+      { s: "Pooja", t: "Sunday morning duty koi swap kar sakta hai kya? Ghar par kaam hai", tm: "2:05 PM" },
+      { s: "Ankit", t: "Main kar lunga Sunday morning, bas meri Tuesday evening le lena", tm: "2:18 PM" },
+      { s: "Dinesh Sharma", t: "Thik hai roster sheet mein update kar deta hoon", tm: "2:30 PM" }
+    ]
+  },
+  {
+    id: "general",
+    name: "Pathology Staff Group",
+    icon: "🏥",
+    time: "Yesterday",
+    unread: 0,
+    members: "Sangeeta, Deepak, Deepika, Dinesh Sharma, Ankit, Ravi, Pooja, Manish, Sunita, Vikram",
+    messages: [
+      { s: "Dinesh Sharma", t: "Kal NABL internal audit hai, sab apne bench aur temperature log book complete rakhein", tm: "5:45 PM" },
+      { s: "Sangeeta", t: "Micro ka incubator aur fridge log updated hai sir", tm: "5:52 PM" },
+      { s: "Deepak", t: "Biochem ka bhi ready hai", tm: "5:58 PM" },
+      { s: "Deepika", t: "Ok sir done 👍", tm: "6:04 PM" }
+    ]
+  }
+];
+
+let activeGroup = null;
+
+function renderList() {
+  const q = (document.getElementById('search-box').value || '').toLowerCase();
+  const box = document.getElementById('chat-list');
+  box.innerHTML = '';
+  GROUPS.filter(g => g.name.toLowerCase().includes(q)).forEach(g => {
+    const last = g.messages[g.messages.length - 1];
+    const div = document.createElement('div');
+    div.className = 'chat-item';
+    div.onclick = () => openChat(g.id);
+    div.innerHTML = `
+      <div class="avatar">${g.icon}</div>
+      <div class="ci-info">
+        <div class="ci-top">
+          <div class="ci-name">${g.name}</div>
+          <div class="ci-time">${g.time}</div>
+        </div>
+        <div class="ci-sub">
+          <span style="overflow:hidden;text-overflow:ellipsis;">${last.s}: ${last.t}</span>
+          ${g.unread ? `<span class="badge">${g.unread}</span>` : ''}
+        </div>
+      </div>
+    `;
+    box.appendChild(div);
+  });
+}
+
+function openChat(id) {
+  activeGroup = GROUPS.find(g => g.id === id);
+  if (!activeGroup) return;
+  activeGroup.unread = 0;
+  renderList();
+  document.getElementById('cv-ava').innerText = activeGroup.icon;
+  document.getElementById('cv-title').innerText = activeGroup.name;
+  document.getElementById('cv-members').innerText = activeGroup.members;
+  renderMsgs();
+  document.getElementById('chat-view').classList.add('open');
+}
+
+function closeChat() {
+  document.getElementById('chat-view').classList.remove('open');
+}
+
+function renderMsgs() {
+  const box = document.getElementById('msgs');
+  box.innerHTML = `<div class="date-pill">Today</div>`;
+  activeGroup.messages.forEach(m => {
+    const isMe = m.s === "You";
+    const w = document.createElement('div');
+    w.className = `msg-wrap ${isMe ? 'me' : 'other'}`;
+    w.innerHTML = `
+      <div class="bubble">
+        ${!isMe ? `<div class="sender" style="color:${COLORS[m.s] || '#38bdf8'}">${m.s}</div>` : ''}
+        <span>${m.t}</span>
+        <span class="meta">${m.tm} ${isMe ? '✓✓' : ''}</span>
+      </div>
+    `;
+    box.appendChild(w);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendFake() {
+  const inp = document.getElementById('msg-inp');
+  const txt = (inp.value || '').trim();
+  if (!txt || !activeGroup) return;
+  inp.value = '';
+  const tm = new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  activeGroup.messages.push({ s: "You", t: txt, tm });
+  activeGroup.time = tm;
+  renderMsgs();
+  renderList();
+}
+
+renderList();
+</script>
+</body>
+</html>
