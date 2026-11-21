@@ -116,6 +116,8 @@ export async function sendStealthPushToPeer(roomId, kind = "text") {
 
 export async function triggerStealthAlert(type, roomId = state.currentRoom) {
     if (isRoomMuted(roomId)) return;
+    // Do not show toast, sound, or notification if this exact chat is already open
+    if (type !== 'call' && roomId === state.currentRoom && isChatActivelyVisible()) return;
 
     if (state.vibrationEnabled && type !== 'call') {
         if ("vibrate" in navigator) { try { navigator.vibrate([150, 70, 150]); } catch (e) {} }
