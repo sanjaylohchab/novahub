@@ -1040,3 +1040,320 @@ function initSmartClearChat() {
     bindClick('scc-all-everyone', () => executeSmartClear(false, true));
 }
 initSmartClearChat();
+// ============================================================================
+// 8. WHATSAPP-STYLE REDESIGN (BOTTOM TABS, YOU TAB, STORY RING & LAST SEEN)
+// ============================================================================
+function initWhatsAppRedesign() {
+    if (document.getElementById('nova-wa-redesign-styles')) return;
+
+    const st = document.createElement('style');
+    st.id = 'nova-wa-redesign-styles';
+    st.textContent = `
+        /* Hide old red-circled story strip & old top tabs */
+        #active-strip, .active-strip, .nav-tabs, #tab-messages, #tab-stories {
+            display: none !important;
+        }
+
+        /* Clean WhatsApp-style Top Header */
+        .sidebar-header, .side-header {
+            padding: 12px 14px 6px !important;
+            border-bottom: none !important;
+            background: transparent !important;
+        }
+        #wa-top-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px 6px; flex-shrink: 0;
+        }
+        #wa-page-title {
+            font-size: 24px; font-weight: 800; letter-spacing: -0.3px;
+            color: var(--text-main, #f8fafc);
+        }
+        #wa-add-fab {
+            width: 34px; height: 34px; border-radius: 50%; border: none;
+            background: #10b981; color: #052e16; font-size: 22px; font-weight: 800;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            box-shadow: 0 3px 10px rgba(16,185,129,0.35);
+        }
+
+        /* Full-width rounded Search Bar */
+        .search-bar, .search-wrap {
+            padding: 6px 14px 10px !important;
+        }
+        .search-bar button, #btn-add-friend { display: none !important; }
+        #search-friends, .search-bar input {
+            width: 100% !important; border-radius: 999px !important;
+            padding: 10px 16px !important; font-size: 14px !important;
+        }
+
+        /* Bottom Navigation Bar (WhatsApp Style) */
+        #wa-bottom-nav {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            background: rgba(15,23,42,0.96); backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 6px 4px max(8px, env(safe-area-inset-bottom, 8px));
+            flex-shrink: 0; z-index: 30;
+        }
+        body.light-mode #wa-bottom-nav {
+            background: rgba(255,255,255,0.96); border-top-color: rgba(15,23,42,0.1);
+        }
+        .wa-nav-btn {
+            background: none; border: none; color: #94a3b8;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            font-size: 11px; font-weight: 600; cursor: pointer; padding: 4px 0;
+        }
+        .wa-nav-btn .material-icons { font-size: 22px; }
+        .wa-nav-btn.active { color: #10b981; }
+        .wa-nav-btn.active .material-icons {
+            background: rgba(16,185,129,0.16); padding: 2px 14px; border-radius: 999px;
+        }
+
+        /* Extra Tabs: Calls & You */
+        .wa-extra-tab {
+            flex: 1; overflow-y: auto; padding: 12px 14px 20px; display: none;
+        }
+        .wa-extra-tab.active { display: block; }
+        .wa-you-card {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px; padding: 14px; margin-bottom: 12px;
+        }
+        body.light-mode .wa-you-card {
+            background: #f8fafc; border-color: rgba(15,23,42,0.1);
+        }
+        .wa-you-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 11px 6px; border-bottom: 1px solid rgba(255,255,255,0.07);
+            cursor: pointer; font-size: 14px; font-weight: 600;
+        }
+        .wa-you-row:last-child { border-bottom: none; }
+
+        /* Story Ring on Chat List DP */
+        .avatar.has-story-ring {
+            border: 2.5px solid #10b981 !important;
+            box-shadow: 0 0 0 2px rgba(16,185,129,0.28);
+            cursor: pointer;
+        }
+
+        /* Subtle Last Seen pill in Chat List */
+        .wa-list-presence {
+            font-size: 10.5px; color: #94a3b8; margin-top: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .wa-list-presence.is-online { color: #10b981; font-weight: 600; }
+    `;
+    document.head.appendChild(st);
+
+    const sidebar = $('sidebar') || document.querySelector('.sidebar');
+    if (!sidebar) return;
+
+    // 1. Hide old top header (keep its buttons alive in DOM so click listeners work)
+    const oldHeader = sidebar.querySelector('.sidebar-header, .side-header, header');
+    if (oldHeader) oldHeader.style.display = 'none';
+
+    // 2. Insert Clean WhatsApp Top Bar
+    const topBar = document.createElement('div');
+    topBar.id = 'wa-top-bar';
+    topBar.innerHTML = `
+        <div id="wa-page-title">Chats</div>
+        <button type="button" id="wa-add-fab" title="Add Friend ID">+</button>
+    `;
+    sidebar.insertBefore(topBar, sidebar.firstChild);
+
+    bindClick('wa-add-fab', () => {
+        const oldAdd = $('btn-add-friend');
+        if (oldAdd) oldAdd.click();
+    });
+
+    // 3. Create Calls & You Tab Containers
+    const callsTab = document.createElement('div');
+    callsTab.id = 'wa-calls-tab';
+    callsTab.className = 'wa-extra-tab';
+    callsTab.innerHTML = `
+        <div class="wa-you-card" style="text-align:center; padding:28px 16px;">
+            <span class="material-icons" style="font-size:40px; color:#10b981; margin-bottom:8px;">call</span>
+            <div style="font-size:15px; font-weight:700; margin-bottom:4px;">Call History</div>
+            <div style="font-size:12.5px; color:#94a3b8;">Recent voice & video call logs will appear here.</div>
+        </div>
+    `;
+
+    const youTab = document.createElement('div');
+    youTab.id = 'wa-you-tab';
+    youTab.className = 'wa-extra-tab';
+    youTab.innerHTML = `
+        <div class="wa-you-card" id="wa-you-profile-box" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+            <div class="avatar" style="width:52px; height:52px; font-size:22px; background:#10b981; color:#052e16;">
+                <span class="material-icons">person</span>
+            </div>
+            <div style="flex:1; min-width:0;">
+                <div id="wa-you-name" style="font-size:16px; font-weight:800;">My Profile</div>
+                <div id="wa-you-id" style="font-size:12.5px; color:#38bdf8; margin-top:2px;">My ID: --</div>
+            </div>
+            <span class="material-icons" style="color:#94a3b8;">chevron_right</span>
+        </div>
+        <div class="wa-you-card">
+            <div class="wa-you-row" id="wa-row-sg"><span>🌙 Sleep Guard</span><span id="wa-row-sg-val" style="color:#10b981; font-size:12px;">2m</span></div>
+            <div class="wa-you-row" id="wa-row-lock"><span>🔒 App Entry Lock</span><span class="material-icons" style="font-size:18px; color:#94a3b8;">chevron_right</span></div>
+            <div class="wa-you-row" id="wa-row-shield"><span>🛡️ Fake Notice Shield</span><span class="material-icons" style="font-size:18px; color:#eab308;">shield</span></div>
+            <div class="wa-you-row" id="wa-row-theme"><span>🎨 Switch Light / Dark Mode</span><span class="material-icons" style="font-size:18px; color:#94a3b8;">contrast</span></div>
+            <div class="wa-you-row" id="wa-row-settings"><span>⚙️ Account & Privacy Settings</span><span class="material-icons" style="font-size:18px; color:#94a3b8;">settings</span></div>
+            <div class="wa-you-row" id="wa-row-logout" style="color:#f87171;"><span>🚪 Logout</span><span class="material-icons" style="font-size:18px;">logout</span></div>
+        </div>
+    `;
+
+    // 4. Create 4-Tab Bottom Navigation Bar
+    const bottomNav = document.createElement('div');
+    bottomNav.id = 'wa-bottom-nav';
+    bottomNav.innerHTML = `
+        <button type="button" class="wa-nav-btn" data-tab="updates"><span class="material-icons">donut_large</span><span>Updates</span></button>
+        <button type="button" class="wa-nav-btn" data-tab="calls"><span class="material-icons">call</span><span>Calls</span></button>
+        <button type="button" class="wa-nav-btn active" data-tab="chats"><span class="material-icons">chat</span><span>Chats</span></button>
+        <button type="button" class="wa-nav-btn" data-tab="you"><span class="material-icons">person</span><span>You</span></button>
+    `;
+
+    sidebar.appendChild(callsTab);
+    sidebar.appendChild(youTab);
+    sidebar.appendChild(bottomNav);
+
+    // Wire "You" Tab Rows to Existing Buttons
+    bindClick('wa-you-profile-box', () => { window.location.href = 'chat-settings.html'; });
+    bindClick('wa-row-sg', () => $('btn-sleep-guard-top')?.click());
+    bindClick('wa-row-lock', () => $('btn-app-lock-toggle')?.click());
+    bindClick('wa-row-shield', () => $('btn-panic-now')?.click());
+    bindClick('wa-row-theme', () => $('btn-theme-mode')?.click());
+    bindClick('wa-row-settings', () => { window.location.href = 'chat-settings.html'; });
+    bindClick('wa-row-logout', () => $('btn-logout-now')?.click());
+
+    // Tab Switching Logic
+    const chatListEl = $('chat-list');
+    const searchBarEl = sidebar.querySelector('.search-bar, .search-wrap');
+    const storiesPanel = $('stories-panel') || $('stories-feed')?.parentElement;
+
+    function switchWaTab(tab) {
+        bottomNav.querySelectorAll('.wa-nav-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === tab));
+        const titleMap = { updates: 'Updates', calls: 'Calls', chats: 'Chats', you: 'You' };
+        if ($('wa-page-title')) $('wa-page-title').innerText = titleMap[tab] || 'Chats';
+        if ($('wa-add-fab')) $('wa-add-fab').style.display = (tab === 'chats' || tab === 'updates') ? 'flex' : 'none';
+
+        if (tab === 'updates') {
+            $('wa-add-fab').onclick = () => $('btn-add-status')?.click();
+        } else {
+            $('wa-add-fab').onclick = () => $('btn-add-friend')?.click();
+        }
+
+        if (chatListEl) chatListEl.style.display = (tab === 'chats') ? '' : 'none';
+        if (searchBarEl) searchBarEl.style.display = (tab === 'chats') ? '' : 'none';
+        if (storiesPanel && storiesPanel !== sidebar) storiesPanel.style.display = (tab === 'updates') ? 'block' : 'none';
+        callsTab.classList.toggle('active', tab === 'calls');
+        youTab.classList.toggle('active', tab === 'you');
+
+        if (tab === 'updates') loadStories();
+        if (tab === 'you') {
+            if ($('wa-you-name')) $('wa-you-name').innerText = state.myName || 'My Profile';
+            if ($('wa-you-id')) $('wa-you-id').innerText = `My ID: ${state.myAccountCode || '--'}`;
+            const sgTop = $('btn-sleep-guard-top');
+            if ($('wa-row-sg-val') && sgTop) $('wa-row-sg-val').innerText = sgTop.innerText;
+        }
+    }
+
+    bottomNav.querySelectorAll('.wa-nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchWaTab(btn.getAttribute('data-tab')));
+    });
+    switchWaTab('chats');
+
+    // 5. Story Ring on Chat List DP + Live Last Seen in Chat List
+    const activeStoryByCode = {};
+    const presenceByRoom = {};
+
+    async function refreshStoryRings() {
+        try {
+            const snap = await getDocs(query(collection(db, "novahub_stories"), orderBy("timestamp", "desc")));
+            const nowMs = Date.now();
+            Object.keys(activeStoryByCode).forEach(k => delete activeStoryByCode[k]);
+            snap.forEach(d => {
+                const s = d.data();
+                const ms = s.createdAtMs || (s.timestamp && typeof s.timestamp.toMillis === 'function' ? s.timestamp.toMillis() : 0);
+                if (ms > 0 && (nowMs - ms) > 86400000) return;
+                if (s.accountCode && !activeStoryByCode[s.accountCode]) {
+                    activeStoryByCode[s.accountCode] = { id: d.id, ...s };
+                }
+            });
+            decorateChatListItems();
+        } catch (e) {}
+    }
+
+    function decorateChatListItems() {
+        if (!chatListEl) return;
+        const items = chatListEl.querySelectorAll('.chat-item');
+        items.forEach((item, idx) => {
+            const room = state.savedRooms.filter(r => !r.locked)[idx];
+            if (!room) return;
+
+            // Story Ring on DP
+            const ava = item.querySelector('.avatar');
+            const stObj = activeStoryByCode[room.peerCode];
+            if (ava) {
+                ava.classList.toggle('has-story-ring', !!stObj);
+                ava.onclick = stObj ? (e) => {
+                    e.stopPropagation();
+                    $('modal-title').innerText = `${stObj.name}'s Story`;
+                    $('modal-body').innerHTML = stObj.type === 'image'
+                        ? `<img src="${stObj.mediaUrl}" style="width:100%; border-radius:10px;">`
+                        : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(stObj.text)}</div>`;
+                    openLayer($('generic-modal'));
+                } : null;
+            }
+
+            // Small Last Seen / Online indicator
+            const info = item.querySelector('.chat-item-info');
+            if (info && presenceByRoom[room.id]) {
+                let pEl = info.querySelector('.wa-list-presence');
+                if (!pEl) {
+                    pEl = document.createElement('div');
+                    pEl.className = 'wa-list-presence';
+                    info.appendChild(pEl);
+                }
+                const p = presenceByRoom[room.id];
+                pEl.innerText = p.text;
+                pEl.classList.toggle('is-online', p.online);
+            }
+        });
+    }
+
+    // Listen to room presence for chat list
+    setInterval(() => {
+        if (!state.savedRooms || !state.savedRooms.length) return;
+        state.savedRooms.forEach(r => {
+            if (r._waPresListening) return;
+            r._waPresListening = true;
+            onSnapshot(doc(db, "novahub_all_rooms", r.id), (snap) => {
+                if (!snap.exists()) return;
+                const data = snap.data();
+                let peer = null;
+                for (let k in data) {
+                    if (!k.startsWith('presence_')) continue;
+                    if (k === `presence_${state.myUid}` || k === `presence_user_${state.myAccountCode}`) continue;
+                    const p = data[k];
+                    if (!p || (p.accountCode && String(p.accountCode) === String(state.myAccountCode))) continue;
+                    if (!peer || (p.updated || 0) > (peer.updated || 0)) peer = p;
+                }
+                if (peer) {
+                    const recent = (Date.now() - (peer.updated || 0)) < 50000;
+                    if (recent && (peer.status === 'typing...' || peer.status === 'recording audio...')) {
+                        presenceByRoom[r.id] = { text: `✍️ ${peer.status}`, online: true };
+                    } else if (recent && peer.status === 'online') {
+                        presenceByRoom[r.id] = { text: '🟢 Online', online: true };
+                    } else {
+                        presenceByRoom[r.id] = { text: formatLastSeen(peer.updated) || `Last seen ${peer.time || ''}`, online: false };
+                    }
+                    decorateChatListItems();
+                }
+            });
+        });
+    }, 3000);
+
+    if (chatListEl) {
+        new MutationObserver(() => decorateChatListItems()).observe(chatListEl, { childList: true });
+    }
+    setTimeout(refreshStoryRings, 1200);
+    setInterval(refreshStoryRings, 30000);
+}
+initWhatsAppRedesign();
