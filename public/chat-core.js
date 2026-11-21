@@ -977,24 +977,32 @@ window.addEventListener('message', (e) => {
     state.isWidgetOpen = !!d.open;
     if (d.panic && hasActiveCall()) cleanupCall(false);
     if (!state.isWidgetOpen) {
+        state.isRoomActivelyOpen = false;
+        $('chat-view')?.classList.remove('open');
         updatePresence("offline", true);
         lockAppIfEnabled();
-    } else if (state.isWidgetOpen && state.isAppUnlocked && state.isRoomActivelyOpen) {
+    } else if (isChatActivelyVisible()) {
         updatePresence("online", true);
         markVisibleMessagesSeen();
         const box = $('msgs-container');
         if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
     }
 });
+
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
         updatePresence("offline", true);
         lockAppIfEnabled();
-    } else if (document.visibilityState === 'visible' && state.isAppUnlocked) {
+    } else if (isChatActivelyVisible()) {
         updatePresence("online", true);
         markVisibleMessagesSeen();
     }
 });
+
+window.addEventListener('blur', () => {
+    if (state.currentRoom) updatePresence("offline", true);
+});
+
 
 // ============================================================================
 // 6. START SESSION & HANDOFF FROM index.html
