@@ -922,4 +922,3 @@ function initSleepGuard() {
     resetSleepTimer();
 }
 initSleepGuard();
-
