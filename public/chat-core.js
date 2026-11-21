@@ -132,6 +132,7 @@ function detachChatListener() {
 function goBackToList(e) {
     if (e) e.stopPropagation();
     if (document.activeElement) document.activeElement.blur();
+    updatePresence("offline", true);
     state.isRoomActivelyOpen = false;
     $('chat-view')?.classList.remove('open');
     closeLayer(drawer); closeLayer(overlay); closeLayer($('location-modal'));
