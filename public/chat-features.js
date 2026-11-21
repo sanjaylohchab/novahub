@@ -720,17 +720,41 @@ function initScheme2KeypadAndPanic() {
         window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
         window.addEventListener('mouseup', onEnd);
     }
-
-    // 3. Shake-to-Panic Exit (Mobile Accelerometer)
+    // 3. Shake-to-Panic Exit (Android + iPhone Motion Permission)
     let lastShakeMs = 0;
-    window.addEventListener('devicemotion', (e) => {
-        const acc = e.accelerationIncludingGravity;
-        if (!acc) return;
-        const force = Math.abs(acc.x || 0) + Math.abs(acc.y || 0) + Math.abs(acc.z || 0);
-        if (force > 34 && (Date.now() - lastShakeMs) > 1500) {
-            lastShakeMs = Date.now();
-            exitToArcadeNow();
-        }
-    });
+    let shakeAttached = false;
+
+    function startShakeListener() {
+        if (shakeAttached) return;
+        shakeAttached = true;
+        window.addEventListener('devicemotion', (e) => {
+            const acc = e.accelerationIncludingGravity;
+            if (!acc) return;
+            const force = Math.abs(acc.x || 0) + Math.abs(acc.y || 0) + Math.abs(acc.z || 0);
+            if (force > 34 && (Date.now() - lastShakeMs) > 1500) {
+                lastShakeMs = Date.now();
+                exitToArcadeNow();
+            }
+        });
+    }
+
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        // iPhone / iOS: Pehle tap par Apple Motion Permission maangega
+        const askIosMotion = async () => {
+            try {
+                const res = await DeviceMotionEvent.requestPermission();
+                if (res === 'granted') {
+                    startShakeListener();
+                    showQuickToast('📱 Shake-to-Exit ON ho gaya!');
+                }
+            } catch (e) {}
+        };
+        document.addEventListener('click', askIosMotion, { once: true });
+    } else {
+        // Android / Other devices: Direct ON
+        startShakeListener();
+    }
 }
 initScheme2KeypadAndPanic();
+
+    
