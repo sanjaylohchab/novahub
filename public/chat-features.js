@@ -757,4 +757,3 @@ function initScheme2KeypadAndPanic() {
 }
 initScheme2KeypadAndPanic();
 
-    
