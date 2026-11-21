@@ -100,10 +100,12 @@ function unlockAppWithPin() {
         closeLayer(appLockScreen);
         window.scrollTo(0, 0);
     } else {
-        if ($('lock-error-msg')) $('lock-error-msg').innerText = '❌ Galat PIN! Dobara koshish karein.';
+        // Galat PIN dalte hi seedha Hospital Lab wali fake chat khul jayegi
         if ($('lock-pin-input')) $('lock-pin-input').value = '';
+        window.location.href = 'decoy-chat.html';
     }
 }
+
 
 // ============================================================================
 // 2. ROOM NAVIGATION & HEADER BADGES
