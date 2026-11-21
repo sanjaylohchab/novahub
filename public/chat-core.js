@@ -1,9 +1,9 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// WebRTC STUN/TURN + Real Ringtone | FCM Stealth Push | SHA-256 Auth & Admin
+// WhatsApp List (Unread/Time/Mute/Archive/3-Dots) | WebRTC TURN | FCM Push | SHA-256
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, onSnapshot, collection, addDoc, query, orderBy, limit, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -50,7 +50,102 @@ if ('serviceWorker' in navigator) {
 }
 
 // ============================================================================
-// 0. STATE, CRYPTO HELPERS & DOM REFERENCES
+// 0. INJECT WHATSAPP CHAT-LIST & 3-DOTS MENU STYLES + MODAL (NO HTML EDIT NEEDED)
+// ============================================================================
+function injectWhatsAppListUI() {
+    if (!document.getElementById('nova-wa-list-styles')) {
+        const st = document.createElement('style');
+        st.id = 'nova-wa-list-styles';
+        st.textContent = `
+            .chat-item { display:flex; align-items:center; gap:10px; position:relative; }
+            .chat-item-info { flex:1; min-width:0; overflow:hidden; display:flex; flex-direction:column; gap:3px; }
+            .chat-item-top { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
+            .chat-item-name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:5px; }
+            .wa-chat-time { font-size:11px; color:var(--text-sub, #94a3b8); white-space:nowrap; flex-shrink:0; font-weight:500; }
+            .wa-chat-time.unread { color:#25d366; font-weight:700; }
+            .wa-bottom-row { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
+            .wa-preview { flex:1; min-width:0; font-size:12.5px; color:var(--text-sub, #94a3b8); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:3px; }
+            .wa-preview.unread { color:var(--text-main, #f1f5f9); font-weight:600; }
+            .wa-preview-tick { font-size:14px !important; flex-shrink:0; color:#94a3b8; }
+            .wa-preview-tick.read { color:#38bdf8; }
+            .wa-indicators { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+            .wa-mute-ico { font-size:16px !important; color:var(--text-sub, #94a3b8); opacity:0.85; }
+            .wa-unread-badge { background:#25d366; color:#052e16; font-size:11px; font-weight:800; min-width:20px; height:20px; padding:0 6px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+            .wa-more-btn { width:30px; height:36px; border-radius:10px; border:none; background:transparent; color:var(--text-sub, #94a3b8); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; margin-right:-4px; padding:0; }
+            .wa-more-btn:active { background:rgba(255,255,255,0.1); }
+            .wa-archived-row { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid var(--border-col, rgba(255,255,255,0.08)); cursor:pointer; background:rgba(16,185,129,0.06); }
+            .wa-archived-row:active { background:rgba(16,185,129,0.14); }
+            .wa-archived-left { display:flex; align-items:center; gap:12px; font-size:13.5px; font-weight:700; color:var(--text-main, #f1f5f9); }
+            .wa-archived-count { font-size:12px; font-weight:700; color:#25d366; }
+
+            #room-action-sheet { position:fixed; inset:0; background:rgba(0,0,0,0.72); backdrop-filter:blur(3px); z-index:9990; display:none; align-items:flex-end; justify-content:center; padding:12px; }
+            #room-action-sheet.is-open { display:flex; }
+            .ras-card { width:100%; max-width:410px; background:#0f172a; border:1px solid rgba(255,255,255,0.12); border-radius:18px; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.65); animation:rasUp 0.18s ease-out; }
+            body.light-mode .ras-card { background:#ffffff; border-color:rgba(15,23,42,0.12); color:#0f172a; }
+            @keyframes rasUp { from { transform:translateY(24px); opacity:0.5; } to { transform:translateY(0); opacity:1; } }
+            .ras-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
+            body.light-mode .ras-head { border-bottom-color:rgba(15,23,42,0.08); }
+            .ras-title { font-size:14.5px; font-weight:700; color:#f8fafc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            body.light-mode .ras-title { color:#0f172a; }
+            .ras-sub { font-size:11px; color:#94a3b8; }
+            .ras-close { width:30px; height:30px; border-radius:999px; border:none; background:rgba(255,255,255,0.08); color:#cbd5e1; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+            body.light-mode .ras-close { background:rgba(15,23,42,0.08); color:#334155; }
+            .ras-list { display:flex; flex-direction:column; padding:6px; gap:2px; }
+            .ras-btn { width:100%; display:flex; align-items:center; gap:12px; padding:12px 14px; border:none; border-radius:12px; background:transparent; color:#e2e8f0; font-size:13.5px; font-weight:600; text-align:left; cursor:pointer; }
+            body.light-mode .ras-btn { color:#1e293b; }
+            .ras-btn:active { background:rgba(255,255,255,0.08); }
+            .ras-btn .material-icons { font-size:20px; color:#38bdf8; flex-shrink:0; }
+            .ras-btn.warn .material-icons { color:#f59e0b; }
+            .ras-btn.danger { color:#f87171; }
+            .ras-btn.danger .material-icons { color:#ef4444; }
+            .ras-btn-desc { display:block; font-size:11px; font-weight:400; color:#94a3b8; margin-top:1px; }
+        `;
+        document.head.appendChild(st);
+    }
+
+    if (!document.getElementById('room-action-sheet')) {
+        const sheet = document.createElement('div');
+        sheet.id = 'room-action-sheet';
+        sheet.innerHTML = `
+            <div class="ras-card" id="ras-card-box">
+                <div class="ras-head">
+                    <div style="min-width:0; flex:1; padding-right:8px;">
+                        <div class="ras-title" id="ras-room-name">Chat Options</div>
+                        <div class="ras-sub" id="ras-room-sub">ID</div>
+                    </div>
+                    <button type="button" class="ras-close" id="ras-close-btn">×</button>
+                </div>
+                <div class="ras-list">
+                    <button type="button" class="ras-btn" id="ras-mute-btn">
+                        <span class="material-icons" id="ras-mute-ico">notifications_off</span>
+                        <div><span id="ras-mute-txt">Mute Notifications</span><span class="ras-btn-desc" id="ras-mute-desc">Is chat ki notification & sound band karein</span></div>
+                    </button>
+                    <button type="button" class="ras-btn" id="ras-archive-btn">
+                        <span class="material-icons" id="ras-archive-ico">archive</span>
+                        <div><span id="ras-archive-txt">Archive Chat</span><span class="ras-btn-desc" id="ras-archive-desc">Main chat list se Archived folder mein bhejein</span></div>
+                    </button>
+                    <button type="button" class="ras-btn warn" id="ras-lock-btn">
+                        <span class="material-icons" id="ras-lock-ico">lock</span>
+                        <div><span id="ras-lock-txt">Lock & Hide Chat</span><span class="ras-btn-desc" id="ras-lock-desc">Secret PIN se chhupayein</span></div>
+                    </button>
+                    <button type="button" class="ras-btn warn" id="ras-clear-btn">
+                        <span class="material-icons">cleaning_services</span>
+                        <div><span>Clear Chat</span><span class="ras-btn-desc">Sirf messages delete honge, chat yahan rahegi</span></div>
+                    </button>
+                    <button type="button" class="ras-btn danger" id="ras-delete-btn">
+                        <span class="material-icons">delete_forever</span>
+                        <div><span>Delete Chat</span><span class="ras-btn-desc">Messages + chat dono yahan se gayab ho jayenge</span></div>
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(sheet);
+    }
+}
+injectWhatsAppListUI();
+
+// ============================================================================
+// 1. STATE, CRYPTO HELPERS & DOM REFERENCES
 // ============================================================================
 const isWidgetMode = new URLSearchParams(window.location.search).get('widget') === '1' || (window.self !== window.top);
 let isWidgetOpen = !isWidgetMode;
@@ -69,6 +164,13 @@ let isAppUnlocked = !appLockEnabled;
 let savedRooms = JSON.parse(localStorage.getItem('nova_saved_rooms') || '[]').filter(r => r.id !== 'global_novahub_chat');
 
 let currentRoom = "";
+let clearTargetRoomId = "";
+let actionTargetRoomId = "";
+let showingArchivedView = false;
+const recentlyDeletedRooms = new Set();
+const roomSummaryUnsubs = new Map();
+const roomSummaries = {};
+
 let unsubscribeChat = null;
 let unsubscribePresence = null;
 let presenceRefreshTimer = null;
@@ -116,6 +218,7 @@ const drawer = $('contact-info-drawer');
 const clearModal = $('clear-chat-modal');
 const locModal = $('location-modal');
 const overlay = $('msg-overlay');
+const roomActionSheet = $('room-action-sheet');
 const liveBanner = $('active-live-banner');
 const liveBannerText = $('active-live-text');
 const callHud = $('call-hud');
@@ -134,7 +237,10 @@ if (localStorage.getItem('nova_theme_mode') === 'light') document.body.classList
 if ($('di-vib-val')) $('di-vib-val').innerText = vibrationEnabled ? "ON" : "OFF";
 if ($('di-notif-val')) $('di-notif-val').innerText = stealthNotifEnabled ? "ON" : "OFF";
 
-// Unlock AudioContext on first user gesture so incoming ringtone works on iOS/Android
+function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 function ensureAudioContext() {
     try {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -145,7 +251,7 @@ function ensureAudioContext() {
 document.addEventListener('touchstart', ensureAudioContext, { once: true, passive: true });
 document.addEventListener('click', ensureAudioContext, { once: true });
 
-// SHA-256 Hashing for Passwords & Secret Admin Code (Zero Hardcoded Secrets!)
+// SHA-256 Hashing for Passwords & Secret Admin Code
 async function sha256Hex(str) {
     const data = new TextEncoder().encode(str);
     const buf = await crypto.subtle.digest('SHA-256', data);
@@ -187,7 +293,7 @@ function postToGame(payload) {
 }
 
 // ============================================================================
-// 1. REAL PHONE RINGTONE ENGINE (INCOMING & OUTGOING + VIBRATION)
+// 2. REAL PHONE RINGTONE ENGINE (INCOMING & OUTGOING + VIBRATION)
 // ============================================================================
 function playTonePair(f1, f2, durationSec, volume = 0.16) {
     const ctx = ensureAudioContext();
@@ -236,7 +342,7 @@ function stopRingtone() {
 }
 
 // ============================================================================
-// 2. FCM STEALTH PUSH REGISTRATION & SENDER HOOK
+// 3. FCM STEALTH PUSH REGISTRATION & SENDER HOOK (RESPECTS MUTE!)
 // ============================================================================
 async function initStealthFCM() {
     if (!myAccountCode || !("Notification" in window) || !("serviceWorker" in navigator)) return;
@@ -259,7 +365,7 @@ async function initStealthFCM() {
             await setDoc(doc(db, "novahub_accounts", myAccountCode), { fcmToken: token, fcmUpdatedAt: Date.now() }, { merge: true }).catch(() => {});
         }
         fcmMod.onMessage(messaging, () => {
-            if (!isChatActivelyVisible()) triggerStealthAlert("text");
+            if (!isChatActivelyVisible()) triggerStealthAlert("text", currentRoom);
         });
     } catch (e) {}
 }
@@ -270,8 +376,12 @@ async function sendStealthPushToPeer(roomId, kind = "text") {
     if (!meta || !meta.peerCode) return;
     try {
         const peerSnap = await getDoc(doc(db, "novahub_accounts", meta.peerCode));
-        const token = peerSnap.exists() ? peerSnap.data().fcmToken : "";
+        if (!peerSnap.exists()) return;
+        const peerData = peerSnap.data();
+        if (Array.isArray(peerData.mutedRooms) && peerData.mutedRooms.includes(roomId)) return;
+        const token = peerData.fcmToken || "";
         if (!token) return;
+
         let body = "New high score challenge! Game khelo **";
         if (kind === "media") body = "Daily spin reward ready! Game khelo ₹₹";
         else if (kind === "call") body = "Multiplayer lobby active! Join now ⭐️⭐️";
@@ -284,7 +394,7 @@ async function sendStealthPushToPeer(roomId, kind = "text") {
 }
 
 // ============================================================================
-// 3. AUTHENTICATION & APP ENTRY PIN LOCK
+// 4. AUTHENTICATION & APP ENTRY PIN LOCK
 // ============================================================================
 function updateAppLockIconUI() {
     const icon = $('app-lock-icon');
@@ -303,7 +413,7 @@ function lockAppIfEnabled() {
     isAppUnlocked = false;
     isRoomActivelyOpen = false;
     if ($('chat-view')) $('chat-view').classList.remove('open');
-    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal);
+    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal); closeLayer(roomActionSheet);
     if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
     if ($('lock-pin-input')) $('lock-pin-input').value = '';
     if ($('lock-error-msg')) $('lock-error-msg').innerText = '';
@@ -340,7 +450,7 @@ function saveSessionToLocal() {
 }
 
 // ============================================================================
-// 4. HELPERS: ENCRYPTION, ALERTS, ACCURATE PRESENCE & CROSS-DEVICE LIVE LOC
+// 5. HELPERS: ENCRYPTION, ALERTS, TIME FORMATTING, PRESENCE & LIVE LOCATION
 // ============================================================================
 function make1on1RoomId(codeA, codeB) {
     const pair = [String(codeA).trim(), String(codeB).trim()].sort();
@@ -351,6 +461,12 @@ function isMyMessage(m) {
     if (!m) return false;
     if (myAccountCode && m.accountCode && String(m.accountCode).trim() === String(myAccountCode).trim()) return true;
     return !!(myUid && m.uid === myUid);
+}
+
+function isRoomMuted(roomId) {
+    if (!roomId) return false;
+    const r = savedRooms.find(x => x.id === roomId);
+    return !!(r && r.muted);
 }
 
 function isChatActivelyVisible() {
@@ -364,6 +480,19 @@ function isChatActivelyVisible() {
 
 function getDateGroupLabel(d = new Date()) { return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
 function getShortTime(d = new Date()) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+
+function formatChatListTime(ms, fallbackShortTime = '') {
+    if (!ms) return fallbackShortTime || '';
+    const d = new Date(ms);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+        return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+    }
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    if (d.toDateString() === yest.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
 
 function formatLastSeen(ms) {
     if (!ms) return "";
@@ -419,7 +548,9 @@ function showQuickToast(txt) {
     setTimeout(() => toast.classList.remove('show'), 2800);
 }
 
-async function triggerStealthAlert(type) {
+async function triggerStealthAlert(type, roomId = currentRoom) {
+    if (isRoomMuted(roomId)) return;
+
     if (vibrationEnabled && type !== 'call') {
         if ("vibrate" in navigator) { try { navigator.vibrate([150, 70, 150]); } catch (e) {} }
         playAlertBeep();
@@ -555,18 +686,98 @@ function stopAllLiveSessions() {
 }
 
 // ============================================================================
-// 5. ROOM MANAGEMENT & REAL-TIME LISTENERS
+// 6. WHATSAPP LIVE SIDEBAR SUMMARIES (UNREAD COUNT + LAST MESSAGE + TIME)
+// ============================================================================
+function getMessagePreviewText(roomId, m) {
+    if (!m) return '';
+    if (m.type === 'image') return m.isViewOnce ? '➀ Photo' : '📷 Photo';
+    if (m.type === 'video') return m.isViewOnce ? '➀ Video' : '🎥 Video';
+    if (m.type === 'audio') return m.isViewOnce ? '➀ Voice note' : '🎙️ Voice note';
+    if (m.type === 'location') return '📍 Location';
+    if (m.type === 'live_location') return '🛰️ Live location';
+    const raw = m.text || '';
+    if (raw.startsWith('🔒ENC:')) {
+        const encKey = localStorage.getItem(`nova_enc_${roomId}`) || '';
+        return encKey ? decryptText(raw, encKey) : '🔐 Encrypted message';
+    }
+    return raw;
+}
+
+function syncRoomSummaryListeners() {
+    const activeIds = new Set(savedRooms.map(r => r.id));
+
+    for (const [rId, unsub] of roomSummaryUnsubs.entries()) {
+        if (!activeIds.has(rId)) {
+            unsub();
+            roomSummaryUnsubs.delete(rId);
+            delete roomSummaries[rId];
+        }
+    }
+
+    savedRooms.forEach(r => {
+        if (roomSummaryUnsubs.has(r.id)) return;
+        let firstSnap = true;
+        const q = query(collection(db, r.id), orderBy("sentMs", "desc"), limit(25));
+        const unsub = onSnapshot(q, (snap) => {
+            let latestMsg = null;
+            let unreadCount = 0;
+
+            snap.forEach(d => {
+                const m = d.data();
+                if (!m || m.isDeletedEveryone || (m.deletedFor && m.deletedFor.includes(myUid))) return;
+                const vTimer = m.vanishTimer || "off";
+                if (vTimer !== "off" && vTimer !== "instant" && timerMs[vTimer]) {
+                    const baseMs = m.seenMs || m.sentMs || Date.now();
+                    if (Date.now() - baseMs > timerMs[vTimer]) return;
+                }
+                if (!latestMsg) latestMsg = m;
+                if (!isMyMessage(m) && !m.seenStatus && !m.manualUnseen) unreadCount++;
+            });
+
+            const prevMs = roomSummaries[r.id]?.lastMs || 0;
+            const newMs = latestMsg ? (latestMsg.sentMs || 0) : 0;
+
+            if (latestMsg) {
+                roomSummaries[r.id] = {
+                    lastText: getMessagePreviewText(r.id, latestMsg),
+                    lastTime: formatChatListTime(newMs, latestMsg.shortTime || ''),
+                    lastMs: newMs,
+                    lastIsMe: isMyMessage(latestMsg),
+                    lastSeen: !!latestMsg.seenStatus,
+                    unreadCount
+                };
+            } else {
+                roomSummaries[r.id] = { lastText: '', lastTime: '', lastMs: 0, lastIsMe: false, lastSeen: false, unreadCount: 0 };
+            }
+
+            if (!firstSnap && latestMsg && newMs > prevMs && !isMyMessage(latestMsg) && r.id !== currentRoom) {
+                triggerStealthAlert(latestMsg.type === 'text' ? 'text' : 'media', r.id);
+            }
+            firstSnap = false;
+            renderSidebarList();
+        }, () => {});
+        roomSummaryUnsubs.set(r.id, unsub);
+    });
+}
+
+// ============================================================================
+// 7. ROOM MANAGEMENT, ARCHIVE, MUTE, 3-DOTS MENU & REAL-TIME LISTENERS
 // ============================================================================
 async function syncAccountToCloud() {
     localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
     if (!myAccountCode) return;
+    const mutedRooms = savedRooms.filter(r => r.muted).map(r => r.id);
     try {
-        await setDoc(doc(db, "novahub_accounts", myAccountCode), { savedRooms, updatedAt: new Date().toLocaleString() }, { merge: true });
+        await setDoc(doc(db, "novahub_accounts", myAccountCode), {
+            savedRooms,
+            mutedRooms,
+            updatedAt: new Date().toLocaleString()
+        }, { merge: true });
     } catch (e) {}
 }
 
 function getRoomMeta(roomId) {
-    return savedRooms.find(r => r.id === roomId) || { id: roomId, name: "Private Chat", locked: false, timer: "off" };
+    return savedRooms.find(r => r.id === roomId) || { id: roomId, name: "Private Chat", locked: false, muted: false, archived: false, timer: "off" };
 }
 
 function updateActiveHeaderBadges(meta) {
@@ -596,19 +807,42 @@ function renderActiveStrip() {
     bindClick('my-story-shortcut', () => $('tab-status')?.click());
 
     savedRooms.forEach(r => {
-        if (r.locked) return;
+        if (r.locked || r.archived) return;
         const init = (r.name || 'U').charAt(0).toUpperCase();
         const b = document.createElement('div');
         b.className = 'story-bubble';
         b.innerHTML = `
             <div class="story-ring">
-                <div class="avatar" style="${r.dp ? `background-image:url(${r.dp})` : ''}">${r.dp ? '' : init}<div class="online-dot"></div></div>
+                <div class="avatar" style="${r.dp ? `background-image:url(${r.dp})` : ''}">${r.dp ? '' : escapeHtml(init)}<div class="online-dot"></div></div>
             </div>
-            <span class="story-name">${r.name}</span>
+            <span class="story-name">${escapeHtml(r.name)}</span>
         `;
         b.addEventListener('click', () => selectRoom(r.id, true));
         strip.appendChild(b);
     });
+}
+
+function openRoomActionSheet(roomId) {
+    const r = savedRooms.find(x => x.id === roomId);
+    if (!r) return;
+    actionTargetRoomId = roomId;
+
+    $('ras-room-name').innerText = r.name || 'Private Chat';
+    $('ras-room-sub').innerText = `ID: ${r.peerCode || 'Private'}${r.muted ? ' • Muted' : ''}${r.archived ? ' • Archived' : ''}${r.locked ? ' • Locked' : ''}`;
+
+    $('ras-mute-ico').innerText = r.muted ? 'notifications_active' : 'notifications_off';
+    $('ras-mute-txt').innerText = r.muted ? 'Unmute Notifications' : 'Mute Notifications';
+    $('ras-mute-desc').innerText = r.muted ? 'Notification & sound wapas chalu karein' : 'Is chat ki notification & sound band karein';
+
+    $('ras-archive-ico').innerText = r.archived ? 'unarchive' : 'archive';
+    $('ras-archive-txt').innerText = r.archived ? 'Unarchive Chat' : 'Archive Chat';
+    $('ras-archive-desc').innerText = r.archived ? 'Main chat list mein wapas layein' : 'Main list se Archived folder mein chhupayein';
+
+    $('ras-lock-ico').innerText = r.locked ? 'lock_open' : 'lock';
+    $('ras-lock-txt').innerText = r.locked ? 'Unlock & Unhide Chat' : 'Lock & Hide Chat';
+    $('ras-lock-desc').innerText = r.locked ? 'Chat ko wapas normal list mein dikhayein' : 'Secret PIN se chhupayein';
+
+    openLayer(roomActionSheet);
 }
 
 function renderSidebarList() {
@@ -619,30 +853,106 @@ function renderSidebarList() {
     myLockPin = localStorage.getItem('nova_lock_pin') || "";
     const unlockedBySearch = (myLockPin !== "" && searchVal === myLockPin);
 
+    const archivedRooms = savedRooms.filter(r => r.archived && !r.locked);
+    if (showingArchivedView && (archivedRooms.length === 0 || unlockedBySearch)) {
+        showingArchivedView = false;
+    }
+
+    if (!unlockedBySearch && !searchVal) {
+        if (showingArchivedView) {
+            const backBar = document.createElement('div');
+            backBar.className = 'wa-archived-row';
+            backBar.innerHTML = `
+                <div class="wa-archived-left">
+                    <span class="material-icons" style="color:#25d366; font-size:20px;">arrow_back</span>
+                    <span>Archived Chats (${archivedRooms.length})</span>
+                </div>
+                <span style="font-size:11px; color:var(--text-sub);">Back</span>
+            `;
+            backBar.addEventListener('click', () => { showingArchivedView = false; renderSidebarList(); });
+            area.appendChild(backBar);
+        } else if (archivedRooms.length > 0) {
+            const archUnread = archivedRooms.reduce((sum, r) => sum + (roomSummaries[r.id]?.unreadCount || 0), 0);
+            const archBar = document.createElement('div');
+            archBar.className = 'wa-archived-row';
+            archBar.innerHTML = `
+                <div class="wa-archived-left">
+                    <span class="material-icons" style="color:#25d366; font-size:20px;">archive</span>
+                    <span>Archived</span>
+                </div>
+                <span class="wa-archived-count">${archUnread > 0 ? archUnread : archivedRooms.length}</span>
+            `;
+            archBar.addEventListener('click', () => { showingArchivedView = true; renderSidebarList(); });
+            area.appendChild(archBar);
+        }
+    }
+
     const visibleRooms = savedRooms.filter(r => {
-        if (r.locked && !unlockedBySearch) return false;
-        if (!unlockedBySearch && searchVal && !r.name.toLowerCase().includes(searchVal.toLowerCase()) && !(r.peerCode || '').includes(searchVal)) return false;
-        return true;
+        if (unlockedBySearch) return !!r.locked;
+        if (r.locked) return false;
+        if (searchVal) {
+            return r.name.toLowerCase().includes(searchVal.toLowerCase()) || (r.peerCode || '').includes(searchVal);
+        }
+        return showingArchivedView ? !!r.archived : !r.archived;
     });
 
+    visibleRooms.sort((a, b) => (roomSummaries[b.id]?.lastMs || 0) - (roomSummaries[a.id]?.lastMs || 0));
+
     if (visibleRooms.length === 0) {
-        area.innerHTML = `<div class="empty-inbox">🔒 <b>Your Private Inbox is Empty</b><br>Tap <b>+ Add ID</b> above and enter your friend's ID number to start a private 1-on-1 chat.</div>`;
+        const emptyText = showingArchivedView
+            ? `📦 <b>No Archived Chats</b>`
+            : `🔒 <b>Your Private Inbox is Empty</b><br>Tap <b>+ Add ID</b> above and enter your friend's ID number to start a private 1-on-1 chat.`;
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'empty-inbox';
+        emptyDiv.innerHTML = emptyText;
+        area.appendChild(emptyDiv);
         return;
     }
 
     visibleRooms.forEach(r => {
+        const sum = roomSummaries[r.id] || {};
+        const unread = sum.unreadCount || 0;
+        const hasUnread = unread > 0;
         const tBadge = (r.timer && r.timer !== 'off') ? `<span class="mode-badge">${timerLabels[r.timer]}</span>` : '';
-        const lockBadge = r.locked ? `<span class="mode-badge" style="color:#eab308; border-color:#eab308;">🔒 Hidden</span>` : '';
+        const lockBadge = r.locked ? `<span class="mode-badge" style="color:#eab308; border-color:#eab308;">🔒</span>` : '';
         const init = (r.name || 'U').charAt(0).toUpperCase();
+
+        const previewTick = (sum.lastText && sum.lastIsMe)
+            ? `<span class="material-icons wa-preview-tick ${sum.lastSeen ? 'read' : ''}">${sum.lastSeen ? 'done_all' : 'check'}</span>`
+            : '';
+        const previewHtml = sum.lastText
+            ? `${previewTick}<span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(sum.lastText)}</span>`
+            : `ID: ${escapeHtml(r.peerCode || 'Private')} • Tap to message`;
+
+        const muteHtml = r.muted ? `<span class="material-icons wa-mute-ico" title="Muted">notifications_off</span>` : '';
+        const badgeHtml = hasUnread ? `<span class="wa-unread-badge">${unread >= 25 ? '25+' : unread}</span>` : '';
+
         const div = document.createElement('div');
         div.className = `chat-item ${r.id === currentRoom && isRoomActivelyOpen ? 'active' : ''}`;
         div.innerHTML = `
-            <div class="avatar" style="${r.dp ? `background-image:url(${r.dp})` : ''}">${r.dp ? '' : init}<div class="online-dot"></div></div>
+            <div class="avatar" style="${r.dp ? `background-image:url(${r.dp})` : ''}">${r.dp ? '' : escapeHtml(init)}<div class="online-dot"></div></div>
             <div class="chat-item-info">
-                <div class="chat-item-top"><span class="chat-item-name">${r.name} ${tBadge} ${lockBadge}</span></div>
-                <div class="chat-item-sub">ID: ${r.peerCode || 'Private'} • Tap to message</div>
+                <div class="chat-item-top">
+                    <span class="chat-item-name">${escapeHtml(r.name)} ${tBadge} ${lockBadge}</span>
+                    <span class="wa-chat-time ${hasUnread ? 'unread' : ''}">${escapeHtml(sum.lastTime || '')}</span>
+                </div>
+                <div class="wa-bottom-row">
+                    <div class="wa-preview ${hasUnread ? 'unread' : ''}">${previewHtml}</div>
+                    <div class="wa-indicators">${muteHtml}${badgeHtml}</div>
+                </div>
             </div>
+            <button type="button" class="wa-more-btn" aria-label="Chat options">
+                <span class="material-icons" style="font-size:20px;">more_vert</span>
+            </button>
         `;
+
+        const moreBtn = div.querySelector('.wa-more-btn');
+        moreBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openRoomActionSheet(r.id);
+        });
+
         div.addEventListener('click', () => {
             if (r.locked) $('pin-search-input').value = '';
             selectRoom(r.id, true);
@@ -656,7 +966,7 @@ function goBackToList(e) {
     if (document.activeElement) document.activeElement.blur();
     isRoomActivelyOpen = false;
     $('chat-view').classList.remove('open');
-    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal);
+    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal); closeLayer(roomActionSheet);
     if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
     window.scrollTo(0, 0);
     renderSidebarList();
@@ -804,7 +1114,7 @@ function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
         }
         return `<img src="${m.mediaUrl}" loading="lazy" class="msg-media">`;
     }
-    return `<span>${decryptText(m.text, encKey)}</span>`;
+    return `<span>${escapeHtml(decryptText(m.text, encKey))}</span>`;
 }
 
 function getBodySignature(m, encKey) {
@@ -888,7 +1198,7 @@ function listenToMessages(roomId) {
                 }
                 if (m.replyTo) {
                     const qEl = document.createElement('div');
-                    qEl.className = 'msg-quote'; qEl.innerHTML = `<b>${m.replyTo.name}</b><br>${m.replyTo.text}`;
+                    qEl.className = 'msg-quote'; qEl.innerHTML = `<b>${escapeHtml(m.replyTo.name)}</b><br>${escapeHtml(m.replyTo.text)}`;
                     bub.appendChild(qEl);
                 }
 
@@ -931,7 +1241,7 @@ function listenToMessages(roomId) {
             if (ch.type === 'added') {
                 const msg = ch.doc.data();
                 if (!isInitialLoad && !isMyMessage(msg) && !msg.isDeletedEveryone) {
-                    triggerStealthAlert(msg.type === 'text' ? 'text' : 'media');
+                    triggerStealthAlert(msg.type === 'text' ? 'text' : 'media', roomId);
                 }
             }
         });
@@ -1037,11 +1347,11 @@ function uploadWithTimeout(fRef, file, ms = 15000) {
     ]);
 }
 
-async function runClearAllChat(forEveryone) {
-    if (!currentRoom) return;
-    const rId = currentRoom;
+async function runClearAllChat(forEveryone, targetRoomId = currentRoom, silent = false) {
+    const rId = targetRoomId || currentRoom;
+    if (!rId) return;
     closeLayer(clearModal);
-    showQuickToast("🧹 Clearing chat...");
+    if (!silent) showQuickToast("🧹 Clearing messages...");
     if (forEveryone && activeLiveSessions[rId]) await stopLiveLocation(rId, activeLiveSessions[rId].msgId);
     try {
         const snap = await getDocs(collection(db, rId));
@@ -1061,12 +1371,54 @@ async function runClearAllChat(forEveryone) {
             }
         });
         await Promise.all(ops);
+        if (rId === currentRoom) {
+            $('msgs-container').innerHTML = '';
+            domMap.clear();
+            cachedMessages = {};
+        }
+        roomSummaries[rId] = { lastText: '', lastTime: '', lastMs: 0, lastIsMe: false, lastSeen: false, unreadCount: 0 };
+        renderSidebarList();
+        if (!silent) showQuickToast("✅ Saare messages clear ho gaye!");
+    } catch (e) {
+        if (!silent) showQuickToast("⚠️ Clear chat failed, try again.");
+    }
+}
+
+async function runDeleteEntireChat(roomId, forEveryone) {
+    if (!roomId) return;
+    closeLayer(genericModal);
+    showQuickToast("🗑️ Deleting chat...");
+
+    await runClearAllChat(forEveryone, roomId, true);
+
+    recentlyDeletedRooms.add(roomId);
+    setTimeout(() => recentlyDeletedRooms.delete(roomId), 15000);
+
+    savedRooms = savedRooms.filter(r => r.id !== roomId);
+    if (roomSummaryUnsubs.has(roomId)) {
+        roomSummaryUnsubs.get(roomId)();
+        roomSummaryUnsubs.delete(roomId);
+    }
+    delete roomSummaries[roomId];
+
+    if (currentRoom === roomId) {
+        if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
+        if (unsubscribePresence) { unsubscribePresence(); unsubscribePresence = null; }
+        if (unsubscribeCall) { unsubscribeCall(); unsubscribeCall = null; }
+        if (presenceRefreshTimer) { clearInterval(presenceRefreshTimer); presenceRefreshTimer = null; }
+        currentRoom = "";
+        isRoomActivelyOpen = false;
+        localStorage.removeItem('nova_last_room');
+        $('chat-view')?.classList.remove('open');
         $('msgs-container').innerHTML = '';
         domMap.clear();
-        showQuickToast("✅ Saare messages clear ho gaye!");
-    } catch (e) {
-        showQuickToast("⚠️ Clear chat failed, try again.");
+        cachedMessages = {};
     }
+
+    await syncAccountToCloud();
+    renderActiveStrip();
+    renderSidebarList();
+    showQuickToast("🗑️ Chat & messages delete ho gaye!");
 }
 
 async function loadStories() {
@@ -1084,8 +1436,8 @@ async function loadStories() {
         item.innerHTML = `
             <div class="avatar" style="border:2px solid #00f2fe;">${s.type === 'image' ? '📷' : '✍️'}</div>
             <div class="chat-item-info">
-                <div class="chat-item-name">${s.name}</div>
-                <div class="chat-item-sub">${s.timeStr} • 👀 ${s.views ? s.views.length : 0} views</div>
+                <div class="chat-item-name">${escapeHtml(s.name)}</div>
+                <div class="chat-item-sub">${escapeHtml(s.timeStr)} • 👀 ${s.views ? s.views.length : 0} views</div>
             </div>
         `;
         item.addEventListener('click', async () => {
@@ -1093,8 +1445,8 @@ async function loadStories() {
             if (!vList.includes(myName)) { vList.push(myName); await updateDoc(doc(db, "novahub_stories", d.id), { views: vList }); }
             $('modal-title').innerText = `${s.name}'s Story`;
             $('modal-body').innerHTML = `
-                ${s.type === 'image' ? `<img src="${s.mediaUrl}" style="width:100%; border-radius:10px;">` : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${s.text}</div>`}
-                <div style="margin-top:12px; font-size:12px; color:var(--text-sub);">👀 Viewed by: ${vList.join(', ') || 'None'}</div>
+                ${s.type === 'image' ? `<img src="${s.mediaUrl}" style="width:100%; border-radius:10px;">` : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(s.text)}</div>`}
+                <div style="margin-top:12px; font-size:12px; color:var(--text-sub);">👀 Viewed by: ${escapeHtml(vList.join(', ') || 'None')}</div>
             `;
             openLayer(genericModal);
             loadStories();
@@ -1104,7 +1456,7 @@ async function loadStories() {
 }
 
 // ============================================================================
-// 6. WEBRTC VOICE & VIDEO CALLS (ICE SUBCOLLECTIONS + TURN + REAL RINGTONE)
+// 8. WEBRTC VOICE & VIDEO CALLS (ICE SUBCOLLECTIONS + TURN + REAL RINGTONE)
 // ============================================================================
 function syncSpk() {
     const vol = isLoud ? 1.0 : 0.25;
@@ -1272,8 +1624,8 @@ function listenToCalls(roomId) {
         if (d.status === "ringing" && d.callerUid !== myUid) {
             if (activeCallId === d.callId && isLayerOpen(callHud)) return;
             activeCallId = d.callId || `inc_${d.updated}`;
-            triggerStealthAlert("call");
-            startRingtone('incoming');
+            triggerStealthAlert("call", roomId);
+            if (!isRoomMuted(roomId)) startRingtone('incoming');
             openLayer(callHud);
             $('call-vid-box').style.display = 'none';
             $('call-status-txt').innerText = `${d.callerName || 'Incoming'} (${d.isVideo ? 'Video' : 'Audio'})...`;
@@ -1320,7 +1672,7 @@ function listenToCalls(roomId) {
 }
 
 // ============================================================================
-// 7. SECURE ADMIN DASHBOARD (ZERO HARDCODED SECRET, NO PLAIN PASSWORDS)
+// 9. SECURE ADMIN DASHBOARD
 // ============================================================================
 async function openGodDashboard() {
     openLayer(godModal);
@@ -1329,7 +1681,7 @@ async function openGodDashboard() {
     accSnap.forEach(d => {
         const a = d.data();
         const pwState = a.passwordHash ? '🔒 SHA-256 Protected' : '⚠️ Pending Migration';
-        accHtml += `<span style="display:inline-block; background:#1f2937; border:1px solid #eab308; padding:5px 10px; border-radius:6px; margin:4px;">👤 <b>${a.name}</b> | ID: <b style="color:#00f2fe;">${a.accountCode}</b> | <span style="color:#10b981;">${pwState}</span></span>`;
+        accHtml += `<span style="display:inline-block; background:#1f2937; border:1px solid #eab308; padding:5px 10px; border-radius:6px; margin:4px;">👤 <b>${escapeHtml(a.name)}</b> | ID: <b style="color:#00f2fe;">${escapeHtml(a.accountCode)}</b> | <span style="color:#10b981;">${pwState}</span></span>`;
     });
     $('god-users-list').innerHTML = accHtml || 'No users registered.';
 
@@ -1338,7 +1690,7 @@ async function openGodDashboard() {
     snap.forEach(d => {
         const r = d.data();
         if (r.roomId !== 'global_novahub_chat') {
-            html += `<button onclick="window.inspectGod('${r.roomId}')" style="margin:4px; padding:6px 10px; background:#2b0909; color:#fff; border:1px solid #ef4444; border-radius:6px; cursor:pointer;">🔑 ${r.roomId}</button>`;
+            html += `<button onclick="window.inspectGod('${r.roomId}')" style="margin:4px; padding:6px 10px; background:#2b0909; color:#fff; border:1px solid #ef4444; border-radius:6px; cursor:pointer;">🔑 ${escapeHtml(r.roomId)}</button>`;
         }
     });
     $('god-rooms').innerHTML = html || 'No active chats yet.';
@@ -1355,18 +1707,102 @@ window.inspectGod = async (rId) => {
     let html = '';
     snap.forEach(d => {
         const m = d.data();
-        let st = m.isDeletedEveryone ? `<span style="color:#ef4444;">[DELETED FOR ALL by ${m.deletedByAudit || m.name}]</span>` : `<span style="color:#10b981;">[ACTIVE]</span>`;
+        let st = m.isDeletedEveryone ? `<span style="color:#ef4444;">[DELETED FOR ALL by ${escapeHtml(m.deletedByAudit || m.name)}]</span>` : `<span style="color:#10b981;">[ACTIVE]</span>`;
         html += `<div style="border-bottom:1px dashed #450a0a; padding:8px 0;">
-            <div><b>${m.name} (ID: ${m.accountCode || ''})</b> (${m.shortTime || ''}) ${st} <button onclick="window.godDelMsg('${rId}','${d.id}')" style="background:#ef4444; color:#fff; border:none; padding:2px 6px; cursor:pointer; float:right;">🔥 Hard Delete</button></div>
-            <div style="color:#fff; margin-top:4px;">${m.type === 'image' ? `<img src="${m.mediaUrl}" style="max-width:150px;">` : (m.originalAuditText || m.text)}</div>
+            <div><b>${escapeHtml(m.name)} (ID: ${escapeHtml(m.accountCode || '')})</b> (${escapeHtml(m.shortTime || '')}) ${st} <button onclick="window.godDelMsg('${rId}','${d.id}')" style="background:#ef4444; color:#fff; border:none; padding:2px 6px; cursor:pointer; float:right;">🔥 Hard Delete</button></div>
+            <div style="color:#fff; margin-top:4px;">${m.type === 'image' ? `<img src="${m.mediaUrl}" style="max-width:150px;">` : escapeHtml(m.originalAuditText || m.text)}</div>
         </div>`;
     });
     box.innerHTML = html || 'Empty chat.';
 };
 
 // ============================================================================
-// 8. ATTACH ALL UI EVENT LISTENERS
+// 10. ATTACH ALL UI EVENT LISTENERS (INCLUDING 3-DOTS CHAT ACTION SHEET)
 // ============================================================================
+bindClick('ras-close-btn', () => closeLayer(roomActionSheet));
+if (roomActionSheet) roomActionSheet.addEventListener('click', (e) => { if (e.target === roomActionSheet) closeLayer(roomActionSheet); });
+
+bindClick('ras-mute-btn', async () => {
+    const r = savedRooms.find(x => x.id === actionTargetRoomId);
+    closeLayer(roomActionSheet);
+    if (!r) return;
+    r.muted = !r.muted;
+    await syncAccountToCloud();
+    renderSidebarList();
+    showQuickToast(r.muted ? `🔕 ${r.name} muted` : `🔔 ${r.name} unmuted`);
+});
+
+bindClick('ras-archive-btn', async () => {
+    const r = savedRooms.find(x => x.id === actionTargetRoomId);
+    closeLayer(roomActionSheet);
+    if (!r) return;
+    r.archived = !r.archived;
+    await syncAccountToCloud();
+    renderActiveStrip();
+    renderSidebarList();
+    showQuickToast(r.archived ? `📦 ${r.name} archived` : `📤 ${r.name} unarchived`);
+});
+
+bindClick('ras-lock-btn', async () => {
+    const r = savedRooms.find(x => x.id === actionTargetRoomId);
+    closeLayer(roomActionSheet);
+    if (!r) return;
+
+    if (!r.locked) {
+        myLockPin = localStorage.getItem('nova_lock_pin') || "";
+        if (!myLockPin) {
+            const newPin = prompt("🔐 Lock & Hide ke liye apna Secret Search PIN set karein (kam se kam 4 digits):");
+            if (!newPin || newPin.trim().length < 4) {
+                if (newPin !== null) showQuickToast("⚠️ Kam se kam 4 digit ka PIN daalein");
+                return;
+            }
+            myLockPin = newPin.trim();
+            localStorage.setItem('nova_lock_pin', myLockPin);
+            if (myAccountCode) await setDoc(doc(db, "novahub_accounts", myAccountCode), { lockPin: myLockPin }, { merge: true }).catch(() => {});
+        }
+        r.locked = true;
+        if (currentRoom === r.id && isRoomActivelyOpen) goBackToList();
+        showQuickToast(`🔒 ${r.name} locked & hidden! Search bar mein PIN daalein.`);
+    } else {
+        r.locked = false;
+        showQuickToast(`🔓 ${r.name} unlocked!`);
+    }
+    await syncAccountToCloud();
+    renderActiveStrip();
+    renderSidebarList();
+});
+
+bindClick('ras-clear-btn', () => {
+    const targetId = actionTargetRoomId;
+    closeLayer(roomActionSheet);
+    if (!targetId) return;
+    clearTargetRoomId = targetId;
+    openLayer(clearModal);
+});
+
+bindClick('ras-delete-btn', () => {
+    const targetId = actionTargetRoomId;
+    const r = savedRooms.find(x => x.id === targetId);
+    closeLayer(roomActionSheet);
+    if (!r) return;
+
+    $('modal-title').innerText = `🗑️ Delete "${r.name}"?`;
+    $('modal-body').innerHTML = `
+        <p style="font-size:12.5px; color:var(--text-sub); margin-bottom:12px;">
+            Isse saare messages delete ho jayenge aur yeh chat aapki list se poori tarah gayab ho jayegi.
+        </p>
+        <button id="del-chat-me" type="button" class="loc-action-btn" style="background:rgba(255,255,255,0.1); color:#fff; margin-bottom:10px; width:100%;">
+            🗑️ Delete for Me & Remove Chat
+        </button>
+        <button id="del-chat-all" type="button" class="loc-action-btn" style="background:#dc2626; color:#fff; width:100%;">
+            🔥 Delete for Everyone & Remove Chat
+        </button>
+    `;
+    openLayer(genericModal);
+    bindClick('del-chat-me', () => runDeleteEntireChat(targetId, false));
+    bindClick('del-chat-all', () => runDeleteEntireChat(targetId, true));
+});
+
 ['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget', 'btn-lock-close-widget'].forEach(id => {
     bindClick(id, (e) => {
         e.stopPropagation();
@@ -1380,7 +1816,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners (SHA-256 Hashing + Seamless Migration)
+// Auth Listeners
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login').classList.add('active');
@@ -1431,6 +1867,7 @@ bindClick('btn-auth-submit', async () => {
             appLockEnabled: false,
             appLockPin: "",
             savedRooms: [],
+            mutedRooms: [],
             createdAt: new Date().toLocaleString()
         });
     } else {
@@ -1471,6 +1908,8 @@ bindClick('btn-logout-now', () => {
     updatePresence("offline", true);
     stopAllLiveSessions();
     cleanupCall(false);
+    for (const unsub of roomSummaryUnsubs.values()) unsub();
+    roomSummaryUnsubs.clear();
     if (unsubscribeChat) unsubscribeChat();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
@@ -1560,12 +1999,14 @@ bindClick('btn-add-room', async () => {
     const fData = fSnap.data();
     const dmRoomId = make1on1RoomId(myAccountCode, friendCode);
     if (!savedRooms.find(r => r.id === dmRoomId)) {
-        savedRooms.push({ id: dmRoomId, name: fData.name || (`User ${friendCode}`), peerCode: friendCode, dp: fData.dp || "", locked: false, timer: "off" });
+        savedRooms.push({ id: dmRoomId, name: fData.name || (`User ${friendCode}`), peerCode: friendCode, dp: fData.dp || "", locked: false, muted: false, archived: false, timer: "off" });
         await syncAccountToCloud();
+        syncRoomSummaryListeners();
+        renderActiveStrip();
     }
     let friendRooms = (fData.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
     if (!friendRooms.find(r => r.id === dmRoomId)) {
-        friendRooms.push({ id: dmRoomId, name: myName, peerCode: myAccountCode, dp: myDp, locked: false, timer: "off" });
+        friendRooms.push({ id: dmRoomId, name: myName, peerCode: myAccountCode, dp: myDp, locked: false, muted: false, archived: false, timer: "off" });
         await setDoc(doc(db, "novahub_accounts", friendCode), { savedRooms: friendRooms }, { merge: true }).catch(() => {});
     }
     selectRoom(dmRoomId, true);
@@ -1779,7 +2220,7 @@ bindClick('cm-copy', (e) => { e.stopPropagation(); closeLayer(overlay); navigato
 bindClick('cm-info', (e) => {
     e.stopPropagation(); closeLayer(overlay);
     $('modal-title').innerText = "Message Info";
-    $('modal-body').innerHTML = `<div>👤 <b>Sender:</b> ${selectedMsg.name} (ID: ${selectedMsg.accountCode || ''})</div><div>📅 <b>Sent:</b> ${selectedMsg.sentAtStr || selectedMsg.shortTime}</div><hr style="margin:8px 0; border-color:var(--border-col);"><div>👀 <b>Seen Status:</b> ${selectedMsg.seenStatus ? `✓✓ Seen (${selectedMsg.seenAtStr || 'Read'})` : '✓ Not Seen Yet'}</div>`;
+    $('modal-body').innerHTML = `<div>👤 <b>Sender:</b> ${escapeHtml(selectedMsg.name)} (ID: ${escapeHtml(selectedMsg.accountCode || '')})</div><div>📅 <b>Sent:</b> ${escapeHtml(selectedMsg.sentAtStr || selectedMsg.shortTime)}</div><hr style="margin:8px 0; border-color:var(--border-col);"><div>👀 <b>Seen Status:</b> ${selectedMsg.seenStatus ? `✓✓ Seen (${escapeHtml(selectedMsg.seenAtStr || 'Read')})` : '✓ Not Seen Yet'}</div>`;
     openLayer(genericModal);
 });
 bindClick('cm-star', async (e) => {
@@ -1822,13 +2263,18 @@ bindClick('cm-del', (e) => {
     });
 });
 
-const openClearChatModal = (e) => { if (e) e.stopPropagation(); if (!currentRoom) return; closeLayer(overlay); closeLayer(drawer); openLayer(clearModal); };
+const openClearChatModal = (e) => {
+    if (e) e.stopPropagation();
+    if (!currentRoom) return;
+    clearTargetRoomId = currentRoom;
+    closeLayer(overlay); closeLayer(drawer); openLayer(clearModal);
+};
 bindClick('cm-clear-chat', openClearChatModal);
 bindClick('di-storage', openClearChatModal);
 bindClick('btn-close-clear-modal', () => closeLayer(clearModal));
 if (clearModal) clearModal.addEventListener('click', e => { if (e.target === clearModal) closeLayer(clearModal); });
-bindClick('btn-clear-me', () => runClearAllChat(false));
-bindClick('btn-clear-all', () => runClearAllChat(true));
+bindClick('btn-clear-me', () => runClearAllChat(false, clearTargetRoomId || currentRoom));
+bindClick('btn-clear-all', () => runClearAllChat(true, clearTargetRoomId || currentRoom));
 
 bindClick('btn-edit-contact-name', () => {
     const meta = getRoomMeta(currentRoom);
@@ -1868,11 +2314,10 @@ bindClick('di-notif', async () => {
     localStorage.setItem('nova_stealth_notif', stealthNotifEnabled);
     $('di-notif-val').innerText = stealthNotifEnabled ? "ON" : "OFF";
     if (stealthNotifEnabled) initStealthFCM();
-    triggerStealthAlert("text");
+    triggerStealthAlert("text", currentRoom);
 });
 bindClick('di-remove-chat', () => {
-    savedRooms = savedRooms.filter(r => r.id !== currentRoom);
-    syncAccountToCloud(); goBackToList(); renderActiveStrip();
+    runDeleteEntireChat(currentRoom, false);
 });
 bindClick('di-media', () => {
     $('modal-title').innerText = "🖼️ Shared Media";
@@ -1896,7 +2341,7 @@ bindClick('di-starred', () => {
     for (let id in cachedMessages) {
         const m = cachedMessages[id];
         if (m.starredBy && m.starredBy.includes(myUid) && !m.isDeletedEveryone) {
-            html += `<div style="background:var(--bg-nav); padding:8px; border-radius:8px; margin-bottom:8px; border-left:3px solid #eab308;"><div style="font-size:11px; color:var(--text-sub);"><b>${m.name}</b> • ${m.dateLabel || ''} ${m.shortTime || ''}</div><div style="margin-top:3px;">${m.type === 'image' ? `<img src="${m.mediaUrl}" style="max-width:120px; border-radius:4px;">` : decryptText(m.text, encKey)}</div></div>`;
+            html += `<div style="background:var(--bg-nav); padding:8px; border-radius:8px; margin-bottom:8px; border-left:3px solid #eab308;"><div style="font-size:11px; color:var(--text-sub);"><b>${escapeHtml(m.name)}</b> • ${escapeHtml(m.dateLabel || '')} ${escapeHtml(m.shortTime || '')}</div><div style="margin-top:3px;">${m.type === 'image' ? `<img src="${m.mediaUrl}" style="max-width:120px; border-radius:4px;">` : escapeHtml(decryptText(m.text, encKey))}</div></div>`;
         }
     }
     $('modal-body').innerHTML = html || "No starred messages.";
@@ -1985,7 +2430,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ============================================================================
-// 9. START SESSION & HANDOFF FROM index.html
+// 11. START SESSION & HANDOFF FROM index.html
 // ============================================================================
 function startAuthenticatedSession(shouldApplyLock = true) {
     $('my-top-name').innerText = myName;
@@ -2002,6 +2447,10 @@ function startAuthenticatedSession(shouldApplyLock = true) {
     unsubscribeAccountSync = onSnapshot(doc(db, "novahub_accounts", myAccountCode), (snap) => {
         if (!snap.exists()) return;
         const d = snap.data();
+        if (d.lockPin && d.lockPin !== myLockPin) {
+            myLockPin = d.lockPin;
+            localStorage.setItem('nova_lock_pin', myLockPin);
+        }
         if (typeof d.appLockEnabled === 'boolean' && d.appLockPin) {
             appLockEnabled = d.appLockEnabled;
             appLockPin = d.appLockPin;
@@ -2012,11 +2461,16 @@ function startAuthenticatedSession(shouldApplyLock = true) {
         if (d.savedRooms) {
             let updated = false;
             d.savedRooms.forEach(cloudRoom => {
-                if (cloudRoom.id === 'global_novahub_chat') return;
-                if (!savedRooms.find(r => r.id === cloudRoom.id)) { savedRooms.push(cloudRoom); updated = true; }
+                if (cloudRoom.id === 'global_novahub_chat' || recentlyDeletedRooms.has(cloudRoom.id)) return;
+                const localRoom = savedRooms.find(r => r.id === cloudRoom.id);
+                if (!localRoom) {
+                    savedRooms.push(cloudRoom);
+                    updated = true;
+                }
             });
             if (updated) {
                 localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
+                syncRoomSummaryListeners();
                 renderSidebarList();
                 renderActiveStrip();
             }
@@ -2030,6 +2484,7 @@ function startAuthenticatedSession(shouldApplyLock = true) {
         }
     });
 
+    syncRoomSummaryListeners();
     renderSidebarList();
     renderActiveStrip();
 
@@ -2039,17 +2494,14 @@ function startAuthenticatedSession(shouldApplyLock = true) {
 }
 
 try {
-    // 1. Direct Admin Handoff from index.html 3-Tap
     if (sessionStorage.getItem('nova_open_admin') === '1') {
         sessionStorage.removeItem('nova_open_admin');
         closeLayer(authScreen);
         openGodDashboard();
     } else if (myAccountCode && myName) {
-        // 2. Existing Authenticated Session
         closeLayer(authScreen);
         startAuthenticatedSession(true);
     } else {
-        // 3. Clean Prefill Handoff from index.html 3-Tap
         const prefill = sessionStorage.getItem('nova_prefill_code');
         if (prefill && codeInp) {
             sessionStorage.removeItem('nova_prefill_code');
