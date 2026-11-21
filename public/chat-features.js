@@ -1357,3 +1357,5 @@ function initWhatsAppRedesign() {
     setInterval(refreshStoryRings, 30000);
 }
 initWhatsAppRedesign();
+
+import "./chat-filters.js";
