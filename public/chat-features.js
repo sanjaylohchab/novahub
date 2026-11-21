@@ -533,7 +533,7 @@ export function initStoryControls() {
 }
 
 // ============================================================================
-// 5. SCHEME 2: 4-DIGIT MOBILE KEYPAD + BIG RETURN BUTTON + PANIC EXIT
+// 5. SCHEME 2: 4-DIGIT MOBILE KEYPAD + BIG RETURN + DRAGGABLE PANIC EXIT
 // ============================================================================
 function exitToArcadeNow() {
     if (state.isWidgetMode) {
@@ -586,15 +586,17 @@ function initScheme2KeypadAndPanic() {
             .kp-key:active { background: rgba(16,185,129,0.3); transform: scale(0.95); }
             .kp-key.kp-fn { font-size: 15px; color: #94a3b8; }
 
-            /* Top Quick Panic Exit Pill inside Messenger */
+            /* Draggable Floating Panic Exit Button */
             #nova-top-arcade-exit {
-                position: fixed; top: 8px; right: 52px; z-index: 950;
-                background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.45);
-                color: #fca5a5; border-radius: 999px; padding: 5px 10px;
-                font-size: 11.5px; font-weight: 700; cursor: pointer;
-                display: flex; align-items: center; gap: 4px;
+                position: fixed; bottom: 86px; right: 14px; z-index: 9995;
+                background: rgba(15,23,42,0.88); border: 1.5px solid rgba(239,68,68,0.65);
+                color: #fca5a5; border-radius: 999px; padding: 7px 12px;
+                font-size: 12px; font-weight: 700; cursor: grab;
+                display: flex; align-items: center; gap: 5px;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+                touch-action: none; user-select: none; -webkit-user-select: none;
             }
-            #nova-top-arcade-exit:active { background: rgba(239,68,68,0.38); }
+            #nova-top-arcade-exit:active { background: rgba(239,68,68,0.35); cursor: grabbing; }
         `;
         document.head.appendChild(st);
     }
@@ -647,17 +649,76 @@ function initScheme2KeypadAndPanic() {
         bindClick('btn-return-arcade-big', exitToArcadeNow);
     }
 
-    // 2. Top Quick-Exit Button (Visible inside Messenger)
+    // 2. Draggable Floating Panic Exit Button (Saves Position)
     if (!document.getElementById('nova-top-arcade-exit')) {
         const exitBtn = document.createElement('button');
         exitBtn.id = 'nova-top-arcade-exit';
         exitBtn.type = 'button';
         exitBtn.innerHTML = '🎮 Exit';
-        exitBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            exitToArcadeNow();
-        });
         document.body.appendChild(exitBtn);
+
+        // Restore saved position if available
+        try {
+            const saved = JSON.parse(localStorage.getItem('nova_exit_btn_pos') || 'null');
+            if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
+                exitBtn.style.left = Math.min(Math.max(8, saved.x), window.innerWidth - 78) + 'px';
+                exitBtn.style.top = Math.min(Math.max(8, saved.y), window.innerHeight - 44) + 'px';
+                exitBtn.style.right = 'auto';
+                exitBtn.style.bottom = 'auto';
+            }
+        } catch (e) {}
+
+        let startX = 0, startY = 0, origX = 0, origY = 0, isDragging = false, moved = false;
+
+        const onStart = (cx, cy) => {
+            const rect = exitBtn.getBoundingClientRect();
+            startX = cx; startY = cy;
+            origX = rect.left; origY = rect.top;
+            isDragging = true; moved = false;
+        };
+        const onMove = (cx, cy) => {
+            if (!isDragging) return;
+            const dx = cx - startX, dy = cy - startY;
+            if (Math.abs(dx) > 6 || Math.abs(dy) > 6) moved = true;
+            if (!moved) return;
+            const maxX = window.innerWidth - exitBtn.offsetWidth - 6;
+            const maxY = window.innerHeight - exitBtn.offsetHeight - 6;
+            const nx = Math.min(Math.max(6, origX + dx), maxX);
+            const ny = Math.min(Math.max(6, origY + dy), maxY);
+            exitBtn.style.left = nx + 'px';
+            exitBtn.style.top = ny + 'px';
+            exitBtn.style.right = 'auto';
+            exitBtn.style.bottom = 'auto';
+        };
+        const onEnd = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            if (moved) {
+                const r = exitBtn.getBoundingClientRect();
+                localStorage.setItem('nova_exit_btn_pos', JSON.stringify({ x: r.left, y: r.top }));
+            } else {
+                exitToArcadeNow();
+            }
+        };
+
+        exitBtn.addEventListener('touchstart', (e) => {
+            const t = e.touches[0];
+            onStart(t.clientX, t.clientY);
+        }, { passive: true });
+        exitBtn.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const t = e.touches[0];
+            onMove(t.clientX, t.clientY);
+            if (moved) e.preventDefault();
+        }, { passive: false });
+        exitBtn.addEventListener('touchend', onEnd);
+
+        exitBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            onStart(e.clientX, e.clientY);
+        });
+        window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', onEnd);
     }
 
     // 3. Shake-to-Panic Exit (Mobile Accelerometer)
