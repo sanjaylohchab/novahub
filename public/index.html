@@ -160,10 +160,8 @@
         <button id="close-cloud-admin-btn" type="button" class="text-slate-400 hover:text-white text-xl font-bold px-2">×</button>
       </div>
 
-      <!-- Existing Cloud Links List -->
       <div id="cloud-admin-list" class="space-y-2"></div>
 
-      <!-- Add / Edit Form -->
       <div class="border-t border-slate-800 pt-3 space-y-2.5">
         <div id="cloud-form-title" class="text-xs font-bold text-indigo-300 uppercase">➕ Add New Permanent Link</div>
         <input type="hidden" id="cloud-edit-id" value="" />
@@ -182,18 +180,24 @@
           <button id="cloud-save-btn" type="button" class="flex-1 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl">☁️ Save for All Phones</button>
         </div>
       </div>
+
+      <div class="border-t border-slate-800 pt-3">
+        <button id="btn-change-admin-code" type="button" class="w-full py-2 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-xl border border-amber-500/30">
+          🔑 Change Secret Admin Code
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- ================= ENTER YOUR PERSONAL ID CODE ================= -->
+  <!-- ================= ENTER YOUR PERSONAL ID CODE (FIXED HANDOFF) ================= -->
   <div id="passcode-modal" class="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 hidden">
     <div class="w-full max-w-sm space-y-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl">
       <h3 class="text-center text-indigo-400 font-bold uppercase tracking-widest text-sm">Enter Your Personal ID Code</h3>
-      <p class="text-center text-xs text-slate-400">Enter your permanent ID code. Your chats & name stay linked to this code forever.</p>
+      <p class="text-center text-xs text-slate-400">Enter your permanent ID code to open your private messenger.</p>
       <input type="text" id="secret-pin-input" placeholder="Enter ID Code" class="w-full tracking-widest text-center text-2xl font-mono py-3 bg-slate-950 border border-slate-700 rounded-xl text-indigo-400 outline-none"/>
       <div class="flex gap-2 pt-2">
         <button id="cancel-pin-btn" class="flex-1 py-3 text-sm font-bold bg-slate-800 text-slate-400 rounded-xl">CANCEL</button>
-        <button id="submit-pin-btn" class="flex-1 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl">OPEN MY WHATSAPP</button>
+        <button id="submit-pin-btn" class="flex-1 py-3 text-sm font-bold bg-indigo-600 text-white rounded-xl">OPEN CHAT</button>
       </div>
     </div>
   </div>
@@ -201,11 +205,10 @@
   <script src="snake.js"></script>
   <script type="module">
     import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { initializeFirestore, getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    import { initializeFirestore, getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
     feather.replace();
 
-    // ==================== FIREBASE INIT ====================
     const firebaseConfig = {
       apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
       authDomain: "novahub-201e5.firebaseapp.com",
@@ -221,6 +224,42 @@
     catch (e) { db = getFirestore(app, "default"); }
 
     const cloudLinksRef = doc(db, "novahub_config", "quick_links");
+    const adminConfigRef = doc(db, "novahub_config", "admin");
+
+    // ==================== SHA-256 ADMIN VERIFICATION (ZERO HARDCODED SECRET) ====================
+    async function hashAdminCode(raw) {
+      const data = new TextEncoder().encode("novahub_adm_v2:" + String(raw).trim().toLowerCase());
+      const buf = await crypto.subtle.digest("SHA-256", data);
+      return "sha256:" + Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function checkAdminAccess(inputCode) {
+      try {
+        const snap = await getDoc(adminConfigRef);
+        if (!snap.exists() || !snap.data().adminHash) return { status: "unset" };
+        const enteredHash = await hashAdminCode(inputCode);
+        return { status: enteredHash === snap.data().adminHash ? "ok" : "wrong" };
+      } catch (e) {
+        return { status: "error" };
+      }
+    }
+
+    async function setupNewAdminCode(titleMsg) {
+      const c1 = prompt(titleMsg || "🔐 First-Time Admin Setup:\nApna Secret Admin Code banayein (kam se kam 6 characters):");
+      if (!c1 || c1.trim().length < 6) {
+        if (c1 !== null) showHomeToast("⚠️ Admin code kam se kam 6 characters ka rakhein");
+        return false;
+      }
+      const c2 = prompt("🔐 Confirm Secret Admin Code (dobara daalein):");
+      if (c1.trim() !== (c2 || "").trim()) {
+        showHomeToast("❌ Dono codes match nahi hue");
+        return false;
+      }
+      const h = await hashAdminCode(c1);
+      await setDoc(adminConfigRef, { adminHash: h, updatedAt: Date.now() }, { merge: true });
+      showHomeToast("🔒 Secret Admin Code securely saved!");
+      return true;
+    }
 
     // ==================== DEFAULT PERMANENT LINKS ====================
     const DEFAULT_CLOUD_LINKS = [
@@ -247,19 +286,13 @@
       try { return JSON.parse(localStorage.getItem('nova_quick_links') || '[]'); }
       catch (e) { return []; }
     }
-
-    function saveCustomLinks(list) {
-      localStorage.setItem('nova_quick_links', JSON.stringify(list));
-    }
+    function saveCustomLinks(list) { localStorage.setItem('nova_quick_links', JSON.stringify(list)); }
 
     function normalizeUrl(raw) {
       let u = (raw || '').trim();
       if (!u) return '';
-      if (/^https?:\/\//i.test(u)) {
-        u = u.replace(/^https?:\/\//i, m => m.toLowerCase());
-      } else {
-        u = 'https://' + u;
-      }
+      if (/^https?:\/\//i.test(u)) u = u.replace(/^https?:\/\//i, m => m.toLowerCase());
+      else u = 'https://' + u;
       return u;
     }
 
@@ -295,11 +328,9 @@
 
         const info = document.createElement('div');
         info.className = 'min-w-0 flex-1 pr-3';
-
         const title = document.createElement('div');
         title.className = 'text-xs font-bold text-slate-100 truncate';
         title.textContent = item.name;
-
         const host = document.createElement('div');
         host.className = 'text-[10px] text-slate-400 truncate';
         host.textContent = getShortHost(item.url);
@@ -316,8 +347,7 @@
           del.className = 'absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white text-xs flex items-center justify-center transition';
           del.textContent = '×';
           del.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             if (!confirm(`"${item.name}" link hatayein?`)) return;
             saveCustomLinks(getCustomLinks().filter(x => x.id !== item.id));
             renderQuickLinks();
@@ -325,12 +355,10 @@
           };
           card.appendChild(del);
         }
-
         linksGrid.appendChild(card);
       });
     }
 
-    // Live sync permanent links from Firebase across ALL phones
     onSnapshot(cloudLinksRef, (snap) => {
       if (snap.exists() && Array.isArray(snap.data().links)) {
         cloudLinks = snap.data().links;
@@ -364,17 +392,15 @@
       const box = document.getElementById('cloud-admin-list');
       box.innerHTML = '';
       if (cloudLinks.length === 0) {
-        box.innerHTML = '<div class="text-xs text-slate-400 text-center py-3">Koi permanent link nahi hai. Niche se add karein.</div>';
+        box.innerHTML = '<div class="text-xs text-slate-400 text-center py-3">Koi permanent link nahi hai.</div>';
         return;
       }
       cloudLinks.forEach(item => {
         const row = document.createElement('div');
         row.className = 'bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center gap-2.5';
-
         const ico = document.createElement('div');
         ico.className = 'text-lg shrink-0';
         ico.textContent = item.icon || '🌐';
-
         const meta = document.createElement('div');
         meta.className = 'min-w-0 flex-1';
         const nm = document.createElement('div');
@@ -383,8 +409,7 @@
         const ur = document.createElement('div');
         ur.className = 'text-[10px] text-cyan-400 truncate';
         ur.textContent = item.url;
-        meta.appendChild(nm);
-        meta.appendChild(ur);
+        meta.appendChild(nm); meta.appendChild(ur);
 
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
@@ -407,14 +432,10 @@
         delBtn.textContent = '🗑️';
         delBtn.onclick = async () => {
           if (!confirm(`"${item.name}" sabhi phones se hatayein?`)) return;
-          const next = cloudLinks.filter(x => x.id !== item.id);
-          await saveCloudLinksToFirebase(next, `${item.name} removed!`);
+          await saveCloudLinksToFirebase(cloudLinks.filter(x => x.id !== item.id), `${item.name} removed!`);
         };
 
-        row.appendChild(ico);
-        row.appendChild(meta);
-        row.appendChild(editBtn);
-        row.appendChild(delBtn);
+        row.appendChild(ico); row.appendChild(meta); row.appendChild(editBtn); row.appendChild(delBtn);
         box.appendChild(row);
       });
     }
@@ -428,33 +449,44 @@
         await setDoc(cloudLinksRef, { links: cloudLinks, updatedAt: Date.now() }, { merge: true });
         showHomeToast(toastText || '☁️ All phones updated!');
       } catch (e) {
-        showHomeToast('⚠️ Saved locally; check internet for cloud sync');
+        showHomeToast('⚠️ Saved locally; check internet');
       }
     }
 
     let qlTapCount = 0, qlTapTimer = null;
-    document.getElementById('quick-links-heading').addEventListener('click', () => {
+    document.getElementById('quick-links-heading').addEventListener('click', async () => {
       qlTapCount++;
       clearTimeout(qlTapTimer);
       if (qlTapCount >= 3) {
         qlTapCount = 0;
-        const code = prompt('🔐 Admin Code daalein (Permanent Links Update ke liye):');
-        if (code && code.trim().toLowerCase() === 'god4499') {
-          resetCloudForm();
-          renderCloudAdminList();
+        const snap = await getDoc(adminConfigRef).catch(() => null);
+        if (!snap || !snap.exists() || !snap.data().adminHash) {
+          const ok = await setupNewAdminCode();
+          if (!ok) return;
+          resetCloudForm(); renderCloudAdminList();
           cloudAdminModal.classList.remove('hidden');
-        } else if (code !== null) {
-          showHomeToast('❌ Wrong Admin Code');
+          return;
+        }
+        const code = prompt('🔐 Apna Secret Admin Code daalein:');
+        if (code === null) return;
+        const res = await checkAdminAccess(code);
+        if (res.status === 'ok') {
+          resetCloudForm(); renderCloudAdminList();
+          cloudAdminModal.classList.remove('hidden');
+        } else {
+          showHomeToast('❌ Galat Admin Code');
         }
       } else {
         qlTapTimer = setTimeout(() => { qlTapCount = 0; }, 650);
       }
     });
 
+    document.getElementById('btn-change-admin-code').addEventListener('click', () => {
+      setupNewAdminCode("🔑 Naya Secret Admin Code set karein (6+ characters):");
+    });
     document.getElementById('close-cloud-admin-btn').addEventListener('click', () => cloudAdminModal.classList.add('hidden'));
     cloudAdminModal.addEventListener('click', (e) => { if (e.target === cloudAdminModal) cloudAdminModal.classList.add('hidden'); });
     document.getElementById('cloud-reset-form-btn').addEventListener('click', resetCloudForm);
-
     document.querySelectorAll('#cloud-icon-row .cloud-icon-chip').forEach(btn => {
       btn.addEventListener('click', () => setCloudIconSelection(btn.getAttribute('data-ico')));
     });
@@ -464,13 +496,9 @@
       const name = document.getElementById('cloud-link-name').value.trim();
       const url = normalizeUrl(document.getElementById('cloud-link-url').value);
       if (!name || !url) return alert('Name aur URL dono daalein!');
-
       let next = [...cloudLinks];
-      if (editId) {
-        next = next.map(x => x.id === editId ? { ...x, name, url, icon: pickedCloudIcon } : x);
-      } else {
-        next.push({ id: 'cl_' + Date.now(), name, url, icon: pickedCloudIcon });
-      }
+      if (editId) next = next.map(x => x.id === editId ? { ...x, name, url, icon: pickedCloudIcon } : x);
+      else next.push({ id: 'cl_' + Date.now(), name, url, icon: pickedCloudIcon });
       resetCloudForm();
       await saveCloudLinksToFirebase(next, editId ? `✅ ${name} updated everywhere!` : `✅ ${name} added everywhere!`);
     });
@@ -483,7 +511,6 @@
       document.getElementById('new-link-name').focus();
     }
     function closeAddLinkModal() { addLinkModal.classList.add('hidden'); }
-
     document.getElementById('open-add-link-btn').addEventListener('click', openAddLinkModal);
     document.getElementById('close-add-link-btn').addEventListener('click', closeAddLinkModal);
     document.getElementById('cancel-add-link-btn').addEventListener('click', closeAddLinkModal);
@@ -511,7 +538,7 @@
 
     renderQuickLinks();
 
-    // ==================== SECRET 3-TAP LOGIN ====================
+    // ==================== FIXED SECRET 3-TAP HANDOFF ====================
     let clickCount = 0, clickTimer = null;
 
     function handleTripleTap() {
@@ -520,7 +547,7 @@
       if (clickCount >= 3) {
         clickCount = 0;
         document.getElementById('passcode-modal').classList.remove('hidden');
-        document.getElementById('secret-pin-input').value = localStorage.getItem('nova_my_code') || '';
+        document.getElementById('secret-pin-input').value = localStorage.getItem('nova_account_code') || '';
         document.getElementById('secret-pin-input').focus();
       } else {
         clickTimer = setTimeout(() => { clickCount = 0; }, 600);
@@ -533,20 +560,30 @@
       document.getElementById('passcode-modal').classList.add('hidden');
     });
 
-    function loginWithPersonalCode() {
+    async function loginWithPersonalCode() {
       const myCode = document.getElementById('secret-pin-input').value.trim();
       if (!myCode) return alert("Apna Permanent ID Code dalein!");
 
       localStorage.setItem('nova_stealth_gate_locked', 'false');
-      if (myCode.toLowerCase() === 'god4499') {
-        sessionStorage.setItem('open_god_directly', 'true');
+
+      // 1. Check Secure Cloud Admin Hash (no hardcoded secret!)
+      const adm = await checkAdminAccess(myCode);
+      if (adm.status === 'ok') {
+        sessionStorage.setItem('nova_open_admin', '1');
         window.location.href = 'chat.html';
         return;
       }
 
-      localStorage.setItem('nova_my_code', myCode);
-      localStorage.setItem('nova_account_code', myCode);
-      localStorage.setItem('nova_uid', 'user_' + myCode);
+      // 2. If same account is already authenticated on this device, open directly
+      const activeCode = (localStorage.getItem('nova_account_code') || '').trim();
+      const activeName = (localStorage.getItem('nova_username') || '').trim();
+      if (activeCode === myCode && activeName) {
+        window.location.href = 'chat.html';
+        return;
+      }
+
+      // 3. Otherwise cleanly hand off to chat.html login screen with ID prefilled (never corrupts uid)
+      sessionStorage.setItem('nova_prefill_code', myCode);
       window.location.href = 'chat.html';
     }
 
