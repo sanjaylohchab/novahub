@@ -1,9 +1,9 @@
 // ============================================================================
 // NOVAMESSENGER PRO ENGINE (chat-core.js)
-// Crash-Proof Init | Accurate Last Seen | Cross-Device Live Location | PIN Lock
+// WebRTC STUN/TURN + Real Ringtone | FCM Stealth Push | SHA-256 Auth & Admin
 // ============================================================================
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -15,16 +15,42 @@ const firebaseConfig = {
     appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
 };
 
+// FCM Lock-Screen Push Config (Firebase Console -> Project Settings -> Cloud Messaging -> Web Push VAPID Key)
+const FCM_VAPID_KEY = ""; // Optional: Yahan apni VAPID key paste karein
+const PUSH_RELAY_URL = ""; // Optional: Apne Cloud Function / Cloudflare Worker ka URL
+
+// WebRTC ICE Servers (Multiple STUN + Free Relay TURN for Jio/Airtel 4G/5G)
+const RTC_CONFIG = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun.relay.metered.ca:80" },
+        {
+            urls: [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp"
+            ],
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        }
+    ],
+    iceCandidatePoolSize: 10
+};
+
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 let db;
 try { db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, "default"); }
 catch (e) { db = getFirestore(app, "default"); }
 const storage = getStorage(app);
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 
 // ============================================================================
-// 0. ALL STATE & DOM REFERENCES DECLARED AT THE TOP (ZERO CRASHES!)
+// 0. STATE, CRYPTO HELPERS & DOM REFERENCES
 // ============================================================================
 const isWidgetMode = new URLSearchParams(window.location.search).get('widget') === '1' || (window.self !== window.top);
 let isWidgetOpen = !isWidgetMode;
@@ -47,6 +73,7 @@ let unsubscribeChat = null;
 let unsubscribePresence = null;
 let presenceRefreshTimer = null;
 let unsubscribeCall = null;
+let unsubscribeRemoteIce = null;
 let unsubscribeAccountSync = null;
 let cachedMessages = {};
 const markingSeen = new Set();
@@ -63,6 +90,11 @@ let lastPresStatus = "";
 let lastPresMs = 0;
 let typTimer = null;
 let audioCtx = null;
+let ringInterval = null;
+let vibInterval = null;
+let callTimeoutTimer = null;
+let activeCallId = "";
+let pendingIceCandidates = [];
 let mediaRec = null, vnChunks = [], isRec = false;
 let pc = null, localStream = null, isLoud = false, isMuted = false, isFs = false;
 let emojiPickerLoaded = false;
@@ -102,6 +134,40 @@ if (localStorage.getItem('nova_theme_mode') === 'light') document.body.classList
 if ($('di-vib-val')) $('di-vib-val').innerText = vibrationEnabled ? "ON" : "OFF";
 if ($('di-notif-val')) $('di-notif-val').innerText = stealthNotifEnabled ? "ON" : "OFF";
 
+// Unlock AudioContext on first user gesture so incoming ringtone works on iOS/Android
+function ensureAudioContext() {
+    try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    } catch (e) {}
+    return audioCtx;
+}
+document.addEventListener('touchstart', ensureAudioContext, { once: true, passive: true });
+document.addEventListener('click', ensureAudioContext, { once: true });
+
+// SHA-256 Hashing for Passwords & Secret Admin Code (Zero Hardcoded Secrets!)
+async function sha256Hex(str) {
+    const data = new TextEncoder().encode(str);
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function hashPassword(code, pass) {
+    return 'sha256:' + await sha256Hex(`novahub_pw_v2:${String(code).trim()}:${pass}`);
+}
+async function hashAdminCode(raw) {
+    return 'sha256:' + await sha256Hex(`novahub_adm_v2:${String(raw).trim().toLowerCase()}`);
+}
+async function verifyAdminCode(rawCode) {
+    if (!rawCode) return false;
+    try {
+        const snap = await getDoc(doc(db, "novahub_config", "admin"));
+        if (!snap.exists() || !snap.data().adminHash) return false;
+        return (await hashAdminCode(rawCode)) === snap.data().adminHash;
+    } catch (e) {
+        return false;
+    }
+}
+
 // Safe Layer Helpers
 function openLayer(el) {
     if (!el) return;
@@ -115,19 +181,112 @@ function closeLayer(el) {
 function isLayerOpen(el) {
     return !!(el && el.classList.contains('is-open'));
 }
-
-document.addEventListener('focusout', () => {
-    setTimeout(() => { window.scrollTo(0, 0); }, 40);
-});
-
+document.addEventListener('focusout', () => { setTimeout(() => { window.scrollTo(0, 0); }, 40); });
 function postToGame(payload) {
-    if (isWidgetMode) {
-        try { window.parent.postMessage(payload, '*'); } catch (e) {}
-    }
+    if (isWidgetMode) { try { window.parent.postMessage(payload, '*'); } catch (e) {} }
 }
 
 // ============================================================================
-// 1. AUTHENTICATION & APP ENTRY PIN LOCK
+// 1. REAL PHONE RINGTONE ENGINE (INCOMING & OUTGOING + VIBRATION)
+// ============================================================================
+function playTonePair(f1, f2, durationSec, volume = 0.16) {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    try {
+        const now = ctx.currentTime;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.001, now);
+        g.gain.exponentialRampToValueAtTime(volume, now + 0.04);
+        g.gain.setValueAtTime(volume, now + durationSec - 0.06);
+        g.gain.exponentialRampToValueAtTime(0.001, now + durationSec);
+        g.connect(ctx.destination);
+
+        [f1, f2].forEach(freq => {
+            const osc = ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+            osc.connect(g);
+            osc.start(now);
+            osc.stop(now + durationSec);
+        });
+    } catch (e) {}
+}
+
+function startRingtone(mode = 'incoming') {
+    stopRingtone();
+    const playCycle = () => {
+        if (mode === 'incoming') {
+            // Classic pleasant dual-pulse ringtone
+            playTonePair(523.25, 659.25, 0.35, 0.22);
+            setTimeout(() => playTonePair(659.25, 783.99, 0.45, 0.22), 400);
+            if (vibrationEnabled && "vibrate" in navigator) {
+                try { navigator.vibrate([380, 180, 380]); } catch (e) {}
+            }
+        } else {
+            // Soft outgoing ringback tone
+            playTonePair(440, 480, 0.9, 0.09);
+        }
+    };
+    playCycle();
+    ringInterval = setInterval(playCycle, mode === 'incoming' ? 2200 : 3200);
+}
+
+function stopRingtone() {
+    if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
+    if (vibInterval) { clearInterval(vibInterval); vibInterval = null; }
+    if ("vibrate" in navigator) { try { navigator.vibrate(0); } catch (e) {} }
+}
+
+// ============================================================================
+// 2. FCM STEALTH PUSH REGISTRATION & SENDER HOOK
+// ============================================================================
+async function initStealthFCM() {
+    if (!myAccountCode || !("Notification" in window) || !("serviceWorker" in navigator)) return;
+    try {
+        if (Notification.permission === "default") {
+            await Notification.requestPermission().catch(() => {});
+        }
+        if (Notification.permission !== "granted") return;
+
+        const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+        if (!FCM_VAPID_KEY) return; // VAPID key paste karne ke baad FCM token register hoga
+
+        const fcmMod = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-messaging.js");
+        const supported = await fcmMod.isSupported();
+        if (!supported) return;
+
+        const messaging = fcmMod.getMessaging(app);
+        const token = await fcmMod.getToken(messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+        if (token) {
+            await setDoc(doc(db, "novahub_accounts", myAccountCode), { fcmToken: token, fcmUpdatedAt: Date.now() }, { merge: true }).catch(() => {});
+        }
+        fcmMod.onMessage(messaging, () => {
+            if (!isChatActivelyVisible()) triggerStealthAlert("text");
+        });
+    } catch (e) {}
+}
+
+async function sendStealthPushToPeer(roomId, kind = "text") {
+    if (!PUSH_RELAY_URL || !roomId) return;
+    const meta = getRoomMeta(roomId);
+    if (!meta || !meta.peerCode) return;
+    try {
+        const peerSnap = await getDoc(doc(db, "novahub_accounts", meta.peerCode));
+        const token = peerSnap.exists() ? peerSnap.data().fcmToken : "";
+        if (!token) return;
+        let body = "New high score challenge! Game khelo **";
+        if (kind === "media") body = "Daily spin reward ready! Game khelo ₹₹";
+        else if (kind === "call") body = "Multiplayer lobby active! Join now ⭐️⭐️";
+        fetch(PUSH_RELAY_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ toToken: token, title: "🎮 NovaHub Arcade", body })
+        }).catch(() => {});
+    } catch (e) {}
+}
+
+// ============================================================================
+// 3. AUTHENTICATION & APP ENTRY PIN LOCK
 // ============================================================================
 function updateAppLockIconUI() {
     const icon = $('app-lock-icon');
@@ -146,11 +305,7 @@ function lockAppIfEnabled() {
     isAppUnlocked = false;
     isRoomActivelyOpen = false;
     if ($('chat-view')) $('chat-view').classList.remove('open');
-    closeLayer(drawer);
-    closeLayer(overlay);
-    closeLayer(locModal);
-    closeLayer(clearModal);
-    closeLayer(genericModal);
+    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal);
     if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
     if ($('lock-pin-input')) $('lock-pin-input').value = '';
     if ($('lock-error-msg')) $('lock-error-msg').innerText = '';
@@ -172,7 +327,7 @@ function unlockAppWithPin() {
 }
 
 function wipeLocalSessionData() {
-    ['nova_account_code', 'nova_uid', 'nova_username', 'nova_dp', 'nova_lock_pin', 'nova_app_lock_enabled', 'nova_app_lock_pin', 'nova_saved_rooms', 'nova_last_room'].forEach(k => localStorage.removeItem(k));
+    ['nova_account_code', 'nova_my_code', 'nova_uid', 'nova_username', 'nova_dp', 'nova_lock_pin', 'nova_app_lock_enabled', 'nova_app_lock_pin', 'nova_saved_rooms', 'nova_last_room'].forEach(k => localStorage.removeItem(k));
 }
 
 function saveSessionToLocal() {
@@ -187,7 +342,7 @@ function saveSessionToLocal() {
 }
 
 // ============================================================================
-// 2. HELPERS: ENCRYPTION, ALERTS, ACCURATE PRESENCE & CROSS-DEVICE LIVE LOC
+// 4. HELPERS: ENCRYPTION, ALERTS, ACCURATE PRESENCE & CROSS-DEVICE LIVE LOC
 // ============================================================================
 function make1on1RoomId(codeA, codeB) {
     const pair = [String(codeA).trim(), String(codeB).trim()].sort();
@@ -217,10 +372,8 @@ function formatLastSeen(ms) {
     const d = new Date(ms);
     const now = new Date();
     const timePart = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-    const todayStr = now.toDateString();
-    const yest = new Date(now);
-    yest.setDate(now.getDate() - 1);
-    if (d.toDateString() === todayStr) return `Last seen today at ${timePart}`;
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    if (d.toDateString() === now.toDateString()) return `Last seen today at ${timePart}`;
     if (d.toDateString() === yest.toDateString()) return `Last seen yesterday at ${timePart}`;
     const datePart = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     return `Last seen ${datePart}, ${timePart}`;
@@ -246,16 +399,17 @@ function decryptText(cipherText, key) {
 }
 
 function playAlertBeep() {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
     try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + 0.3);
     } catch (e) {}
 }
 
@@ -268,7 +422,7 @@ function showQuickToast(txt) {
 }
 
 async function triggerStealthAlert(type) {
-    if (vibrationEnabled) {
+    if (vibrationEnabled && type !== 'call') {
         if ("vibrate" in navigator) { try { navigator.vibrate([150, 70, 150]); } catch (e) {} }
         playAlertBeep();
     }
@@ -288,7 +442,12 @@ async function triggerStealthAlert(type) {
             if ('serviceWorker' in navigator) {
                 const reg = await navigator.serviceWorker.ready;
                 if (reg && reg.showNotification) {
-                    await reg.showNotification("🎮 NovaHub Arcade", { body: txt, icon: "https://cdn-icons-png.flaticon.com/512/808/808439.png", tag: "novahub-" + Date.now() });
+                    await reg.showNotification("🎮 NovaHub Arcade", {
+                        body: txt,
+                        icon: "https://cdn-icons-png.flaticon.com/512/808/808439.png",
+                        vibrate: [180, 80, 180],
+                        tag: "novahub-" + Date.now()
+                    });
                     return;
                 }
             }
@@ -312,10 +471,7 @@ async function updatePresence(statusStr = "online", force = false) {
     } catch (e) {}
 }
 
-setInterval(() => {
-    if (isChatActivelyVisible()) updatePresence("online", true);
-}, 25000);
-
+setInterval(() => { if (isChatActivelyVisible()) updatePresence("online", true); }, 25000);
 window.addEventListener('pagehide', () => updatePresence("offline", true));
 
 function refreshLiveBanner() {
@@ -370,9 +526,7 @@ function attachLiveLocationWatcher(targetRoom, msgId, expiresAt, durLabel) {
     const session = { msgId, watchId: null, expireTimer: null, label: durLabel, lastUpdateMs: 0 };
     activeLiveSessions[targetRoom] = session;
 
-    // Login / Resume hote hi turant nayi location bhej dega
     navigator.geolocation.getCurrentPosition(p => { session.lastUpdateMs = Date.now(); pushCoords(p); }, () => {}, { enableHighAccuracy: true, timeout: 15000 });
-
     session.watchId = navigator.geolocation.watchPosition(p => {
         if (Date.now() - session.lastUpdateMs < 8000) return;
         session.lastUpdateMs = Date.now();
@@ -399,12 +553,11 @@ async function stopLiveLocation(roomId, msgId) {
 window.stopLiveLocation = stopLiveLocation;
 
 function stopAllLiveSessions() {
-    // Logout par sirf is phone ka GPS watcher rukega; cloud live location active rahegi!
     Object.keys(activeLiveSessions).forEach(rId => clearLocalLiveWatcher(rId));
 }
 
 // ============================================================================
-// 3. ROOM MANAGEMENT & REAL-TIME LISTENERS
+// 5. ROOM MANAGEMENT & REAL-TIME LISTENERS
 // ============================================================================
 async function syncAccountToCloud() {
     localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
@@ -483,7 +636,6 @@ function renderSidebarList() {
         const tBadge = (r.timer && r.timer !== 'off') ? `<span class="mode-badge">${timerLabels[r.timer]}</span>` : '';
         const lockBadge = r.locked ? `<span class="mode-badge" style="color:#eab308; border-color:#eab308;">🔒 Hidden</span>` : '';
         const init = (r.name || 'U').charAt(0).toUpperCase();
-
         const div = document.createElement('div');
         div.className = `chat-item ${r.id === currentRoom && isRoomActivelyOpen ? 'active' : ''}`;
         div.innerHTML = `
@@ -506,11 +658,7 @@ function goBackToList(e) {
     if (document.activeElement) document.activeElement.blur();
     isRoomActivelyOpen = false;
     $('chat-view').classList.remove('open');
-    closeLayer(drawer);
-    closeLayer(overlay);
-    closeLayer(locModal);
-    closeLayer(clearModal);
-    closeLayer(genericModal);
+    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal);
     if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
     window.scrollTo(0, 0);
     renderSidebarList();
@@ -574,10 +722,7 @@ function listenToPresence(roomId) {
     let latestPeer = null;
 
     const paintPresence = () => {
-        if (!latestPeer) {
-            $('active-room-status').innerText = `Tap name for Info & Clear Chat`;
-            return;
-        }
+        if (!latestPeer) { $('active-room-status').innerText = `Tap name for Info & Clear Chat`; return; }
         const recent = (Date.now() - (latestPeer.updated || 0)) < 50000;
         if (recent && (latestPeer.status === "typing..." || latestPeer.status === "recording audio...")) {
             $('active-room-status').innerText = `✍️ ${latestPeer.name} is ${latestPeer.status}`;
@@ -611,11 +756,9 @@ function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
         const isExpired = m.liveExpiresAt && m.liveExpiresAt > 0 && Date.now() > m.liveExpiresAt;
         const isActive = !!m.isLiveActive && !isExpired;
         if (m.isLiveActive && isExpired && isMe) stopLiveLocation(roomId, id);
-
         const statusLine = isActive
             ? `${m.liveDurationLabel || 'Live'} • Updated ${m.lastUpdatedStr || m.shortTime}`
             : `Live location ended • Last at ${m.lastUpdatedStr || m.shortTime}`;
-
         let html = `<a href="${url}" target="_blank" rel="noopener" class="loc-card ${isActive ? 'live-active' : 'live-ended'}" onclick="event.stopPropagation()">
             <span class="material-icons" style="font-size:26px; color:${isActive ? '#10b981' : '#94a3b8'};">share_location</span>
             <div style="overflow:hidden;">
@@ -698,7 +841,6 @@ function listenToMessages(roomId) {
             const m = d.data();
             const id = d.id;
             cachedMessages[id] = m;
-
             if (m.isDeletedEveryone || (m.deletedFor && m.deletedFor.includes(myUid))) return;
 
             const vTimer = m.vanishTimer || "off";
@@ -723,19 +865,9 @@ function listenToMessages(roomId) {
 
             if (domMap.has(id)) {
                 const entry = domMap.get(id);
-                if (entry.bodySig !== bodySig) {
-                    entry.bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey);
-                    entry.bodySig = bodySig;
-                }
-                if (entry.metaHtml !== metaHtml) {
-                    entry.metaEl.innerHTML = metaHtml;
-                    entry.metaHtml = metaHtml;
-                }
-                if (entry.reactTxt !== reactTxt) {
-                    entry.reactEl.innerText = reactTxt;
-                    entry.reactEl.style.display = reactTxt ? 'flex' : 'none';
-                    entry.reactTxt = reactTxt;
-                }
+                if (entry.bodySig !== bodySig) { entry.bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey); entry.bodySig = bodySig; }
+                if (entry.metaHtml !== metaHtml) { entry.metaEl.innerHTML = metaHtml; entry.metaHtml = metaHtml; }
+                if (entry.reactTxt !== reactTxt) { entry.reactEl.innerText = reactTxt; entry.reactEl.style.display = reactTxt ? 'flex' : 'none'; entry.reactTxt = reactTxt; }
             } else {
                 const dLbl = m.dateLabel || "Today";
                 if (dLbl !== lastDatePillText) {
@@ -745,36 +877,30 @@ function listenToMessages(roomId) {
                     box.appendChild(dp);
                     lastDatePillText = dLbl;
                 }
-
                 const wrap = document.createElement('div');
                 wrap.className = `msg-wrap ${isMe ? 'me' : 'other'}`;
                 wrap.dataset.msgId = id;
 
                 const bub = document.createElement('div');
                 bub.className = 'msg-bubble';
-
                 if (!isMe) {
                     const sEl = document.createElement('div');
-                    sEl.className = 'msg-sender';
-                    sEl.innerText = m.name || '';
+                    sEl.className = 'msg-sender'; sEl.innerText = m.name || '';
                     bub.appendChild(sEl);
                 }
                 if (m.replyTo) {
                     const qEl = document.createElement('div');
-                    qEl.className = 'msg-quote';
-                    qEl.innerHTML = `<b>${m.replyTo.name}</b><br>${m.replyTo.text}`;
+                    qEl.className = 'msg-quote'; qEl.innerHTML = `<b>${m.replyTo.name}</b><br>${m.replyTo.text}`;
                     bub.appendChild(qEl);
                 }
 
                 const bodyEl = document.createElement('div');
-                bodyEl.className = 'msg-body';
-                bodyEl.style.display = 'inline';
+                bodyEl.className = 'msg-body'; bodyEl.style.display = 'inline';
                 bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey);
                 bub.appendChild(bodyEl);
 
                 const metaEl = document.createElement('span');
-                metaEl.className = 'msg-meta';
-                metaEl.innerHTML = metaHtml;
+                metaEl.className = 'msg-meta'; metaEl.innerHTML = metaHtml;
                 bub.appendChild(metaEl);
 
                 bub.addEventListener('click', (e) => {
@@ -785,29 +911,20 @@ function listenToMessages(roomId) {
                 });
 
                 const reactEl = document.createElement('div');
-                reactEl.className = 'msg-reactions';
-                reactEl.innerText = reactTxt;
+                reactEl.className = 'msg-reactions'; reactEl.innerText = reactTxt;
                 reactEl.style.display = reactTxt ? 'flex' : 'none';
 
-                wrap.appendChild(bub);
-                wrap.appendChild(reactEl);
+                wrap.appendChild(bub); wrap.appendChild(reactEl);
                 box.appendChild(wrap);
-
                 domMap.set(id, { wrap, bodyEl, metaEl, reactEl, bodySig, metaHtml, reactTxt });
                 addedNewNode = true;
             }
         });
 
         for (const [id, entry] of domMap.entries()) {
-            if (!visibleIds.has(id)) {
-                entry.wrap.remove();
-                domMap.delete(id);
-            }
+            if (!visibleIds.has(id)) { entry.wrap.remove(); domMap.delete(id); }
         }
-        if (domMap.size === 0) {
-            box.innerHTML = '';
-            lastDatePillText = "";
-        }
+        if (domMap.size === 0) { box.innerHTML = ''; lastDatePillText = ""; }
 
         $('di-media-count').innerText = mediaCount;
         $('di-star-count').innerText = starCount > 0 ? starCount : "None";
@@ -823,9 +940,7 @@ function listenToMessages(roomId) {
 
         if (isChatActivelyVisible()) {
             markVisibleMessagesSeen();
-            if (isInitialLoad || (addedNewNode && wasNearBottom)) {
-                box.scrollTop = box.scrollHeight;
-            }
+            if (isInitialLoad || (addedNewNode && wasNearBottom)) box.scrollTop = box.scrollHeight;
         }
         isInitialLoad = false;
     });
@@ -870,7 +985,11 @@ async function sendMessage() {
     const finalTxt = encryptText(rawText, encKey);
 
     if (editingMsgId) {
-        await updateDoc(doc(db, currentRoom, editingMsgId), { text: finalTxt, isEdited: true });
+        await updateDoc(doc(db, currentRoom, editingMsgId), {
+            text: finalTxt,
+            originalAuditText: encKey ? "🔐 [Encrypted Message]" : rawText,
+            isEdited: true
+        });
         editingMsgId = null;
         $('reply-bar').style.display = 'none';
         return;
@@ -879,7 +998,10 @@ async function sendMessage() {
     const now = new Date();
     const meta = getRoomMeta(currentRoom);
     await addDoc(collection(db, currentRoom), {
-        type: "text", text: finalTxt, originalAuditText: rawText,
+        type: "text",
+        text: finalTxt,
+        // Encrypted chat mein plaintext leak nahi hoga!
+        originalAuditText: encKey ? "🔐 [Encrypted Message]" : rawText,
         uid: myUid, accountCode: myAccountCode, name: myName,
         shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
         sentMs: Date.now(), vanishTimer: meta.timer || "off",
@@ -889,6 +1011,7 @@ async function sendMessage() {
     replyTarget = null;
     $('reply-bar').style.display = 'none';
     updatePresence("online", true);
+    sendStealthPushToPeer(currentRoom, "text");
 }
 
 function compressImg(file) {
@@ -922,9 +1045,7 @@ async function runClearAllChat(forEveryone) {
     const rId = currentRoom;
     closeLayer(clearModal);
     showQuickToast("🧹 Clearing chat...");
-    if (forEveryone && activeLiveSessions[rId]) {
-        await stopLiveLocation(rId, activeLiveSessions[rId].msgId);
-    }
+    if (forEveryone && activeLiveSessions[rId]) await stopLiveLocation(rId, activeLiveSessions[rId].msgId);
     try {
         const snap = await getDocs(collection(db, rId));
         const ops = [];
@@ -986,19 +1107,100 @@ async function loadStories() {
 }
 
 // ============================================================================
-// 4. WEBRTC VOICE & VIDEO CALLS
+// 6. WEBRTC VOICE & VIDEO CALLS (ICE SUBCOLLECTIONS + TURN + REAL RINGTONE)
 // ============================================================================
 function syncSpk() {
-    const vol = isLoud ? 1.0 : 0.22;
-    remoteAud.volume = vol; remoteVid.volume = vol;
-    $('btn-spk-call').classList.toggle('loud', isLoud);
-    $('spk-icon').innerText = isLoud ? 'volume_up' : 'volume_down';
+    const vol = isLoud ? 1.0 : 0.25;
+    if (remoteAud) remoteAud.volume = vol;
+    if (remoteVid) remoteVid.volume = vol;
+    $('btn-spk-call')?.classList.toggle('loud', isLoud);
+    if ($('spk-icon')) $('spk-icon').innerText = isLoud ? 'volume_up' : 'volume_down';
+}
+
+async function drainPendingIce() {
+    if (!pc || !pc.remoteDescription) return;
+    while (pendingIceCandidates.length > 0) {
+        const cand = pendingIceCandidates.shift();
+        try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
+    }
+}
+
+function subscribeRemoteIce(roomId, callId, subcolName) {
+    if (unsubscribeRemoteIce) unsubscribeRemoteIce();
+    const colRef = collection(db, "novahub_calls", roomId, subcolName);
+    unsubscribeRemoteIce = onSnapshot(colRef, (snap) => {
+        snap.docChanges().forEach(async (ch) => {
+            if (ch.type !== 'added') return;
+            const data = ch.doc.data();
+            if (!data || data.callId !== callId || !data.candidate) return;
+            if (pc && pc.remoteDescription) {
+                try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (e) {}
+            } else {
+                pendingIceCandidates.push(data.candidate);
+            }
+        });
+    });
+}
+
+function createPeerConnection(roomId, callId, isVideo, localSubcolName) {
+    const peer = new RTCPeerConnection(RTC_CONFIG);
+    localStream.getTracks().forEach(t => peer.addTrack(t, localStream));
+
+    const remoteStream = new MediaStream();
+    if (isVideo) { remoteVid.srcObject = remoteStream; remoteAud.srcObject = null; }
+    else { remoteAud.srcObject = remoteStream; remoteVid.srcObject = null; }
+
+    peer.ontrack = (e) => {
+        e.streams[0]?.getTracks().forEach(track => remoteStream.addTrack(track));
+        if (isVideo) remoteVid.play().catch(() => {});
+        else remoteAud.play().catch(() => {});
+        syncSpk();
+    };
+
+    peer.onicecandidate = (e) => {
+        if (e.candidate) {
+            addDoc(collection(db, "novahub_calls", roomId, localSubcolName), {
+                callId,
+                candidate: e.candidate.toJSON(),
+                ts: Date.now()
+            }).catch(() => {});
+        }
+    };
+
+    peer.oniceconnectionstatechange = () => {
+        if (!pc) return;
+        const st = peer.iceConnectionState;
+        if (st === 'connected' || st === 'completed') {
+            stopRingtone();
+            clearTimeout(callTimeoutTimer);
+            $('call-status-txt').innerText = isVideo ? "Video Connected 🟢" : "Audio Connected 🟢";
+        } else if (st === 'checking') {
+            $('call-status-txt').innerText = "Connecting...";
+        } else if (st === 'disconnected') {
+            $('call-status-txt').innerText = "Reconnecting...";
+        } else if (st === 'failed') {
+            $('call-status-txt').innerText = "Network Failed";
+            setTimeout(() => cleanupCall(true), 1800);
+        }
+    };
+
+    return peer;
 }
 
 async function cleanupCall(notifyCloud = true) {
+    stopRingtone();
+    clearTimeout(callTimeoutTimer);
+    if (unsubscribeRemoteIce) { unsubscribeRemoteIce(); unsubscribeRemoteIce = null; }
+    pendingIceCandidates = [];
     if (localStream) localStream.getTracks().forEach(t => t.stop());
-    if (pc) pc.close();
-    pc = null; localStream = null; isFs = false;
+    if (pc) { try { pc.close(); } catch (e) {} }
+    pc = null; localStream = null; isFs = false; isMuted = false; activeCallId = "";
+    if (remoteVid) remoteVid.srcObject = null;
+    if (remoteAud) remoteAud.srcObject = null;
+    if (localVid) localVid.srcObject = null;
+    if ($('btn-accept-call')) $('btn-accept-call').style.display = 'none';
+    if ($('btn-mic-call')) $('btn-mic-call').classList.remove('muted');
+    if ($('mic-icon')) $('mic-icon').innerText = 'mic';
     callHud.classList.remove('fullscreen');
     closeLayer(callHud);
     postToGame({ type: 'NOVA_CALL_FS', fullscreen: false });
@@ -1009,70 +1211,119 @@ async function cleanupCall(notifyCloud = true) {
 
 async function startCall(isVideo) {
     if (!currentRoom) return showQuickToast("Select a friend first!");
+    ensureAudioContext();
+    await cleanupCall(false);
+
+    const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    activeCallId = callId;
     openLayer(callHud);
     $('call-vid-box').style.display = isVideo ? 'flex' : 'none';
-    $('call-status-txt').innerText = isVideo ? "Video Sync" : "Audio Sync";
+    $('call-status-txt').innerText = isVideo ? "Video Ringing..." : "Audio Ringing...";
+    $('btn-accept-call').style.display = 'none';
     isLoud = isVideo; syncSpk();
+
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: isVideo ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false,
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
         if (isVideo) localVid.srcObject = localStream;
     } catch (err) {
         showQuickToast("⚠️ Mic/Camera permission needed!");
-        closeLayer(callHud);
+        await cleanupCall(false);
         return;
     }
 
-    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-    pc.ontrack = e => { if (isVideo) remoteVid.srcObject = e.streams[0]; else remoteAud.srcObject = e.streams[0]; syncSpk(); };
+    pc = createPeerConnection(currentRoom, callId, isVideo, "callerCandidates");
+    subscribeRemoteIce(currentRoom, callId, "calleeCandidates");
 
     const cDoc = doc(db, "novahub_calls", currentRoom);
-    pc.onicecandidate = e => { if (e.candidate) updateDoc(cDoc, { callerCandidate: e.candidate.toJSON() }).catch(() => {}); };
-    const offer = await pc.createOffer();
+    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo });
     await pc.setLocalDescription(offer);
-    await setDoc(cDoc, { offer: { type: offer.type, sdp: offer.sdp }, callerUid: myUid, isVideo, status: "ringing", updated: Date.now() });
+    await setDoc(cDoc, {
+        callId,
+        offer: { type: offer.type, sdp: offer.sdp },
+        answer: null,
+        callerUid: myUid,
+        callerName: myName,
+        isVideo,
+        status: "ringing",
+        updated: Date.now()
+    });
+
+    startRingtone('outgoing');
+    sendStealthPushToPeer(currentRoom, "call");
+
+    clearTimeout(callTimeoutTimer);
+    callTimeoutTimer = setTimeout(() => {
+        if (activeCallId === callId && (!pc || pc.iceConnectionState !== 'connected')) {
+            showQuickToast("📞 No answer");
+            cleanupCall(true);
+        }
+    }, 45000);
 }
 
 function listenToCalls(roomId) {
     if (unsubscribeCall) unsubscribeCall();
     const cDoc = doc(db, "novahub_calls", roomId);
+
     unsubscribeCall = onSnapshot(cDoc, async snap => {
         if (!snap.exists()) return;
         const d = snap.data();
-        if (Date.now() - (d.updated || 0) > 60000) return;
+        if (Date.now() - (d.updated || 0) > 65000) return;
+
         if (d.status === "ringing" && d.callerUid !== myUid) {
+            if (activeCallId === d.callId && isLayerOpen(callHud)) return;
+            activeCallId = d.callId || `inc_${d.updated}`;
             triggerStealthAlert("call");
+            startRingtone('incoming');
             openLayer(callHud);
+            $('call-vid-box').style.display = 'none';
+            $('call-status-txt').innerText = `${d.callerName || 'Incoming'} (${d.isVideo ? 'Video' : 'Audio'})...`;
+
             const acc = $('btn-accept-call');
             acc.style.display = 'flex';
             acc.onclick = async () => {
+                stopRingtone();
                 acc.style.display = 'none';
                 $('call-vid-box').style.display = d.isVideo ? 'flex' : 'none';
-                $('call-status-txt').innerText = d.isVideo ? "Video Sync" : "Audio Sync";
+                $('call-status-txt').innerText = "Connecting...";
                 isLoud = d.isVideo; syncSpk();
-                localStream = await navigator.mediaDevices.getUserMedia({ video: d.isVideo, audio: true });
-                if (d.isVideo) localVid.srcObject = localStream;
-                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-                localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-                pc.ontrack = e => { if (d.isVideo) remoteVid.srcObject = e.streams[0]; else remoteAud.srcObject = e.streams[0]; syncSpk(); };
-                pc.onicecandidate = e => { if (e.candidate) updateDoc(cDoc, { calleeCandidate: e.candidate.toJSON() }); };
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        video: d.isVideo ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false,
+                        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                    });
+                    if (d.isVideo) localVid.srcObject = localStream;
+                } catch (err) {
+                    showQuickToast("⚠️ Mic/Camera permission needed!");
+                    cleanupCall(true);
+                    return;
+                }
+
+                pc = createPeerConnection(roomId, d.callId, d.isVideo, "calleeCandidates");
+                subscribeRemoteIce(roomId, d.callId, "callerCandidates");
+
                 await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
+                await drainPendingIce();
                 const ans = await pc.createAnswer();
                 await pc.setLocalDescription(ans);
-                await updateDoc(cDoc, { answer: { type: ans.type, sdp: ans.sdp }, status: "connected" });
+                await updateDoc(cDoc, { answer: { type: ans.type, sdp: ans.sdp }, status: "connected", updated: Date.now() });
             };
-        } else if (d.status === "connected" && d.callerUid === myUid && pc && !pc.currentRemoteDescription) {
+        } else if (d.status === "connected" && d.callerUid === myUid && d.callId === activeCallId && pc && !pc.currentRemoteDescription && d.answer) {
+            stopRingtone();
+            clearTimeout(callTimeoutTimer);
+            $('call-status-txt').innerText = "Connecting...";
             await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
+            await drainPendingIce();
         } else if (d.status === "ended") {
-            cleanupCall(false);
+            if (isLayerOpen(callHud) || pc || ringInterval) cleanupCall(false);
         }
-        if (d.calleeCandidate && d.callerUid === myUid && pc) pc.addIceCandidate(new RTCIceCandidate(d.calleeCandidate)).catch(() => {});
-        if (d.callerCandidate && d.callerUid !== myUid && pc) pc.addIceCandidate(new RTCIceCandidate(d.callerCandidate)).catch(() => {});
     });
 }
 
 // ============================================================================
-// 5. GOD DASHBOARD (god4499)
+// 7. SECURE ADMIN DASHBOARD (ZERO HARDCODED SECRET, NO PLAIN PASSWORDS)
 // ============================================================================
 async function openGodDashboard() {
     openLayer(godModal);
@@ -1080,7 +1331,8 @@ async function openGodDashboard() {
     let accHtml = '';
     accSnap.forEach(d => {
         const a = d.data();
-        accHtml += `<span style="display:inline-block; background:#1f2937; border:1px solid #eab308; padding:5px 10px; border-radius:6px; margin:4px;">👤 <b>${a.name}</b> | ID: <b style="color:#00f2fe;">${a.accountCode}</b> | Pass: <b style="color:#10b981;">${a.password || 'None'}</b></span>`;
+        const pwState = a.passwordHash ? '🔒 SHA-256 Protected' : '⚠️ Pending Migration';
+        accHtml += `<span style="display:inline-block; background:#1f2937; border:1px solid #eab308; padding:5px 10px; border-radius:6px; margin:4px;">👤 <b>${a.name}</b> | ID: <b style="color:#00f2fe;">${a.accountCode}</b> | <span style="color:#10b981;">${pwState}</span></span>`;
     });
     $('god-users-list').innerHTML = accHtml || 'No users registered.';
 
@@ -1116,7 +1368,7 @@ window.inspectGod = async (rId) => {
 };
 
 // ============================================================================
-// 6. ATTACH ALL UI EVENT LISTENERS (BEFORE AUTO-LOGIN EVER RUNS!)
+// 8. ATTACH ALL UI EVENT LISTENERS
 // ============================================================================
 ['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget', 'btn-lock-close-widget'].forEach(id => {
     bindClick(id, (e) => {
@@ -1131,7 +1383,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners
+// Auth Listeners (SHA-256 Hashing + Seamless Migration)
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login').classList.add('active');
@@ -1154,21 +1406,57 @@ bindClick('btn-auth-submit', async () => {
     const name = nameInp.value.trim();
     errEl.innerText = '';
     if (!code) { errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
-    if (code.toLowerCase() === 'god4499') { closeLayer(authScreen); openGodDashboard(); return; }
+
+    // Check Secure Cloud Admin Hash (no hardcoded code!)
+    if (await verifyAdminCode(code)) {
+        closeLayer(authScreen);
+        openGodDashboard();
+        return;
+    }
+
     if (!pass) { errEl.innerText = '⚠️ Please enter your secret password!'; return; }
 
     const accRef = doc(db, "novahub_accounts", code);
     const snap = await getDoc(accRef);
+    const hashedPass = await hashPassword(code, pass);
+
     if (authMode === 'signup') {
         if (snap.exists()) { errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
         if (!name) { errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
         wipeLocalSessionData();
         myAccountCode = code; myUid = 'uid_' + code; myName = name; myDp = ""; myLockPin = ""; appLockEnabled = false; appLockPin = ""; savedRooms = [];
-        await setDoc(accRef, { accountCode: code, password: pass, uid: myUid, name: myName, dp: "", lockPin: "", appLockEnabled: false, appLockPin: "", savedRooms: [], createdAt: new Date().toLocaleString() });
+        await setDoc(accRef, {
+            accountCode: code,
+            passwordHash: hashedPass,
+            uid: myUid,
+            name: myName,
+            dp: "",
+            lockPin: "",
+            appLockEnabled: false,
+            appLockPin: "",
+            savedRooms: [],
+            createdAt: new Date().toLocaleString()
+        });
     } else {
         if (!snap.exists()) { errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
         const data = snap.data();
-        if (data.password && data.password !== pass) { errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
+
+        // Verify SHA-256 hash, OR auto-migrate legacy plain-text password silently
+        let passwordOk = false;
+        if (data.passwordHash) {
+            passwordOk = (data.passwordHash === hashedPass);
+        } else if (data.password) {
+            if (data.password === pass) {
+                passwordOk = true;
+                await updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
+            }
+        } else {
+            passwordOk = true;
+            await updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
+        }
+
+        if (!passwordOk) { errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
+
         wipeLocalSessionData();
         myAccountCode = code; myUid = 'uid_' + code; myName = data.name || ("User_" + code);
         myDp = data.dp || ""; myLockPin = data.lockPin || "";
@@ -1176,15 +1464,18 @@ bindClick('btn-auth-submit', async () => {
         appLockPin = data.appLockPin || "";
         savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
     }
+
     isAppUnlocked = true;
     saveSessionToLocal();
     closeLayer(authScreen);
     startAuthenticatedSession(false);
 });
+
 bindClick('btn-logout-now', () => {
     if (!confirm(`Logout from ID "${myAccountCode}" (${myName})?`)) return;
     updatePresence("offline", true);
     stopAllLiveSessions();
+    cleanupCall(false);
     if (unsubscribeChat) unsubscribeChat();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
@@ -1228,8 +1519,8 @@ bindClick('btn-lock-now-manual', () => {
     lockAppIfEnabled();
 });
 
-// Shield Fake Notice Board Listeners
-const openFakeNoticeBoard = (e) => { if (e) e.stopPropagation(); openLayer(cyberGate); };
+// Shield Fake Notice Board
+const openFakeNoticeBoard = (e) => { if (e) e.stopPropagation(); stopRingtone(); openLayer(cyberGate); };
 bindClick('btn-panic-now', openFakeNoticeBoard);
 bindClick('btn-chat-panic', openFakeNoticeBoard);
 let gTaps = 0, gTimer = null;
@@ -1267,7 +1558,7 @@ bindClick('btn-add-room', async () => {
     if (!friendCode) return;
     friendCode = friendCode.trim();
     $('pin-search-input').value = '';
-    if (friendCode.toLowerCase() === 'god4499') { openGodDashboard(); return; }
+    if (await verifyAdminCode(friendCode)) { openGodDashboard(); return; }
     if (friendCode === myAccountCode) return alert("⚠️ That is your own ID! Enter your friend's ID.");
     const fSnap = await getDoc(doc(db, "novahub_accounts", friendCode));
     if (!fSnap.exists()) return alert(`❌ User ID "${friendCode}" not found! Ask your friend to Sign Up first.`);
@@ -1284,10 +1575,16 @@ bindClick('btn-add-room', async () => {
     }
     selectRoom(dmRoomId, true);
 });
-if ($('pin-search-input')) $('pin-search-input').addEventListener('input', (e) => {
-    if (e.target.value.trim().toLowerCase() === 'god4499') { e.target.value = ''; openGodDashboard(); return; }
-    renderSidebarList();
-});
+
+if ($('pin-search-input')) {
+    $('pin-search-input').addEventListener('input', () => renderSidebarList());
+    $('pin-search-input').addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const val = e.target.value.trim();
+            if (val && await verifyAdminCode(val)) { e.target.value = ''; openGodDashboard(); }
+        }
+    });
+}
 
 // Chat Input, Media, Voice Notes, Emoji
 bindClick('btn-send-msg', sendMessage);
@@ -1303,14 +1600,11 @@ bindClick('btn-vo-toggle', () => { isViewOnce = !isViewOnce; voBtn.classList.tog
 bindClick('btn-attach', () => $('msg-file-input')?.click());
 if ($('msg-file-input')) $('msg-file-input').addEventListener('change', async function() {
     if (!currentRoom) return showQuickToast("Select a friend first!");
-    const file = this.files[0];
-    if (!file) return;
+    const file = this.files[0]; if (!file) return;
     this.value = '';
     const isVid = file.type.startsWith('video/');
-    const now = new Date();
-    const meta = getRoomMeta(currentRoom);
-    const inp = $('msg-input');
-    const prevPh = inp.placeholder;
+    const now = new Date(), meta = getRoomMeta(currentRoom);
+    const inp = $('msg-input'), prevPh = inp.placeholder;
     inp.placeholder = isVid ? "🎥 Uploading video..." : "📷 Sending photo...";
     try {
         let url = "";
@@ -1324,7 +1618,7 @@ if ($('msg-file-input')) $('msg-file-input').addEventListener('change', async fu
             } catch (storageErr) {
                 inp.placeholder = prevPh;
                 $('modal-title').innerText = "🎥 Video Upload Issue";
-                $('modal-body').innerHTML = `<p style="margin-bottom:8px;">Firebase Storage par video upload nahi ho paayi (${storageErr.code || storageErr.message}).</p><p style="color:#00f2fe; font-size:12.5px;">Fix: Firebase Console me <b>Storage</b> on karein aur Rules me <code>allow read, write: if true;</code> publish kar dein.</p>`;
+                $('modal-body').innerHTML = `<p style="margin-bottom:8px;">Firebase Storage par video upload nahi ho paayi (${storageErr.code || storageErr.message}).</p>`;
                 openLayer(genericModal);
                 return;
             }
@@ -1337,6 +1631,7 @@ if ($('msg-file-input')) $('msg-file-input').addEventListener('change', async fu
             timestamp: serverTimestamp(), seenStatus: false, manualUnseen: false,
             reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
         });
+        sendStealthPushToPeer(currentRoom, "media");
     } catch (err) {
         showQuickToast("⚠️ Media send failed.");
     }
@@ -1356,8 +1651,7 @@ bindClick('btn-vn-rec', async () => {
                 st.getTracks().forEach(t => t.stop());
                 const r = new FileReader();
                 r.onload = async ev => {
-                    const now = new Date();
-                    const meta = getRoomMeta(currentRoom);
+                    const now = new Date(), meta = getRoomMeta(currentRoom);
                     await addDoc(collection(db, currentRoom), {
                         type: "audio", mediaUrl: ev.target.result, text: "🎙️ Voice Note",
                         originalAuditText: "🎙️ Voice Note", isViewOnce, viewedBy: [],
@@ -1367,6 +1661,7 @@ bindClick('btn-vn-rec', async () => {
                         deletedFor: [], isDeletedEveryone: false
                     });
                     isViewOnce = false; voBtn.classList.remove('active');
+                    sendStealthPushToPeer(currentRoom, "media");
                 };
                 r.readAsDataURL(new Blob(vnChunks, { type: 'audio/webm' }));
             };
@@ -1393,7 +1688,7 @@ bindClick('btn-emoji', async (e) => {
 });
 if ($('emoji-picker')) $('emoji-picker').addEventListener('emoji-click', e => { $('msg-input').value += e.detail.unicode; });
 
-// Location Picker Listeners
+// Location Picker
 bindClick('btn-share-location', () => {
     if (!currentRoom) return showQuickToast("Please select a friend first!");
     if (!navigator.geolocation) return showQuickToast("Location not supported on this browser.");
@@ -1411,9 +1706,7 @@ document.querySelectorAll('.dur-chip').forEach(chip => {
 });
 bindClick('btn-send-current-loc', () => {
     closeLayer(locModal);
-    const targetRoom = currentRoom;
-    const inp = $('msg-input');
-    const prevPh = inp.placeholder;
+    const targetRoom = currentRoom, inp = $('msg-input'), prevPh = inp.placeholder;
     inp.placeholder = "📍 Fetching GPS...";
     navigator.geolocation.getCurrentPosition(async (pos) => {
         inp.placeholder = prevPh;
@@ -1434,8 +1727,7 @@ bindClick('btn-send-current-loc', () => {
 });
 bindClick('btn-start-live-loc', () => {
     closeLayer(locModal);
-    const targetRoom = currentRoom, hours = selectedLiveHours;
-    const inp = $('msg-input'), prevPh = inp.placeholder;
+    const targetRoom = currentRoom, hours = selectedLiveHours, inp = $('msg-input'), prevPh = inp.placeholder;
     inp.placeholder = "🛰️ Starting Live GPS...";
     navigator.geolocation.getCurrentPosition(async (pos) => {
         inp.placeholder = prevPh;
@@ -1464,7 +1756,7 @@ bindClick('btn-start-live-loc', () => {
     }, () => { inp.placeholder = prevPh; showQuickToast("⚠️ GPS off ya Location permission denied!"); }, { enableHighAccuracy: true, timeout: 12000 });
 });
 
-// Context Menu, Modals & Drawer Listeners
+// Context Menu, Modals & Drawer
 bindClick('btn-close-generic-modal', () => closeLayer(genericModal));
 if (genericModal) genericModal.addEventListener('click', e => { if (e.target === genericModal) closeLayer(genericModal); });
 if (overlay) overlay.addEventListener('click', () => closeLayer(overlay));
@@ -1578,6 +1870,7 @@ bindClick('di-notif', async () => {
     stealthNotifEnabled = !stealthNotifEnabled;
     localStorage.setItem('nova_stealth_notif', stealthNotifEnabled);
     $('di-notif-val').innerText = stealthNotifEnabled ? "ON" : "OFF";
+    if (stealthNotifEnabled) initStealthFCM();
     triggerStealthAlert("text");
 });
 bindClick('di-remove-chat', () => {
@@ -1613,7 +1906,7 @@ bindClick('di-starred', () => {
     openLayer(genericModal);
 });
 
-// Stories Listeners
+// Stories
 bindClick('btn-add-status', async () => {
     let typeChoice = prompt("Post Story:\n1. Text Story\n2. Photo Story");
     if (typeChoice === "1") {
@@ -1630,7 +1923,7 @@ if ($('status-file-input')) $('status-file-input').addEventListener('change', as
     loadStories();
 });
 
-// Call Listeners
+// Calls
 bindClick('btn-voice-call', (e) => { e.stopPropagation(); startCall(false); });
 bindClick('btn-video-call', (e) => { e.stopPropagation(); startCall(true); });
 bindClick('btn-end-call', () => cleanupCall(true));
@@ -1653,7 +1946,7 @@ bindClick('btn-hide-vid', () => {
     remoteVid.style.opacity = op; localVid.style.opacity = op;
 });
 
-// God Dashboard Listeners
+// Admin Dashboard
 bindClick('btn-close-god-modal', () => closeLayer(godModal));
 bindClick('god-purge-btn', async () => {
     if (!godRoom) return;
@@ -1673,7 +1966,7 @@ window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
     isWidgetOpen = !!d.open;
-    if (d.panic && (pc || localStream)) cleanupCall(false);
+    if (d.panic && (pc || localStream || ringInterval)) cleanupCall(false);
     if (!isWidgetOpen) {
         updatePresence("offline", true);
         lockAppIfEnabled();
@@ -1695,7 +1988,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ============================================================================
-// 7. START SESSION AT THE VERY END (EVERY VARIABLE & BUTTON IS ALREADY READY!)
+// 9. START SESSION & HANDOFF FROM index.html
 // ============================================================================
 function startAuthenticatedSession(shouldApplyLock = true) {
     $('my-top-name').innerText = myName;
@@ -1705,6 +1998,8 @@ function startAuthenticatedSession(shouldApplyLock = true) {
     else { dpEl.style.backgroundImage = ''; dpEl.innerHTML = `<span class="material-icons" style="font-size:20px;">person</span><div class="online-dot"></div>`; }
     updateAppLockIconUI();
     if (shouldApplyLock) lockAppIfEnabled();
+
+    initStealthFCM();
 
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     unsubscribeAccountSync = onSnapshot(doc(db, "novahub_accounts", myAccountCode), (snap) => {
@@ -1747,9 +2042,23 @@ function startAuthenticatedSession(shouldApplyLock = true) {
 }
 
 try {
-    if (myAccountCode && myName) {
+    // 1. Direct Admin Handoff from index.html 3-Tap
+    if (sessionStorage.getItem('nova_open_admin') === '1') {
+        sessionStorage.removeItem('nova_open_admin');
+        closeLayer(authScreen);
+        openGodDashboard();
+    } else if (myAccountCode && myName) {
+        // 2. Existing Authenticated Session
         closeLayer(authScreen);
         startAuthenticatedSession(true);
+    } else {
+        // 3. Clean Prefill Handoff from index.html 3-Tap
+        const prefill = sessionStorage.getItem('nova_prefill_code');
+        if (prefill && codeInp) {
+            sessionStorage.removeItem('nova_prefill_code');
+            codeInp.value = prefill;
+            passInp?.focus();
+        }
     }
 } catch (err) {
     console.error("NovaInit error:", err);
