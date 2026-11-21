@@ -538,7 +538,7 @@
 
     renderQuickLinks();
 
-    // ==================== FIXED SECRET 3-TAP HANDOFF ====================
+        // ==================== DIRECT 1-STEP 3-TAP ENTRY (NO POPUP) ====================
     let clickCount = 0, clickTimer = null;
 
     function handleTripleTap() {
@@ -546,9 +546,8 @@
       clearTimeout(clickTimer);
       if (clickCount >= 3) {
         clickCount = 0;
-        document.getElementById('passcode-modal').classList.remove('hidden');
-        document.getElementById('secret-pin-input').value = localStorage.getItem('nova_account_code') || '';
-        document.getElementById('secret-pin-input').focus();
+        localStorage.setItem('nova_stealth_gate_locked', 'false');
+        window.location.href = 'chat.html';
       } else {
         clickTimer = setTimeout(() => { clickCount = 0; }, 600);
       }
@@ -556,41 +555,7 @@
 
     document.getElementById('left-secret-trigger').addEventListener('click', handleTripleTap);
     document.getElementById('secret-trigger-btn').addEventListener('click', handleTripleTap);
-    document.getElementById('cancel-pin-btn').addEventListener('click', () => {
-      document.getElementById('passcode-modal').classList.add('hidden');
-    });
 
-    async function loginWithPersonalCode() {
-      const myCode = document.getElementById('secret-pin-input').value.trim();
-      if (!myCode) return alert("Apna Permanent ID Code dalein!");
-
-      localStorage.setItem('nova_stealth_gate_locked', 'false');
-
-      // 1. Check Secure Cloud Admin Hash (no hardcoded secret!)
-      const adm = await checkAdminAccess(myCode);
-      if (adm.status === 'ok') {
-        sessionStorage.setItem('nova_open_admin', '1');
-        window.location.href = 'chat.html';
-        return;
-      }
-
-      // 2. If same account is already authenticated on this device, open directly
-      const activeCode = (localStorage.getItem('nova_account_code') || '').trim();
-      const activeName = (localStorage.getItem('nova_username') || '').trim();
-      if (activeCode === myCode && activeName) {
-        window.location.href = 'chat.html';
-        return;
-      }
-
-      // 3. Otherwise cleanly hand off to chat.html login screen with ID prefilled (never corrupts uid)
-      sessionStorage.setItem('nova_prefill_code', myCode);
-      window.location.href = 'chat.html';
-    }
-
-    document.getElementById('submit-pin-btn').addEventListener('click', loginWithPersonalCode);
-    document.getElementById('secret-pin-input').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') loginWithPersonalCode();
-    });
 
     function setupFakeUpload(id, labelId, txt) {
       const el = document.getElementById(id);
