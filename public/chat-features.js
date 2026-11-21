@@ -756,4 +756,168 @@ function initScheme2KeypadAndPanic() {
     }
 }
 initScheme2KeypadAndPanic();
+// ============================================================================
+// 6. SLEEP GUARD (INACTIVITY AUTO-EXIT TIMER - 100% ENGLISH UI)
+// ============================================================================
+function initSleepGuard() {
+    let sgEnabled = localStorage.getItem('nova_sg_enabled') !== 'false'; // Default ON
+    let sgMinutes = Math.max(1, parseInt(localStorage.getItem('nova_sg_minutes') || '2', 10) || 2); // Default 2 min
+    let sgTimer = null;
+
+    if (!document.getElementById('nova-sg-styles')) {
+        const st = document.createElement('style');
+        st.id = 'nova-sg-styles';
+        st.textContent = `
+            #btn-sleep-guard-top {
+                display: inline-flex; align-items: center; gap: 4px;
+                padding: 5px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.16);
+                background: rgba(16,185,129,0.16); color: #34d399;
+                font-size: 11px; font-weight: 700; cursor: pointer; margin-right: 4px;
+            }
+            #btn-sleep-guard-top.sg-off {
+                background: rgba(255,255,255,0.06); color: #94a3b8;
+            }
+            #sleep-guard-modal {
+                position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+                backdrop-filter: blur(3px); z-index: 9996; display: none;
+                align-items: center; justify-content: center; padding: 16px;
+            }
+            #sleep-guard-modal.is-open { display: flex; }
+            .sg-card {
+                width: 100%; max-width: 340px; background: #0f172a;
+                border: 1px solid rgba(255,255,255,0.14); border-radius: 18px;
+                padding: 18px; color: #f8fafc; box-shadow: 0 20px 50px rgba(0,0,0,0.65);
+            }
+            body.light-mode .sg-card { background: #ffffff; color: #0f172a; border-color: rgba(15,23,42,0.14); }
+            .sg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+            .sg-title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+            .sg-close { width: 28px; height: 28px; border-radius: 999px; border: none; background: rgba(255,255,255,0.1); color: inherit; font-size: 18px; cursor: pointer; }
+            .sg-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); margin-bottom: 12px; }
+            .sg-chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+            .sg-chip {
+                padding: 8px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15);
+                background: rgba(255,255,255,0.05); color: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+            }
+            .sg-chip.active { background: #10b981; color: #052e16; border-color: #10b981; }
+            .sg-input {
+                width: 100%; padding: 10px 12px; border-radius: 10px; box-sizing: border-box;
+                border: 1px solid rgba(255,255,255,0.18); background: rgba(0,0,0,0.25);
+                color: inherit; font-size: 14px; font-weight: 600; outline: none; margin-bottom: 12px;
+            }
+            .sg-save-btn {
+                width: 100%; padding: 11px; border-radius: 12px; border: none;
+                background: #10b981; color: #052e16; font-size: 13.5px; font-weight: 800; cursor: pointer;
+            }
+        `;
+        document.head.appendChild(st);
+    }
+
+    // 1. Add Sleep Guard Button next to App Lock button in Sidebar Header
+    const lockBtn = $('btn-app-lock-toggle');
+    let sgBtn = document.getElementById('btn-sleep-guard-top');
+    if (!sgBtn && lockBtn && lockBtn.parentElement) {
+        sgBtn = document.createElement('button');
+        sgBtn.id = 'btn-sleep-guard-top';
+        sgBtn.type = 'button';
+        sgBtn.title = 'Sleep Guard Settings';
+        lockBtn.parentElement.insertBefore(sgBtn, lockBtn);
+    }
+
+    // 2. Inject Sleep Guard Settings Modal (English Only)
+    if (!document.getElementById('sleep-guard-modal')) {
+        const modal = document.createElement('div');
+        modal.id = 'sleep-guard-modal';
+        modal.innerHTML = `
+            <div class="sg-card">
+                <div class="sg-head">
+                    <div class="sg-title">🌙 Sleep Guard</div>
+                    <button type="button" class="sg-close" id="sg-close-btn">×</button>
+                </div>
+                <p style="font-size:12px; color:#94a3b8; margin:0 0 12px;">
+                    Auto-exit to Arcade Games when inactive.
+                </p>
+                <div class="sg-row">
+                    <span style="font-size:13.5px; font-weight:600;">Enable Sleep Guard</span>
+                    <input type="checkbox" id="sg-toggle-sw" style="width:18px; height:18px; accent-color:#10b981; cursor:pointer;">
+                </div>
+                <div style="font-size:11.5px; color:#94a3b8; margin-bottom:6px; font-weight:600;">Quick Presets</div>
+                <div class="sg-chips">
+                    <button type="button" class="sg-chip" data-min="2">2 min</button>
+                    <button type="button" class="sg-chip" data-min="5">5 min</button>
+                    <button type="button" class="sg-chip" data-min="10">10 min</button>
+                </div>
+                <div style="font-size:11.5px; color:#94a3b8; margin-bottom:6px; font-weight:600;">Custom Minutes</div>
+                <input type="number" id="sg-custom-min" min="1" max="120" class="sg-input" placeholder="Enter minutes (e.g. 3)" />
+                <button type="button" class="sg-save-btn" id="sg-save-btn">Save Settings</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    const modal = $('sleep-guard-modal');
+    const sw = $('sg-toggle-sw');
+    const customInp = $('sg-custom-min');
+    const chips = modal ? modal.querySelectorAll('.sg-chip') : [];
+
+    function updateBadgeUI() {
+        if (!sgBtn) return;
+        sgBtn.innerText = sgEnabled ? `🌙 ${sgMinutes}m` : '🌙 Off';
+        sgBtn.classList.toggle('sg-off', !sgEnabled);
+    }
+
+    function syncModalUI() {
+        if (sw) sw.checked = sgEnabled;
+        if (customInp) customInp.value = sgMinutes;
+        chips.forEach(c => c.classList.toggle('active', Number(c.getAttribute('data-min')) === sgMinutes));
+    }
+
+    function resetSleepTimer() {
+        clearTimeout(sgTimer);
+        if (!sgEnabled || !state.myAccountCode) return;
+        sgTimer = setTimeout(() => {
+            updatePresence("offline", true);
+            exitToArcadeNow();
+        }, sgMinutes * 60 * 1000);
+    }
+
+    // Bind UI Events
+    if (sgBtn) {
+        sgBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            syncModalUI();
+            openLayer(modal);
+        });
+    }
+    bindClick('sg-close-btn', () => closeLayer(modal));
+    if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeLayer(modal); });
+
+    chips.forEach(c => {
+        c.addEventListener('click', () => {
+            const m = Number(c.getAttribute('data-min'));
+            if (customInp) customInp.value = m;
+            chips.forEach(x => x.classList.toggle('active', x === c));
+        });
+    });
+
+    bindClick('sg-save-btn', () => {
+        const val = parseInt(customInp?.value || '2', 10);
+        sgEnabled = !!(sw && sw.checked);
+        sgMinutes = (isNaN(val) || val < 1) ? 2 : Math.min(val, 120);
+        localStorage.setItem('nova_sg_enabled', String(sgEnabled));
+        localStorage.setItem('nova_sg_minutes', String(sgMinutes));
+        updateBadgeUI();
+        resetSleepTimer();
+        closeLayer(modal);
+        showQuickToast(sgEnabled ? `🌙 Sleep Guard ON (${sgMinutes} min)` : '🌙 Sleep Guard OFF');
+    });
+
+    // Reset timer on any user activity
+    ['touchstart', 'click', 'keydown', 'scroll', 'input'].forEach(evt => {
+        window.addEventListener(evt, resetSleepTimer, { passive: true });
+    });
+
+    updateBadgeUI();
+    resetSleepTimer();
+}
+initSleepGuard();
 
