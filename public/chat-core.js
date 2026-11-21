@@ -15,9 +15,9 @@ const firebaseConfig = {
     appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
 };
 
-// FCM Lock-Screen Push Config (Firebase Console -> Project Settings -> Cloud Messaging -> Web Push VAPID Key)
-const FCM_VAPID_KEY = ""; // Optional: Yahan apni VAPID key paste karein
-const PUSH_RELAY_URL = ""; // Optional: Apne Cloud Function / Cloudflare Worker ka URL
+// FCM Lock-Screen Push Config
+const FCM_VAPID_KEY = "BLe9kr4-qcnut5ouM3AH9Ct-jjxDQBODFZJFM7eHB8dKz9N-7g9jFeyR9JrTH2eMboc6zgwqsJLNsy7glmv0t8w";
+const PUSH_RELAY_URL = "https://novahub-push.sanjaylohchab2749.workers.dev";
 
 // WebRTC ICE Servers (Multiple STUN + Free Relay TURN for Jio/Airtel 4G/5G)
 const RTC_CONFIG = {
@@ -216,14 +216,12 @@ function startRingtone(mode = 'incoming') {
     stopRingtone();
     const playCycle = () => {
         if (mode === 'incoming') {
-            // Classic pleasant dual-pulse ringtone
             playTonePair(523.25, 659.25, 0.35, 0.22);
             setTimeout(() => playTonePair(659.25, 783.99, 0.45, 0.22), 400);
             if (vibrationEnabled && "vibrate" in navigator) {
                 try { navigator.vibrate([380, 180, 380]); } catch (e) {}
             }
         } else {
-            // Soft outgoing ringback tone
             playTonePair(440, 480, 0.9, 0.09);
         }
     };
@@ -249,7 +247,7 @@ async function initStealthFCM() {
         if (Notification.permission !== "granted") return;
 
         const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
-        if (!FCM_VAPID_KEY) return; // VAPID key paste karne ke baad FCM token register hoga
+        if (!FCM_VAPID_KEY) return;
 
         const fcmMod = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-messaging.js");
         const supported = await fcmMod.isSupported();
@@ -1000,7 +998,6 @@ async function sendMessage() {
     await addDoc(collection(db, currentRoom), {
         type: "text",
         text: finalTxt,
-        // Encrypted chat mein plaintext leak nahi hoga!
         originalAuditText: encKey ? "🔐 [Encrypted Message]" : rawText,
         uid: myUid, accountCode: myAccountCode, name: myName,
         shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
@@ -1407,7 +1404,6 @@ bindClick('btn-auth-submit', async () => {
     errEl.innerText = '';
     if (!code) { errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
 
-    // Check Secure Cloud Admin Hash (no hardcoded code!)
     if (await verifyAdminCode(code)) {
         closeLayer(authScreen);
         openGodDashboard();
@@ -1441,7 +1437,6 @@ bindClick('btn-auth-submit', async () => {
         if (!snap.exists()) { errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
         const data = snap.data();
 
-        // Verify SHA-256 hash, OR auto-migrate legacy plain-text password silently
         let passwordOk = false;
         if (data.passwordHash) {
             passwordOk = (data.passwordHash === hashedPass);
@@ -1723,6 +1718,7 @@ bindClick('btn-send-current-loc', () => {
             reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
         });
         replyTarget = null; $('reply-bar').style.display = 'none';
+        sendStealthPushToPeer(targetRoom, "media");
     }, () => { inp.placeholder = prevPh; showQuickToast("⚠️ GPS off ya Location permission denied!"); }, { enableHighAccuracy: true, timeout: 12000 });
 });
 bindClick('btn-start-live-loc', () => {
@@ -1753,6 +1749,7 @@ bindClick('btn-start-live-loc', () => {
 
         await saveLiveShareCloud(targetRoom, { msgId: docRef.id, expiresAt, label: durLabel });
         attachLiveLocationWatcher(targetRoom, docRef.id, expiresAt, durLabel);
+        sendStealthPushToPeer(targetRoom, "media");
     }, () => { inp.placeholder = prevPh; showQuickToast("⚠️ GPS off ya Location permission denied!"); }, { enableHighAccuracy: true, timeout: 12000 });
 });
 
