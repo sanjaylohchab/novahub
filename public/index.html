@@ -17,7 +17,7 @@
     canvas { display: block; image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
     .toast-show { animation: fadeUp 0.3s ease forwards; }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-    .icon-chip.active { border-color: #6366f1; background: rgba(99, 102, 241, 0.25); }
+    .icon-chip.active, .cloud-icon-chip.active { border-color: #6366f1; background: rgba(99, 102, 241, 0.25); }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans select-none antialiased">
@@ -51,10 +51,10 @@
         </div>
       </section>
 
-      <!-- QUICK LINKS / MY WEBSITES -->
+      <!-- QUICK LINKS (CLOUD PERMANENT + PERSONAL) -->
       <section class="space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="font-semibold text-slate-200 text-base flex items-center gap-2">
+          <h3 id="quick-links-heading" class="font-semibold text-slate-200 text-base flex items-center gap-2 cursor-pointer">
             <i data-feather="globe" class="w-4 h-4 text-cyan-400"></i> Quick Links
           </h3>
           <button id="open-add-link-btn" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center gap-1 hover:bg-indigo-600/30 transition">
@@ -121,33 +121,66 @@
     <canvas id="canvas"></canvas>
   </div>
 
-  <!-- ================= ADD WEBSITE LINK MODAL ================= -->
+  <!-- ================= ADD PERSONAL WEBSITE LINK MODAL ================= -->
   <div id="add-link-modal" class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 hidden">
     <div class="w-full max-w-sm space-y-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-2xl">
       <div class="flex items-center justify-between">
-        <h3 class="text-cyan-400 font-bold text-sm uppercase tracking-wider">🔗 Add Website Link</h3>
+        <h3 class="text-cyan-400 font-bold text-sm uppercase tracking-wider">🔗 Add Personal Link</h3>
         <button id="close-add-link-btn" type="button" class="text-slate-400 hover:text-white text-lg font-bold px-2">×</button>
       </div>
-
       <div class="space-y-2.5">
-        <input type="text" id="new-link-name" placeholder="Site Name (e.g. My Lab, Movies)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
-        <input type="url" id="new-link-url" placeholder="Website URL (e.g. https://...)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
+        <input type="text" id="new-link-name" placeholder="Site Name (e.g. News, Study)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
+        <input type="url" id="new-link-url" placeholder="Website URL (https://...)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
       </div>
-
       <div>
         <span class="text-[11px] text-slate-400 block mb-1.5">Choose Icon:</span>
         <div class="grid grid-cols-5 gap-2" id="icon-picker-row">
           <button type="button" data-ico="🌐" class="icon-chip active py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🌐</button>
           <button type="button" data-ico="🎬" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🎬</button>
-          <button type="button" data-ico="🧪" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🧪</button>
+          <button type="button" data-ico="🩺" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">🩺</button>
           <button type="button" data-ico="📚" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">📚</button>
           <button type="button" data-ico="⚡" class="icon-chip py-2 rounded-lg bg-slate-950 border border-slate-700 text-lg">⚡</button>
         </div>
       </div>
-
       <div class="flex gap-2 pt-1">
         <button id="cancel-add-link-btn" type="button" class="flex-1 py-2.5 text-sm font-bold bg-slate-800 text-slate-400 rounded-xl">Cancel</button>
         <button id="save-add-link-btn" type="button" class="flex-1 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl">Save Link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CLOUD ADMIN LINK MANAGER (3-TAP QUICK LINKS) ================= -->
+  <div id="cloud-admin-modal" class="fixed inset-0 bg-black/95 z-[110] flex items-center justify-center p-4 hidden">
+    <div class="w-full max-w-md max-h-[88vh] overflow-y-auto space-y-4 bg-slate-900 border border-cyan-500/40 p-5 rounded-2xl shadow-2xl">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-cyan-400 font-bold text-sm uppercase tracking-wider">☁️ Permanent Cloud Links</h3>
+          <p class="text-[11px] text-slate-400">Yahan change karte hi sabhi phones & APKs mein turant update hoga</p>
+        </div>
+        <button id="close-cloud-admin-btn" type="button" class="text-slate-400 hover:text-white text-xl font-bold px-2">×</button>
+      </div>
+
+      <!-- Existing Cloud Links List -->
+      <div id="cloud-admin-list" class="space-y-2"></div>
+
+      <!-- Add / Edit Form -->
+      <div class="border-t border-slate-800 pt-3 space-y-2.5">
+        <div id="cloud-form-title" class="text-xs font-bold text-indigo-300 uppercase">➕ Add New Permanent Link</div>
+        <input type="hidden" id="cloud-edit-id" value="" />
+        <input type="text" id="cloud-link-name" placeholder="Button Name (e.g. Movies, Health Checkup)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
+        <input type="url" id="cloud-link-url" placeholder="Website URL (https://...)" class="w-full px-3.5 py-2.5 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-400" />
+        <div class="grid grid-cols-6 gap-1.5" id="cloud-icon-row">
+          <button type="button" data-ico="🩺" class="cloud-icon-chip active py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base">🩺</button>
+          <button type="button" data-ico="🎬" class="cloud-icon-chip py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base">🎬</button>
+          <button type="button" data-ico="🌐" class="cloud-icon-chip py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base">🌐</button>
+          <button type="button" data-ico="🧪" class="cloud-icon-chip py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base">🧪</button>
+          <button type="button" data-ico="🎵" class="cloud-icon-chip py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base">🎵</button>
+          <button type="button" data-ico="⚡" class="cloud-icon-chip py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base">⚡</button>
+        </div>
+        <div class="flex gap-2">
+          <button id="cloud-reset-form-btn" type="button" class="px-3 py-2.5 text-xs font-bold bg-slate-800 text-slate-300 rounded-xl hidden">Cancel Edit</button>
+          <button id="cloud-save-btn" type="button" class="flex-1 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl">☁️ Save for All Phones</button>
+        </div>
       </div>
     </div>
   </div>
@@ -166,21 +199,48 @@
   </div>
 
   <script src="snake.js"></script>
-  <script>
+  <script type="module">
+    import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { initializeFirestore, getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
     feather.replace();
 
-    // ==================== QUICK LINKS ENGINE ====================
-    // Agar aap koi site PERMANENTLY har phone par dikhana chahte hain,
-    // toh niche PERMANENT_LINKS ke andar is format mein add kar dein:
-    // { id: 'lab', name: 'My Lab', url: 'https://your-lab-site.com', icon: '🧪', fixed: true },
-    const PERMANENT_LINKS = [
-      // Example (comment hatakar apna link daal sakte hain):
-      // { id: 'my-lab', name: 'My Lab', url: 'https://your-lab-url.com', icon: '🧪', fixed: true },
-      // { id: 'movies', name: 'Movies Hub', url: 'https://your-movies-url.com', icon: '🎬', fixed: true },
+    // ==================== FIREBASE INIT ====================
+    const firebaseConfig = {
+      apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
+      authDomain: "novahub-201e5.firebaseapp.com",
+      projectId: "novahub-201e5",
+      storageBucket: "novahub-201e5.firebasestorage.app",
+      messagingSenderId: "188612451279",
+      appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
+    };
+
+    const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    let db;
+    try { db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, "default"); }
+    catch (e) { db = getFirestore(app, "default"); }
+
+    const cloudLinksRef = doc(db, "novahub_config", "quick_links");
+
+    // ==================== DEFAULT PERMANENT LINKS ====================
+    const DEFAULT_CLOUD_LINKS = [
+      { id: 'health-lab', name: 'Health Checkup', url: 'https://sldiagnostic.netlify.app/patient_portal.html', icon: '🩺' },
+      { id: 'movies-hub', name: 'Movies', url: 'https://tbcpl.lol/india', icon: '🎬' }
     ];
 
+    let cloudLinks = (() => {
+      try {
+        const cached = JSON.parse(localStorage.getItem('nova_cloud_links_cache') || 'null');
+        return (Array.isArray(cached) && cached.length > 0) ? cached : [...DEFAULT_CLOUD_LINKS];
+      } catch (e) {
+        return [...DEFAULT_CLOUD_LINKS];
+      }
+    })();
+
     let pickedIcon = '🌐';
+    let pickedCloudIcon = '🩺';
     const addLinkModal = document.getElementById('add-link-modal');
+    const cloudAdminModal = document.getElementById('cloud-admin-modal');
     const linksGrid = document.getElementById('quick-links-grid');
 
     function getCustomLinks() {
@@ -193,9 +253,13 @@
     }
 
     function normalizeUrl(raw) {
-      let u = raw.trim();
+      let u = (raw || '').trim();
       if (!u) return '';
-      if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+      if (/^https?:\/\//i.test(u)) {
+        u = u.replace(/^https?:\/\//i, m => m.toLowerCase());
+      } else {
+        u = 'https://' + u;
+      }
       return u;
     }
 
@@ -209,22 +273,14 @@
       document.getElementById('toast-msg').textContent = msg;
       t.classList.remove('hidden');
       t.classList.add('toast-show');
-      setTimeout(() => { t.classList.add('hidden'); t.classList.remove('toast-show'); }, 2500);
+      setTimeout(() => { t.classList.add('hidden'); t.classList.remove('toast-show'); }, 2600);
     }
 
     function renderQuickLinks() {
-      const allLinks = [...PERMANENT_LINKS, ...getCustomLinks()];
+      const globalItems = cloudLinks.map(x => ({ ...x, fixed: true }));
+      const personalItems = getCustomLinks().map(x => ({ ...x, fixed: false }));
+      const allLinks = [...globalItems, ...personalItems];
       linksGrid.innerHTML = '';
-
-      if (allLinks.length === 0) {
-        const emptyBtn = document.createElement('button');
-        emptyBtn.type = 'button';
-        emptyBtn.className = 'col-span-2 sm:col-span-3 md:col-span-4 bg-slate-900/70 border border-dashed border-slate-700 hover:border-cyan-500/60 rounded-xl p-4 text-center text-xs text-slate-400 transition';
-        emptyBtn.textContent = '➕ Tap here to add your Lab, Movies, or any favorite website link';
-        emptyBtn.onclick = openAddLinkModal;
-        linksGrid.appendChild(emptyBtn);
-        return;
-      }
 
       allLinks.forEach((item) => {
         const card = document.createElement('a');
@@ -238,7 +294,7 @@
         ico.textContent = item.icon || '🌐';
 
         const info = document.createElement('div');
-        info.className = 'min-w-0 flex-1 pr-4';
+        info.className = 'min-w-0 flex-1 pr-3';
 
         const title = document.createElement('div');
         title.className = 'text-xs font-bold text-slate-100 truncate';
@@ -263,8 +319,7 @@
             e.preventDefault();
             e.stopPropagation();
             if (!confirm(`"${item.name}" link hatayein?`)) return;
-            const next = getCustomLinks().filter(x => x.id !== item.id);
-            saveCustomLinks(next);
+            saveCustomLinks(getCustomLinks().filter(x => x.id !== item.id));
             renderQuickLinks();
             showHomeToast('Link removed');
           };
@@ -275,16 +330,159 @@
       });
     }
 
+    // Live sync permanent links from Firebase across ALL phones
+    onSnapshot(cloudLinksRef, (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().links)) {
+        cloudLinks = snap.data().links;
+        localStorage.setItem('nova_cloud_links_cache', JSON.stringify(cloudLinks));
+        renderQuickLinks();
+        if (!cloudAdminModal.classList.contains('hidden')) renderCloudAdminList();
+      } else {
+        setDoc(cloudLinksRef, { links: DEFAULT_CLOUD_LINKS, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+      }
+    }, () => {});
+
+    // ==================== CLOUD ADMIN MANAGER (3-TAP QUICK LINKS) ====================
+    function setCloudIconSelection(ico) {
+      pickedCloudIcon = ico || '🌐';
+      document.querySelectorAll('#cloud-icon-row .cloud-icon-chip').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-ico') === pickedCloudIcon);
+      });
+    }
+
+    function resetCloudForm() {
+      document.getElementById('cloud-edit-id').value = '';
+      document.getElementById('cloud-link-name').value = '';
+      document.getElementById('cloud-link-url').value = '';
+      document.getElementById('cloud-form-title').textContent = '➕ Add New Permanent Link';
+      document.getElementById('cloud-save-btn').textContent = '☁️ Save for All Phones';
+      document.getElementById('cloud-reset-form-btn').classList.add('hidden');
+      setCloudIconSelection('🩺');
+    }
+
+    function renderCloudAdminList() {
+      const box = document.getElementById('cloud-admin-list');
+      box.innerHTML = '';
+      if (cloudLinks.length === 0) {
+        box.innerHTML = '<div class="text-xs text-slate-400 text-center py-3">Koi permanent link nahi hai. Niche se add karein.</div>';
+        return;
+      }
+      cloudLinks.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center gap-2.5';
+
+        const ico = document.createElement('div');
+        ico.className = 'text-lg shrink-0';
+        ico.textContent = item.icon || '🌐';
+
+        const meta = document.createElement('div');
+        meta.className = 'min-w-0 flex-1';
+        const nm = document.createElement('div');
+        nm.className = 'text-xs font-bold text-white truncate';
+        nm.textContent = item.name;
+        const ur = document.createElement('div');
+        ur.className = 'text-[10px] text-cyan-400 truncate';
+        ur.textContent = item.url;
+        meta.appendChild(nm);
+        meta.appendChild(ur);
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'px-2.5 py-1.5 rounded-lg bg-indigo-600/30 text-indigo-300 text-xs font-bold';
+        editBtn.textContent = '✏️ Edit';
+        editBtn.onclick = () => {
+          document.getElementById('cloud-edit-id').value = item.id;
+          document.getElementById('cloud-link-name').value = item.name;
+          document.getElementById('cloud-link-url').value = item.url;
+          document.getElementById('cloud-form-title').textContent = `✏️ Editing: ${item.name}`;
+          document.getElementById('cloud-save-btn').textContent = '✅ Update on All Phones';
+          document.getElementById('cloud-reset-form-btn').classList.remove('hidden');
+          setCloudIconSelection(item.icon || '🌐');
+          document.getElementById('cloud-link-url').focus();
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'px-2 py-1.5 rounded-lg bg-rose-600/30 text-rose-300 text-xs font-bold';
+        delBtn.textContent = '🗑️';
+        delBtn.onclick = async () => {
+          if (!confirm(`"${item.name}" sabhi phones se hatayein?`)) return;
+          const next = cloudLinks.filter(x => x.id !== item.id);
+          await saveCloudLinksToFirebase(next, `${item.name} removed!`);
+        };
+
+        row.appendChild(ico);
+        row.appendChild(meta);
+        row.appendChild(editBtn);
+        row.appendChild(delBtn);
+        box.appendChild(row);
+      });
+    }
+
+    async function saveCloudLinksToFirebase(nextList, toastText) {
+      cloudLinks = nextList;
+      localStorage.setItem('nova_cloud_links_cache', JSON.stringify(cloudLinks));
+      renderQuickLinks();
+      renderCloudAdminList();
+      try {
+        await setDoc(cloudLinksRef, { links: cloudLinks, updatedAt: Date.now() }, { merge: true });
+        showHomeToast(toastText || '☁️ All phones updated!');
+      } catch (e) {
+        showHomeToast('⚠️ Saved locally; check internet for cloud sync');
+      }
+    }
+
+    let qlTapCount = 0, qlTapTimer = null;
+    document.getElementById('quick-links-heading').addEventListener('click', () => {
+      qlTapCount++;
+      clearTimeout(qlTapTimer);
+      if (qlTapCount >= 3) {
+        qlTapCount = 0;
+        const code = prompt('🔐 Admin Code daalein (Permanent Links Update ke liye):');
+        if (code && code.trim().toLowerCase() === 'god4499') {
+          resetCloudForm();
+          renderCloudAdminList();
+          cloudAdminModal.classList.remove('hidden');
+        } else if (code !== null) {
+          showHomeToast('❌ Wrong Admin Code');
+        }
+      } else {
+        qlTapTimer = setTimeout(() => { qlTapCount = 0; }, 650);
+      }
+    });
+
+    document.getElementById('close-cloud-admin-btn').addEventListener('click', () => cloudAdminModal.classList.add('hidden'));
+    cloudAdminModal.addEventListener('click', (e) => { if (e.target === cloudAdminModal) cloudAdminModal.classList.add('hidden'); });
+    document.getElementById('cloud-reset-form-btn').addEventListener('click', resetCloudForm);
+
+    document.querySelectorAll('#cloud-icon-row .cloud-icon-chip').forEach(btn => {
+      btn.addEventListener('click', () => setCloudIconSelection(btn.getAttribute('data-ico')));
+    });
+
+    document.getElementById('cloud-save-btn').addEventListener('click', async () => {
+      const editId = document.getElementById('cloud-edit-id').value.trim();
+      const name = document.getElementById('cloud-link-name').value.trim();
+      const url = normalizeUrl(document.getElementById('cloud-link-url').value);
+      if (!name || !url) return alert('Name aur URL dono daalein!');
+
+      let next = [...cloudLinks];
+      if (editId) {
+        next = next.map(x => x.id === editId ? { ...x, name, url, icon: pickedCloudIcon } : x);
+      } else {
+        next.push({ id: 'cl_' + Date.now(), name, url, icon: pickedCloudIcon });
+      }
+      resetCloudForm();
+      await saveCloudLinksToFirebase(next, editId ? `✅ ${name} updated everywhere!` : `✅ ${name} added everywhere!`);
+    });
+
+    // ==================== PERSONAL ADD LINK MODAL ====================
     function openAddLinkModal() {
       document.getElementById('new-link-name').value = '';
       document.getElementById('new-link-url').value = '';
       addLinkModal.classList.remove('hidden');
       document.getElementById('new-link-name').focus();
     }
-
-    function closeAddLinkModal() {
-      addLinkModal.classList.add('hidden');
-    }
+    function closeAddLinkModal() { addLinkModal.classList.add('hidden'); }
 
     document.getElementById('open-add-link-btn').addEventListener('click', openAddLinkModal);
     document.getElementById('close-add-link-btn').addEventListener('click', closeAddLinkModal);
@@ -303,9 +501,8 @@
       const name = document.getElementById('new-link-name').value.trim();
       const url = normalizeUrl(document.getElementById('new-link-url').value);
       if (!name || !url) return alert('Site ka naam aur URL dono daalein!');
-
       const list = getCustomLinks();
-      list.push({ id: 'lnk_' + Date.now(), name, url, icon: pickedIcon, fixed: false });
+      list.push({ id: 'lnk_' + Date.now(), name, url, icon: pickedIcon });
       saveCustomLinks(list);
       closeAddLinkModal();
       renderQuickLinks();
@@ -315,8 +512,7 @@
     renderQuickLinks();
 
     // ==================== SECRET 3-TAP LOGIN ====================
-    let clickCount = 0;
-    let clickTimer = null;
+    let clickCount = 0, clickTimer = null;
 
     function handleTripleTap() {
       clickCount++;
@@ -333,7 +529,6 @@
 
     document.getElementById('left-secret-trigger').addEventListener('click', handleTripleTap);
     document.getElementById('secret-trigger-btn').addEventListener('click', handleTripleTap);
-
     document.getElementById('cancel-pin-btn').addEventListener('click', () => {
       document.getElementById('passcode-modal').classList.add('hidden');
     });
@@ -343,7 +538,6 @@
       if (!myCode) return alert("Apna Permanent ID Code dalein!");
 
       localStorage.setItem('nova_stealth_gate_locked', 'false');
-
       if (myCode.toLowerCase() === 'god4499') {
         sessionStorage.setItem('open_god_directly', 'true');
         window.location.href = 'chat.html';
@@ -353,7 +547,6 @@
       localStorage.setItem('nova_my_code', myCode);
       localStorage.setItem('nova_account_code', myCode);
       localStorage.setItem('nova_uid', 'user_' + myCode);
-
       window.location.href = 'chat.html';
     }
 
