@@ -178,8 +178,8 @@ function selectRoom(roomId, openUI = true) {
 // ============================================================================
 // 3. MESSAGING ENGINE (LISTEN, RENDER, SEEN TICKS, SEND & MEDIA)
 // ============================================================================
-async function markVisibleMessagesSeen() {
-    if (!isChatActivelyVisible()) return;
+async function markVisibleMessagesSeen(force = false) {
+    if (!state.currentRoom || (!force && !isChatActivelyVisible())) return;
     const nowTime = new Date().toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     for (const id in state.cachedMessages) {
         const m = state.cachedMessages[id];
@@ -275,16 +275,15 @@ function listenToMessages(roomId) {
     state.domMap = new Map();
     isInitialLoad = true;
     const encKey = localStorage.getItem(`nova_enc_${roomId}`) || "";
-    let lastDatePillText = "";
 
-    const q = query(collection(db, roomId), orderBy("sentMs", "asc"), limitToLast(35));
+    // Server timestamp se sort karein taaki Android/iOS clock mismatch kabhi na ho
+    const q = query(collection(db, roomId), orderBy("timestamp", "asc"), limitToLast(40));
 
     unsubscribeChat = onSnapshot(q, (snap) => {
         let mediaCount = 0, starCount = 0;
-        const visibleIds = new Set();
-        let addedNewNode = false;
         const wasNearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 140;
 
+        const docs = [];
         snap.forEach(d => {
             const m = d.data();
             const id = d.id;
@@ -299,14 +298,38 @@ function listenToMessages(roomId) {
                     return;
                 }
             }
+            const sortMs = (m.timestamp && typeof m.timestamp.toMillis === 'function')
+                ? m.timestamp.toMillis()
+                : (m.sentMs || Date.now());
+            docs.push({ id, m, sortMs });
+        });
+        docs.sort((a, b) => a.sortMs - b.sortMs);
 
+        // Purane date pills hata kar clean order mein dubara lagayein (1 din = 1 pill)
+        box.querySelectorAll('.date-pill').forEach(el => el.remove());
+        const visibleIds = new Set();
+        let lastDatePillText = "";
+        let addedNewNode = false;
+
+        docs.forEach(({ id, m, sortMs }) => {
             visibleIds.add(id);
             if (m.type === 'image' || m.type === 'video') mediaCount++;
             if (m.starredBy && m.starredBy.includes(state.myUid)) starCount++;
 
+            const dLbl = getDateGroupLabel(new Date(sortMs));
+            if (dLbl !== lastDatePillText) {
+                const dp = document.createElement('div');
+                dp.className = 'date-pill';
+                dp.innerText = dLbl;
+                box.appendChild(dp);
+                lastDatePillText = dLbl;
+            }
+
             const isMe = isMyMessage(m);
             const starIcon = (m.starredBy && m.starredBy.includes(state.myUid)) ? `<span class="material-icons" style="font-size:12px; color:#eab308;">star</span>` : '';
-            const tick = m.seenStatus ? `<span class="material-icons seen-tick read">done_all</span>` : `<span class="material-icons seen-tick">check</span>`;
+            const tick = isMe
+                ? (m.seenStatus ? `<span class="material-icons seen-tick read">done_all</span>` : `<span class="material-icons seen-tick">check</span>`)
+                : '';
             const metaHtml = `${starIcon} ${m.isEdited ? 'Edited' : ''} <span>${m.shortTime || ''}</span> ${tick}`;
             const reactTxt = (m.reactions && Object.keys(m.reactions).length > 0) ? Object.values(m.reactions).join(' ') : '';
             const bodySig = getBodySignature(m, encKey);
@@ -316,15 +339,8 @@ function listenToMessages(roomId) {
                 if (entry.bodySig !== bodySig) { entry.bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey); entry.bodySig = bodySig; }
                 if (entry.metaHtml !== metaHtml) { entry.metaEl.innerHTML = metaHtml; entry.metaHtml = metaHtml; }
                 if (entry.reactTxt !== reactTxt) { entry.reactEl.innerText = reactTxt; entry.reactEl.style.display = reactTxt ? 'flex' : 'none'; entry.reactTxt = reactTxt; }
+                box.appendChild(entry.wrap);
             } else {
-                const dLbl = m.dateLabel || "Today";
-                if (dLbl !== lastDatePillText) {
-                    const dp = document.createElement('div');
-                    dp.className = 'date-pill';
-                    dp.innerText = dLbl;
-                    box.appendChild(dp);
-                    lastDatePillText = dLbl;
-                }
                 const wrap = document.createElement('div');
                 wrap.className = `msg-wrap ${isMe ? 'me' : 'other'}`;
                 wrap.dataset.msgId = id;
@@ -372,7 +388,7 @@ function listenToMessages(roomId) {
         for (const [id, entry] of state.domMap.entries()) {
             if (!visibleIds.has(id)) { entry.wrap.remove(); state.domMap.delete(id); }
         }
-        if (state.domMap.size === 0) { box.innerHTML = ''; lastDatePillText = ""; }
+        if (state.domMap.size === 0) box.innerHTML = '';
 
         if ($('di-media-count')) $('di-media-count').innerText = mediaCount;
         if ($('di-star-count')) $('di-star-count').innerText = starCount > 0 ? starCount : "None";
@@ -458,6 +474,7 @@ async function sendMessage() {
     state.replyTarget = null;
     if ($('reply-bar')) $('reply-bar').style.display = 'none';
     updatePresence("online", true);
+    markVisibleMessagesSeen(true);
     sendStealthPushToPeer(state.currentRoom, "text");
 }
 
@@ -970,7 +987,7 @@ bindClick('god-wipe-btn', async () => {
     window.inspectGod(godRoom);
 });
 
-// Widget & Visibility Sync
+// Widget & Visibility Sync (Strict Online/Seen)
 window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
@@ -988,7 +1005,6 @@ window.addEventListener('message', (e) => {
         if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
     }
 });
-
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
         updatePresence("offline", true);
@@ -998,11 +1014,9 @@ document.addEventListener('visibilitychange', () => {
         markVisibleMessagesSeen();
     }
 });
-
 window.addEventListener('blur', () => {
     if (state.currentRoom) updatePresence("offline", true);
 });
-
 
 // ============================================================================
 // 6. START SESSION & HANDOFF FROM index.html
