@@ -984,7 +984,7 @@ function initSmartClearChat() {
         </div>
     `;
 
-    async function executeSmartClear(keepStarred, forEveryone) {
+        async function executeSmartClear(keepStarred, forEveryone) {
         const roomId = state.clearTargetRoomId || state.currentRoom;
         if (!roomId) return closeLayer(clearModal);
 
@@ -1003,7 +1003,8 @@ function initSmartClearChat() {
             snap.forEach(d => {
                 const m = d.data();
                 if (m.isDeletedEveryone) return;
-                if (!forEveryone && Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) return;
+                // Jo message aapne pehle hi "Delete for Me" kar diya hai, use hamesha skip karein
+                if (Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) return;
                 if (keepStarred && Array.isArray(m.starredBy) && m.starredBy.includes(state.myUid)) return;
 
                 count++;
@@ -1029,6 +1030,7 @@ function initSmartClearChat() {
             showQuickToast("⚠️ Clear chat failed. Check connection.");
         }
     }
+
 
     bindClick('scc-close-x', () => closeLayer(clearModal));
     bindClick('scc-cancel-btn', () => closeLayer(clearModal));
