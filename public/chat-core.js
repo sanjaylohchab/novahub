@@ -1,212 +1,51 @@
 // ============================================================================
-// NOVAMESSENGER PRO ENGINE (chat-core.js)
-// WhatsApp List (Unread/Time/Mute/Archive/3-Dots) | WebRTC TURN | FCM Push | SHA-256
+// NOVAMESSENGER MAIN CONTROLLER (chat-core.js)
+// Clean Modular Engine: Auth, App Lock, Messaging, Drawer & Admin Dashboard
 // ============================================================================
-import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField, onSnapshot, collection, addDoc, query, orderBy, limit, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import {
+    db, storage, state, hooks, timerLabels, timerMs, $, bindClick, escapeHtml,
+    openLayer, closeLayer, postToGame, showQuickToast, playAlertBeep,
+    hashPassword, verifyAdminCode, encryptText, decryptText,
+    isMyMessage, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
+    getShortTime, compressImg, uploadWithTimeout, wipeLocalSessionData,
+    saveSessionToLocal, syncAccountToCloud,
+    doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
+    onSnapshot, collection, addDoc, query, orderBy, limitToLast,
+    serverTimestamp, sRef
+} from "./chat-shared.js";
 
-const firebaseConfig = {
-    apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
-    authDomain: "novahub-201e5.firebaseapp.com",
-    projectId: "novahub-201e5",
-    storageBucket: "novahub-201e5.firebasestorage.app",
-    messagingSenderId: "188612451279",
-    appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
-};
+import {
+    stopRingtone, hasActiveCall, cleanupCall, listenToCalls, initCallControls
+} from "./chat-calls.js";
 
-// FCM Lock-Screen Push Config
-const FCM_VAPID_KEY = "BLe9kr4-qcnut5ouM3AH9Ct-jjxDQBODFZJFM7eHB8dKz9N-7g9jFeyR9JrTH2eMboc6zgwqsJLNsy7glmv0t8w";
-const PUSH_RELAY_URL = "https://novahub-push.sanjaylohchab2749.workers.dev";
+import {
+    initStealthFCM, sendStealthPushToPeer, triggerStealthAlert,
+    updatePresence, detachPresenceListener, listenToPresence,
+    refreshLiveBanner, clearLocalLiveWatcher, attachLiveLocationWatcher,
+    stopLiveLocation, stopAllLiveSessions, initLocationControls, initStoryControls
+} from "./chat-features.js";
 
-// WebRTC ICE Servers (Multiple STUN + Free Relay TURN for Jio/Airtel 4G/5G)
-const RTC_CONFIG = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun.relay.metered.ca:80" },
-        {
-            urls: [
-                "turn:openrelay.metered.ca:80",
-                "turn:openrelay.metered.ca:443",
-                "turn:openrelay.metered.ca:443?transport=tcp"
-            ],
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        }
-    ],
-    iceCandidatePoolSize: 10
-};
-
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-let db;
-try { db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, "default"); }
-catch (e) { db = getFirestore(app, "default"); }
-const storage = getStorage(app);
-
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+import {
+    detachAllSummaryListeners, syncRoomSummaryListeners,
+    renderActiveStrip, renderSidebarList, runDeleteEntireChat, initSidebarControls
+} from "./chat-sidebar.js";
 
 // ============================================================================
-// 0. INJECT WHATSAPP CHAT-LIST & 3-DOTS MENU STYLES + MODAL (NO HTML EDIT NEEDED)
+// 0. MODULE-LOCAL STATE & DOM REFERENCES
 // ============================================================================
-function injectWhatsAppListUI() {
-    if (!document.getElementById('nova-wa-list-styles')) {
-        const st = document.createElement('style');
-        st.id = 'nova-wa-list-styles';
-        st.textContent = `
-            .chat-item { display:flex; align-items:center; gap:10px; position:relative; }
-            .chat-item-info { flex:1; min-width:0; overflow:hidden; display:flex; flex-direction:column; gap:3px; }
-            .chat-item-top { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
-            .chat-item-name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:5px; }
-            .wa-chat-time { font-size:11px; color:var(--text-sub, #94a3b8); white-space:nowrap; flex-shrink:0; font-weight:500; }
-            .wa-chat-time.unread { color:#25d366; font-weight:700; }
-            .wa-bottom-row { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
-            .wa-preview { flex:1; min-width:0; font-size:12.5px; color:var(--text-sub, #94a3b8); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:3px; }
-            .wa-preview.unread { color:var(--text-main, #f1f5f9); font-weight:600; }
-            .wa-preview-tick { font-size:14px !important; flex-shrink:0; color:#94a3b8; }
-            .wa-preview-tick.read { color:#38bdf8; }
-            .wa-indicators { display:flex; align-items:center; gap:5px; flex-shrink:0; }
-            .wa-mute-ico { font-size:16px !important; color:var(--text-sub, #94a3b8); opacity:0.85; }
-            .wa-unread-badge { background:#25d366; color:#052e16; font-size:11px; font-weight:800; min-width:20px; height:20px; padding:0 6px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
-            .wa-more-btn { width:30px; height:36px; border-radius:10px; border:none; background:transparent; color:var(--text-sub, #94a3b8); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; margin-right:-4px; padding:0; }
-            .wa-more-btn:active { background:rgba(255,255,255,0.1); }
-            .wa-archived-row { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid var(--border-col, rgba(255,255,255,0.08)); cursor:pointer; background:rgba(16,185,129,0.06); }
-            .wa-archived-row:active { background:rgba(16,185,129,0.14); }
-            .wa-archived-left { display:flex; align-items:center; gap:12px; font-size:13.5px; font-weight:700; color:var(--text-main, #f1f5f9); }
-            .wa-archived-count { font-size:12px; font-weight:700; color:#25d366; }
-
-            #room-action-sheet { position:fixed; inset:0; background:rgba(0,0,0,0.72); backdrop-filter:blur(3px); z-index:9990; display:none; align-items:flex-end; justify-content:center; padding:12px; }
-            #room-action-sheet.is-open { display:flex; }
-            .ras-card { width:100%; max-width:410px; background:#0f172a; border:1px solid rgba(255,255,255,0.12); border-radius:18px; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.65); animation:rasUp 0.18s ease-out; }
-            body.light-mode .ras-card { background:#ffffff; border-color:rgba(15,23,42,0.12); color:#0f172a; }
-            @keyframes rasUp { from { transform:translateY(24px); opacity:0.5; } to { transform:translateY(0); opacity:1; } }
-            .ras-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
-            body.light-mode .ras-head { border-bottom-color:rgba(15,23,42,0.08); }
-            .ras-title { font-size:14.5px; font-weight:700; color:#f8fafc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-            body.light-mode .ras-title { color:#0f172a; }
-            .ras-sub { font-size:11px; color:#94a3b8; }
-            .ras-close { width:30px; height:30px; border-radius:999px; border:none; background:rgba(255,255,255,0.08); color:#cbd5e1; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-            body.light-mode .ras-close { background:rgba(15,23,42,0.08); color:#334155; }
-            .ras-list { display:flex; flex-direction:column; padding:6px; gap:2px; }
-            .ras-btn { width:100%; display:flex; align-items:center; gap:12px; padding:12px 14px; border:none; border-radius:12px; background:transparent; color:#e2e8f0; font-size:13.5px; font-weight:600; text-align:left; cursor:pointer; }
-            body.light-mode .ras-btn { color:#1e293b; }
-            .ras-btn:active { background:rgba(255,255,255,0.08); }
-            .ras-btn .material-icons { font-size:20px; color:#38bdf8; flex-shrink:0; }
-            .ras-btn.warn .material-icons { color:#f59e0b; }
-            .ras-btn.danger { color:#f87171; }
-            .ras-btn.danger .material-icons { color:#ef4444; }
-            .ras-btn-desc { display:block; font-size:11px; font-weight:400; color:#94a3b8; margin-top:1px; }
-        `;
-        document.head.appendChild(st);
-    }
-
-    if (!document.getElementById('room-action-sheet')) {
-        const sheet = document.createElement('div');
-        sheet.id = 'room-action-sheet';
-        sheet.innerHTML = `
-            <div class="ras-card" id="ras-card-box">
-                <div class="ras-head">
-                    <div style="min-width:0; flex:1; padding-right:8px;">
-                        <div class="ras-title" id="ras-room-name">Chat Options</div>
-                        <div class="ras-sub" id="ras-room-sub">ID</div>
-                    </div>
-                    <button type="button" class="ras-close" id="ras-close-btn">×</button>
-                </div>
-                <div class="ras-list">
-                    <button type="button" class="ras-btn" id="ras-mute-btn">
-                        <span class="material-icons" id="ras-mute-ico">notifications_off</span>
-                        <div><span id="ras-mute-txt">Mute Notifications</span><span class="ras-btn-desc" id="ras-mute-desc">Is chat ki notification & sound band karein</span></div>
-                    </button>
-                    <button type="button" class="ras-btn" id="ras-archive-btn">
-                        <span class="material-icons" id="ras-archive-ico">archive</span>
-                        <div><span id="ras-archive-txt">Archive Chat</span><span class="ras-btn-desc" id="ras-archive-desc">Main chat list se Archived folder mein bhejein</span></div>
-                    </button>
-                    <button type="button" class="ras-btn warn" id="ras-lock-btn">
-                        <span class="material-icons" id="ras-lock-ico">lock</span>
-                        <div><span id="ras-lock-txt">Lock & Hide Chat</span><span class="ras-btn-desc" id="ras-lock-desc">Secret PIN se chhupayein</span></div>
-                    </button>
-                    <button type="button" class="ras-btn warn" id="ras-clear-btn">
-                        <span class="material-icons">cleaning_services</span>
-                        <div><span>Clear Chat</span><span class="ras-btn-desc">Sirf messages delete honge, chat yahan rahegi</span></div>
-                    </button>
-                    <button type="button" class="ras-btn danger" id="ras-delete-btn">
-                        <span class="material-icons">delete_forever</span>
-                        <div><span>Delete Chat</span><span class="ras-btn-desc">Messages + chat dono yahan se gayab ho jayenge</span></div>
-                    </button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(sheet);
-    }
-}
-injectWhatsAppListUI();
-
-// ============================================================================
-// 1. STATE, CRYPTO HELPERS & DOM REFERENCES
-// ============================================================================
-const isWidgetMode = new URLSearchParams(window.location.search).get('widget') === '1' || (window.self !== window.top);
-let isWidgetOpen = !isWidgetMode;
-let isRoomActivelyOpen = false;
-let domMap = new Map();
-
 let authMode = 'login';
-let myAccountCode = (localStorage.getItem('nova_account_code') || "").trim();
-let myUid = myAccountCode ? ('uid_' + myAccountCode) : "";
-let myName = localStorage.getItem('nova_username') || "";
-let myDp = localStorage.getItem('nova_dp') || "";
-let myLockPin = localStorage.getItem('nova_lock_pin') || "";
-let appLockEnabled = localStorage.getItem('nova_app_lock_enabled') === 'true';
-let appLockPin = localStorage.getItem('nova_app_lock_pin') || "";
-let isAppUnlocked = !appLockEnabled;
-let savedRooms = JSON.parse(localStorage.getItem('nova_saved_rooms') || '[]').filter(r => r.id !== 'global_novahub_chat');
-
-let currentRoom = "";
-let clearTargetRoomId = "";
-let actionTargetRoomId = "";
-let showingArchivedView = false;
-const recentlyDeletedRooms = new Set();
-const roomSummaryUnsubs = new Map();
-const roomSummaries = {};
-
 let unsubscribeChat = null;
-let unsubscribePresence = null;
-let presenceRefreshTimer = null;
-let unsubscribeCall = null;
-let unsubscribeRemoteIce = null;
 let unsubscribeAccountSync = null;
-let cachedMessages = {};
 const markingSeen = new Set();
 let selectedMsg = null;
-let replyTarget = null;
 let editingMsgId = null;
 let isViewOnce = false;
 let isInitialLoad = true;
-let vibrationEnabled = localStorage.getItem('nova_vib') !== 'false';
-let stealthNotifEnabled = localStorage.getItem('nova_stealth_notif') !== 'false';
-let selectedLiveHours = 1;
-const activeLiveSessions = {};
-let lastPresStatus = "";
-let lastPresMs = 0;
 let typTimer = null;
-let audioCtx = null;
-let ringInterval = null;
-let vibInterval = null;
-let callTimeoutTimer = null;
-let activeCallId = "";
-let pendingIceCandidates = [];
 let mediaRec = null, vnChunks = [], isRec = false;
-let pc = null, localStream = null, isLoud = false, isMuted = false, isFs = false;
 let emojiPickerLoaded = false;
 let godRoom = "";
-
-const timerLabels = { off: "", instant: "⏱️ Instant", "1h": "⏱️ 1h", "24h": "⏱️ 24h", "7d": "⏱️ 1w", "30d": "⏱️ 1m", "365d": "⏱️ 1y" };
-const timerMs = { "1h": 3600000, "24h": 86400000, "7d": 604800000, "30d": 2592000000, "365d": 31536000000 };
-
-const $ = (id) => document.getElementById(id);
-const bindClick = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+state.replyTarget = null;
 
 const authScreen = $('auth-screen');
 const appLockScreen = $('app-lock-screen');
@@ -216,15 +55,7 @@ const genericModal = $('generic-modal');
 const godModal = $('god-modal');
 const drawer = $('contact-info-drawer');
 const clearModal = $('clear-chat-modal');
-const locModal = $('location-modal');
 const overlay = $('msg-overlay');
-const roomActionSheet = $('room-action-sheet');
-const liveBanner = $('active-live-banner');
-const liveBannerText = $('active-live-text');
-const callHud = $('call-hud');
-const remoteVid = $('remote-vid');
-const remoteAud = $('remote-aud');
-const localVid = $('local-vid');
 const errEl = $('auth-error-msg');
 const codeInp = $('auth-code');
 const nameInp = $('auth-name');
@@ -232,174 +63,13 @@ const passInp = $('auth-pass');
 const voBtn = $('btn-vo-toggle');
 const vnBtn = $('btn-vn-rec');
 
-if (isWidgetMode) document.body.classList.add('widget-mode');
-if (localStorage.getItem('nova_theme_mode') === 'light') document.body.classList.add('light-mode');
-if ($('di-vib-val')) $('di-vib-val').innerText = vibrationEnabled ? "ON" : "OFF";
-if ($('di-notif-val')) $('di-notif-val').innerText = stealthNotifEnabled ? "ON" : "OFF";
-
-function escapeHtml(str) {
-    return String(str || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
-function ensureAudioContext() {
-    try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-    } catch (e) {}
-    return audioCtx;
-}
-document.addEventListener('touchstart', ensureAudioContext, { once: true, passive: true });
-document.addEventListener('click', ensureAudioContext, { once: true });
-
-// SHA-256 Hashing for Passwords & Secret Admin Code
-async function sha256Hex(str) {
-    const data = new TextEncoder().encode(str);
-    const buf = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-async function hashPassword(code, pass) {
-    return 'sha256:' + await sha256Hex(`novahub_pw_v2:${String(code).trim()}:${pass}`);
-}
-async function hashAdminCode(raw) {
-    return 'sha256:' + await sha256Hex(`novahub_adm_v2:${String(raw).trim().toLowerCase()}`);
-}
-async function verifyAdminCode(rawCode) {
-    if (!rawCode) return false;
-    try {
-        const snap = await getDoc(doc(db, "novahub_config", "admin"));
-        if (!snap.exists() || !snap.data().adminHash) return false;
-        return (await hashAdminCode(rawCode)) === snap.data().adminHash;
-    } catch (e) {
-        return false;
-    }
-}
-
-// Safe Layer Helpers
-function openLayer(el) {
-    if (!el) return;
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur();
-    el.classList.add('is-open');
-}
-function closeLayer(el) {
-    if (!el) return;
-    el.classList.remove('is-open');
-}
-function isLayerOpen(el) {
-    return !!(el && el.classList.contains('is-open'));
-}
-document.addEventListener('focusout', () => { setTimeout(() => { window.scrollTo(0, 0); }, 40); });
-function postToGame(payload) {
-    if (isWidgetMode) { try { window.parent.postMessage(payload, '*'); } catch (e) {} }
-}
-
 // ============================================================================
-// 2. REAL PHONE RINGTONE ENGINE (INCOMING & OUTGOING + VIBRATION)
-// ============================================================================
-function playTonePair(f1, f2, durationSec, volume = 0.16) {
-    const ctx = ensureAudioContext();
-    if (!ctx) return;
-    try {
-        const now = ctx.currentTime;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0.001, now);
-        g.gain.exponentialRampToValueAtTime(volume, now + 0.04);
-        g.gain.setValueAtTime(volume, now + durationSec - 0.06);
-        g.gain.exponentialRampToValueAtTime(0.001, now + durationSec);
-        g.connect(ctx.destination);
-
-        [f1, f2].forEach(freq => {
-            const osc = ctx.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, now);
-            osc.connect(g);
-            osc.start(now);
-            osc.stop(now + durationSec);
-        });
-    } catch (e) {}
-}
-
-function startRingtone(mode = 'incoming') {
-    stopRingtone();
-    const playCycle = () => {
-        if (mode === 'incoming') {
-            playTonePair(523.25, 659.25, 0.35, 0.22);
-            setTimeout(() => playTonePair(659.25, 783.99, 0.45, 0.22), 400);
-            if (vibrationEnabled && "vibrate" in navigator) {
-                try { navigator.vibrate([380, 180, 380]); } catch (e) {}
-            }
-        } else {
-            playTonePair(440, 480, 0.9, 0.09);
-        }
-    };
-    playCycle();
-    ringInterval = setInterval(playCycle, mode === 'incoming' ? 2200 : 3200);
-}
-
-function stopRingtone() {
-    if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
-    if (vibInterval) { clearInterval(vibInterval); vibInterval = null; }
-    if ("vibrate" in navigator) { try { navigator.vibrate(0); } catch (e) {} }
-}
-
-// ============================================================================
-// 3. FCM STEALTH PUSH REGISTRATION & SENDER HOOK (RESPECTS MUTE!)
-// ============================================================================
-async function initStealthFCM() {
-    if (!myAccountCode || !("Notification" in window) || !("serviceWorker" in navigator)) return;
-    try {
-        if (Notification.permission === "default") {
-            await Notification.requestPermission().catch(() => {});
-        }
-        if (Notification.permission !== "granted") return;
-
-        const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
-        if (!FCM_VAPID_KEY) return;
-
-        const fcmMod = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-messaging.js");
-        const supported = await fcmMod.isSupported();
-        if (!supported) return;
-
-        const messaging = fcmMod.getMessaging(app);
-        const token = await fcmMod.getToken(messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
-        if (token) {
-            await setDoc(doc(db, "novahub_accounts", myAccountCode), { fcmToken: token, fcmUpdatedAt: Date.now() }, { merge: true }).catch(() => {});
-        }
-        fcmMod.onMessage(messaging, () => {
-            if (!isChatActivelyVisible()) triggerStealthAlert("text", currentRoom);
-        });
-    } catch (e) {}
-}
-
-async function sendStealthPushToPeer(roomId, kind = "text") {
-    if (!PUSH_RELAY_URL || !roomId) return;
-    const meta = getRoomMeta(roomId);
-    if (!meta || !meta.peerCode) return;
-    try {
-        const peerSnap = await getDoc(doc(db, "novahub_accounts", meta.peerCode));
-        if (!peerSnap.exists()) return;
-        const peerData = peerSnap.data();
-        if (Array.isArray(peerData.mutedRooms) && peerData.mutedRooms.includes(roomId)) return;
-        const token = peerData.fcmToken || "";
-        if (!token) return;
-
-        let body = "New high score challenge! Game khelo **";
-        if (kind === "media") body = "Daily spin reward ready! Game khelo ₹₹";
-        else if (kind === "call") body = "Multiplayer lobby active! Join now ⭐️⭐️";
-        fetch(PUSH_RELAY_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ toToken: token, title: "🎮 NovaHub Arcade", body })
-        }).catch(() => {});
-    } catch (e) {}
-}
-
-// ============================================================================
-// 4. AUTHENTICATION & APP ENTRY PIN LOCK
+// 1. APP ENTRY PIN LOCK
 // ============================================================================
 function updateAppLockIconUI() {
     const icon = $('app-lock-icon');
     const sw = $('toggle-app-lock-sw');
-    if (appLockEnabled && appLockPin) {
+    if (state.appLockEnabled && state.appLockPin) {
         if (icon) { icon.innerText = 'lock'; icon.style.color = '#10b981'; }
         if (sw) sw.checked = true;
     } else {
@@ -409,12 +79,13 @@ function updateAppLockIconUI() {
 }
 
 function lockAppIfEnabled() {
-    if (!myAccountCode || !appLockEnabled || !appLockPin) return;
-    isAppUnlocked = false;
-    isRoomActivelyOpen = false;
-    if ($('chat-view')) $('chat-view').classList.remove('open');
-    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal); closeLayer(roomActionSheet);
-    if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
+    if (!state.myAccountCode || !state.appLockEnabled || !state.appLockPin) return;
+    state.isAppUnlocked = false;
+    state.isRoomActivelyOpen = false;
+    $('chat-view')?.classList.remove('open');
+    closeLayer(drawer); closeLayer(overlay); closeLayer($('location-modal'));
+    closeLayer(clearModal); closeLayer(genericModal); closeLayer($('room-action-sheet'));
+    $('emoji-picker')?.classList.remove('show');
     if ($('lock-pin-input')) $('lock-pin-input').value = '';
     if ($('lock-error-msg')) $('lock-error-msg').innerText = '';
     openLayer(appLockScreen);
@@ -422,573 +93,71 @@ function lockAppIfEnabled() {
 
 function unlockAppWithPin() {
     const val = ($('lock-pin-input')?.value || '').trim();
-    if (val === appLockPin) {
-        isAppUnlocked = true;
-        $('lock-pin-input').value = '';
-        $('lock-error-msg').innerText = '';
+    if (val === state.appLockPin) {
+        state.isAppUnlocked = true;
+        if ($('lock-pin-input')) $('lock-pin-input').value = '';
+        if ($('lock-error-msg')) $('lock-error-msg').innerText = '';
         closeLayer(appLockScreen);
         window.scrollTo(0, 0);
     } else {
-        $('lock-error-msg').innerText = '❌ Galat PIN! Dobara koshish karein.';
-        $('lock-pin-input').value = '';
+        if ($('lock-error-msg')) $('lock-error-msg').innerText = '❌ Galat PIN! Dobara koshish karein.';
+        if ($('lock-pin-input')) $('lock-pin-input').value = '';
     }
-}
-
-function wipeLocalSessionData() {
-    ['nova_account_code', 'nova_my_code', 'nova_uid', 'nova_username', 'nova_dp', 'nova_lock_pin', 'nova_app_lock_enabled', 'nova_app_lock_pin', 'nova_saved_rooms', 'nova_last_room'].forEach(k => localStorage.removeItem(k));
-}
-
-function saveSessionToLocal() {
-    localStorage.setItem('nova_account_code', myAccountCode);
-    localStorage.setItem('nova_uid', myUid);
-    localStorage.setItem('nova_username', myName);
-    localStorage.setItem('nova_dp', myDp);
-    localStorage.setItem('nova_lock_pin', myLockPin);
-    localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
-    localStorage.setItem('nova_app_lock_pin', appLockPin);
-    localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
 }
 
 // ============================================================================
-// 5. HELPERS: ENCRYPTION, ALERTS, TIME FORMATTING, PRESENCE & LIVE LOCATION
+// 2. ROOM NAVIGATION & HEADER BADGES
 // ============================================================================
-function make1on1RoomId(codeA, codeB) {
-    const pair = [String(codeA).trim(), String(codeB).trim()].sort();
-    return `dm_${pair[0]}_${pair[1]}`;
-}
-
-function isMyMessage(m) {
-    if (!m) return false;
-    if (myAccountCode && m.accountCode && String(m.accountCode).trim() === String(myAccountCode).trim()) return true;
-    return !!(myUid && m.uid === myUid);
-}
-
-function isRoomMuted(roomId) {
-    if (!roomId) return false;
-    const r = savedRooms.find(x => x.id === roomId);
-    return !!(r && r.muted);
-}
-
-function isChatActivelyVisible() {
-    if (!currentRoom || !isRoomActivelyOpen || !isAppUnlocked) return false;
-    if (document.visibilityState !== 'visible') return false;
-    if (isWidgetMode && !isWidgetOpen) return false;
-    if (isLayerOpen(authScreen) || isLayerOpen(appLockScreen) || isLayerOpen(cyberGate)) return false;
-    if ((isWidgetMode || window.innerWidth <= 768) && !$('chat-view')?.classList.contains('open')) return false;
-    return true;
-}
-
-function getDateGroupLabel(d = new Date()) { return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
-function getShortTime(d = new Date()) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
-
-function formatChatListTime(ms, fallbackShortTime = '') {
-    if (!ms) return fallbackShortTime || '';
-    const d = new Date(ms);
-    const now = new Date();
-    if (d.toDateString() === now.toDateString()) {
-        return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
-    }
-    const yest = new Date(now);
-    yest.setDate(now.getDate() - 1);
-    if (d.toDateString() === yest.toDateString()) return 'Yesterday';
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-function formatLastSeen(ms) {
-    if (!ms) return "";
-    const d = new Date(ms);
-    const now = new Date();
-    const timePart = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-    const yest = new Date(now); yest.setDate(now.getDate() - 1);
-    if (d.toDateString() === now.toDateString()) return `Last seen today at ${timePart}`;
-    if (d.toDateString() === yest.toDateString()) return `Last seen yesterday at ${timePart}`;
-    const datePart = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    return `Last seen ${datePart}, ${timePart}`;
-}
-
-function encryptText(plainText, key) {
-    if (!key) return plainText;
-    try {
-        let out = "";
-        for (let i = 0; i < plainText.length; i++) out += String.fromCharCode(plainText.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-        return "🔒ENC:" + btoa(unescape(encodeURIComponent(out)));
-    } catch (e) { return plainText; }
-}
-function decryptText(cipherText, key) {
-    if (!cipherText || !cipherText.startsWith("🔒ENC:")) return cipherText;
-    if (!key) return "🔐 [Encrypted - Tap Info to enter key]";
-    try {
-        const raw = decodeURIComponent(escape(atob(cipherText.replace("🔒ENC:", ""))));
-        let out = "";
-        for (let i = 0; i < raw.length; i++) out += String.fromCharCode(raw.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-        return out;
-    } catch (e) { return "🔐 [Wrong Encryption Key]"; }
-}
-
-function playAlertBeep() {
-    const ctx = ensureAudioContext();
-    if (!ctx) return;
-    try {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(); osc.stop(ctx.currentTime + 0.3);
-    } catch (e) {}
-}
-
-function showQuickToast(txt) {
-    const toast = $('stealth-toast');
-    if (!toast) return;
-    $('toast-txt').innerText = txt;
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2800);
-}
-
-async function triggerStealthAlert(type, roomId = currentRoom) {
-    if (isRoomMuted(roomId)) return;
-
-    if (vibrationEnabled && type !== 'call') {
-        if ("vibrate" in navigator) { try { navigator.vibrate([150, 70, 150]); } catch (e) {} }
-        playAlertBeep();
-    }
-    let txt = "New high score challenge! Game khelo **";
-    if (type === "media") txt = "Daily spin reward ready! Game khelo ₹₹";
-    else if (type === "call") txt = "Multiplayer lobby active! Join now ⭐️⭐️";
-
-    if (isWidgetMode && !isWidgetOpen) {
-        if (type === 'call') postToGame({ type: 'NOVA_CALL_INCOMING', toastText: stealthNotifEnabled ? txt : '' });
-        else postToGame({ type: 'NOVA_UNREAD', toastText: stealthNotifEnabled ? txt : '' });
-    }
-    if (!stealthNotifEnabled) return;
-    showQuickToast(txt);
-
-    if ("Notification" in window && Notification.permission === "granted" && !isChatActivelyVisible()) {
-        try {
-            if ('serviceWorker' in navigator) {
-                const reg = await navigator.serviceWorker.ready;
-                if (reg && reg.showNotification) {
-                    await reg.showNotification("🎮 NovaHub Arcade", {
-                        body: txt,
-                        icon: "https://cdn-icons-png.flaticon.com/512/808/808439.png",
-                        vibrate: [180, 80, 180],
-                        tag: "novahub-" + Date.now()
-                    });
-                    return;
-                }
-            }
-            new Notification("🎮 NovaHub Arcade", { body: txt });
-        } catch (e) {}
-    }
-}
-
-async function updatePresence(statusStr = "online", force = false) {
-    if (!currentRoom || !myUid) return;
-    const nowMs = Date.now();
-    if (!force && statusStr === lastPresStatus && (nowMs - lastPresMs) < 15000) return;
-    lastPresStatus = statusStr;
-    lastPresMs = nowMs;
-    const timeStr = new Date(nowMs).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-    try {
-        await setDoc(doc(db, "novahub_all_rooms", currentRoom), {
-            roomId: currentRoom, pinCode: currentRoom, lastActive: new Date().toLocaleString(),
-            [`presence_${myUid}`]: { accountCode: myAccountCode, name: myName, status: statusStr, time: timeStr, updated: nowMs }
-        }, { merge: true });
-    } catch (e) {}
-}
-
-setInterval(() => { if (isChatActivelyVisible()) updatePresence("online", true); }, 25000);
-window.addEventListener('pagehide', () => updatePresence("offline", true));
-
-function refreshLiveBanner() {
-    if (!liveBanner) return;
-    const sess = activeLiveSessions[currentRoom];
-    if (sess) {
-        liveBannerText.innerText = `Sharing Live Location (${sess.label})`;
-        liveBanner.style.display = 'flex';
-    } else {
-        liveBanner.style.display = 'none';
-    }
-}
-
-async function saveLiveShareCloud(roomId, shareObj) {
-    if (!myAccountCode || !roomId) return;
-    try {
-        await setDoc(doc(db, "novahub_accounts", myAccountCode), {
-            activeLiveShares: { [roomId]: shareObj }
-        }, { merge: true });
-    } catch (e) {}
-}
-
-function clearLocalLiveWatcher(roomId) {
-    const sess = activeLiveSessions[roomId];
-    if (!sess) return;
-    if (sess.watchId !== null) navigator.geolocation.clearWatch(sess.watchId);
-    if (sess.expireTimer) clearTimeout(sess.expireTimer);
-    delete activeLiveSessions[roomId];
-    refreshLiveBanner();
-}
-
-function attachLiveLocationWatcher(targetRoom, msgId, expiresAt, durLabel) {
-    if (!navigator.geolocation || !targetRoom || !msgId) return;
-    if (activeLiveSessions[targetRoom] && activeLiveSessions[targetRoom].msgId === msgId) return;
-    if (activeLiveSessions[targetRoom]) clearLocalLiveWatcher(targetRoom);
-
-    const pushCoords = async (p) => {
-        if (!activeLiveSessions[targetRoom] || activeLiveSessions[targetRoom].msgId !== msgId) return;
-        if (expiresAt > 0 && Date.now() >= expiresAt) { stopLiveLocation(targetRoom, msgId); return; }
-        const nLat = p.coords.latitude.toFixed(6);
-        const nLng = p.coords.longitude.toFixed(6);
-        const nUrl = `https://www.google.com/maps?q=${nLat},${nLng}`;
-        const updStr = new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
-        try {
-            await updateDoc(doc(db, targetRoom, msgId), {
-                lat: nLat, lng: nLng, mapUrl: nUrl, isLiveActive: true, lastUpdatedStr: updStr,
-                originalAuditText: `🛰️ Live Location (${durLabel}): ${nUrl}`
-            });
-        } catch (e) {}
-    };
-
-    const session = { msgId, watchId: null, expireTimer: null, label: durLabel, lastUpdateMs: 0 };
-    activeLiveSessions[targetRoom] = session;
-
-    navigator.geolocation.getCurrentPosition(p => { session.lastUpdateMs = Date.now(); pushCoords(p); }, () => {}, { enableHighAccuracy: true, timeout: 15000 });
-    session.watchId = navigator.geolocation.watchPosition(p => {
-        if (Date.now() - session.lastUpdateMs < 8000) return;
-        session.lastUpdateMs = Date.now();
-        pushCoords(p);
-    }, () => {}, { enableHighAccuracy: true, maximumAge: 6000, timeout: 15000 });
-
-    if (expiresAt > 0) {
-        const rem = expiresAt - Date.now();
-        if (rem <= 0) { stopLiveLocation(targetRoom, msgId); return; }
-        session.expireTimer = setTimeout(() => stopLiveLocation(targetRoom, msgId), rem);
-    }
-    refreshLiveBanner();
-}
-
-async function stopLiveLocation(roomId, msgId) {
-    clearLocalLiveWatcher(roomId);
-    await saveLiveShareCloud(roomId, null);
-    if (roomId && msgId) {
-        const endStr = new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
-        try { await updateDoc(doc(db, roomId, msgId), { isLiveActive: false, lastUpdatedStr: endStr }); } catch (e) {}
-    }
-    refreshLiveBanner();
-}
-window.stopLiveLocation = stopLiveLocation;
-
-function stopAllLiveSessions() {
-    Object.keys(activeLiveSessions).forEach(rId => clearLocalLiveWatcher(rId));
-}
-
-// ============================================================================
-// 6. WHATSAPP LIVE SIDEBAR SUMMARIES (UNREAD COUNT + LAST MESSAGE + TIME)
-// ============================================================================
-function getMessagePreviewText(roomId, m) {
-    if (!m) return '';
-    if (m.type === 'image') return m.isViewOnce ? '➀ Photo' : '📷 Photo';
-    if (m.type === 'video') return m.isViewOnce ? '➀ Video' : '🎥 Video';
-    if (m.type === 'audio') return m.isViewOnce ? '➀ Voice note' : '🎙️ Voice note';
-    if (m.type === 'location') return '📍 Location';
-    if (m.type === 'live_location') return '🛰️ Live location';
-    const raw = m.text || '';
-    if (raw.startsWith('🔒ENC:')) {
-        const encKey = localStorage.getItem(`nova_enc_${roomId}`) || '';
-        return encKey ? decryptText(raw, encKey) : '🔐 Encrypted message';
-    }
-    return raw;
-}
-
-function syncRoomSummaryListeners() {
-    const activeIds = new Set(savedRooms.map(r => r.id));
-
-    for (const [rId, unsub] of roomSummaryUnsubs.entries()) {
-        if (!activeIds.has(rId)) {
-            unsub();
-            roomSummaryUnsubs.delete(rId);
-            delete roomSummaries[rId];
-        }
-    }
-
-    savedRooms.forEach(r => {
-        if (roomSummaryUnsubs.has(r.id)) return;
-        let firstSnap = true;
-        const q = query(collection(db, r.id), orderBy("sentMs", "desc"), limit(25));
-        const unsub = onSnapshot(q, (snap) => {
-            let latestMsg = null;
-            let unreadCount = 0;
-
-            snap.forEach(d => {
-                const m = d.data();
-                if (!m || m.isDeletedEveryone || (m.deletedFor && m.deletedFor.includes(myUid))) return;
-                const vTimer = m.vanishTimer || "off";
-                if (vTimer !== "off" && vTimer !== "instant" && timerMs[vTimer]) {
-                    const baseMs = m.seenMs || m.sentMs || Date.now();
-                    if (Date.now() - baseMs > timerMs[vTimer]) return;
-                }
-                if (!latestMsg) latestMsg = m;
-                if (!isMyMessage(m) && !m.seenStatus && !m.manualUnseen) unreadCount++;
-            });
-
-            const prevMs = roomSummaries[r.id]?.lastMs || 0;
-            const newMs = latestMsg ? (latestMsg.sentMs || 0) : 0;
-
-            if (latestMsg) {
-                roomSummaries[r.id] = {
-                    lastText: getMessagePreviewText(r.id, latestMsg),
-                    lastTime: formatChatListTime(newMs, latestMsg.shortTime || ''),
-                    lastMs: newMs,
-                    lastIsMe: isMyMessage(latestMsg),
-                    lastSeen: !!latestMsg.seenStatus,
-                    unreadCount
-                };
-            } else {
-                roomSummaries[r.id] = { lastText: '', lastTime: '', lastMs: 0, lastIsMe: false, lastSeen: false, unreadCount: 0 };
-            }
-
-            if (!firstSnap && latestMsg && newMs > prevMs && !isMyMessage(latestMsg) && r.id !== currentRoom) {
-                triggerStealthAlert(latestMsg.type === 'text' ? 'text' : 'media', r.id);
-            }
-            firstSnap = false;
-            renderSidebarList();
-        }, () => {});
-        roomSummaryUnsubs.set(r.id, unsub);
-    });
-}
-
-// ============================================================================
-// 7. ROOM MANAGEMENT, ARCHIVE, MUTE, 3-DOTS MENU & REAL-TIME LISTENERS
-// ============================================================================
-async function syncAccountToCloud() {
-    localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
-    if (!myAccountCode) return;
-    const mutedRooms = savedRooms.filter(r => r.muted).map(r => r.id);
-    try {
-        await setDoc(doc(db, "novahub_accounts", myAccountCode), {
-            savedRooms,
-            mutedRooms,
-            updatedAt: new Date().toLocaleString()
-        }, { merge: true });
-    } catch (e) {}
-}
-
-function getRoomMeta(roomId) {
-    return savedRooms.find(r => r.id === roomId) || { id: roomId, name: "Private Chat", locked: false, muted: false, archived: false, timer: "off" };
-}
-
 function updateActiveHeaderBadges(meta) {
-    $('active-room-title').innerText = meta.name;
-    $('drawer-room-name').innerText = `${meta.name} (ID: ${meta.peerCode || ''})`;
+    if ($('active-room-title')) $('active-room-title').innerText = meta.name;
+    if ($('drawer-room-name')) $('drawer-room-name').innerText = `${meta.name} (ID: ${meta.peerCode || ''})`;
     const dp = $('active-room-dp');
-    if (meta.dp) { dp.innerText = ''; dp.style.backgroundImage = `url(${meta.dp})`; }
-    else { dp.style.backgroundImage = ''; dp.innerText = (meta.name || 'P').charAt(0).toUpperCase(); }
+    if (dp) {
+        if (meta.dp) { dp.innerText = ''; dp.style.backgroundImage = `url(${meta.dp})`; }
+        else { dp.style.backgroundImage = ''; dp.innerText = (meta.name || 'P').charAt(0).toUpperCase(); }
+    }
     const bEl = $('active-mode-badge');
-    if (meta.timer && meta.timer !== 'off') { bEl.innerText = timerLabels[meta.timer]; bEl.style.display = 'inline-block'; }
-    else bEl.style.display = 'none';
-    const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
-    $('di-enc-sub').innerText = encKey ? "🔒 Custom Cipher Key Active" : "Optional cipher password";
+    if (bEl) {
+        if (meta.timer && meta.timer !== 'off') { bEl.innerText = timerLabels[meta.timer]; bEl.style.display = 'inline-block'; }
+        else bEl.style.display = 'none';
+    }
+    const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
+    if ($('di-enc-sub')) $('di-enc-sub').innerText = encKey ? "🔒 Custom Cipher Key Active" : "Optional cipher password";
 }
 
-function renderActiveStrip() {
-    const strip = $('messenger-active-strip');
-    if (!strip) return;
-    strip.innerHTML = `
-        <div class="story-bubble" id="my-story-shortcut">
-            <div class="story-ring" style="background:rgba(255,255,255,0.15);">
-                <div class="avatar"><span class="material-icons" style="font-size:20px;">add</span></div>
-            </div>
-            <span class="story-name">My Story</span>
-        </div>
-    `;
-    bindClick('my-story-shortcut', () => $('tab-status')?.click());
-
-    savedRooms.forEach(r => {
-        if (r.locked || r.archived) return;
-        const init = (r.name || 'U').charAt(0).toUpperCase();
-        const b = document.createElement('div');
-        b.className = 'story-bubble';
-        b.innerHTML = `
-            <div class="story-ring">
-                <div class="avatar" style="${r.dp ? `background-image:url(${r.dp})` : ''}">${r.dp ? '' : escapeHtml(init)}<div class="online-dot"></div></div>
-            </div>
-            <span class="story-name">${escapeHtml(r.name)}</span>
-        `;
-        b.addEventListener('click', () => selectRoom(r.id, true));
-        strip.appendChild(b);
-    });
-}
-
-function openRoomActionSheet(roomId) {
-    const r = savedRooms.find(x => x.id === roomId);
-    if (!r) return;
-    actionTargetRoomId = roomId;
-
-    $('ras-room-name').innerText = r.name || 'Private Chat';
-    $('ras-room-sub').innerText = `ID: ${r.peerCode || 'Private'}${r.muted ? ' • Muted' : ''}${r.archived ? ' • Archived' : ''}${r.locked ? ' • Locked' : ''}`;
-
-    $('ras-mute-ico').innerText = r.muted ? 'notifications_active' : 'notifications_off';
-    $('ras-mute-txt').innerText = r.muted ? 'Unmute Notifications' : 'Mute Notifications';
-    $('ras-mute-desc').innerText = r.muted ? 'Notification & sound wapas chalu karein' : 'Is chat ki notification & sound band karein';
-
-    $('ras-archive-ico').innerText = r.archived ? 'unarchive' : 'archive';
-    $('ras-archive-txt').innerText = r.archived ? 'Unarchive Chat' : 'Archive Chat';
-    $('ras-archive-desc').innerText = r.archived ? 'Main chat list mein wapas layein' : 'Main list se Archived folder mein chhupayein';
-
-    $('ras-lock-ico').innerText = r.locked ? 'lock_open' : 'lock';
-    $('ras-lock-txt').innerText = r.locked ? 'Unlock & Unhide Chat' : 'Lock & Hide Chat';
-    $('ras-lock-desc').innerText = r.locked ? 'Chat ko wapas normal list mein dikhayein' : 'Secret PIN se chhupayein';
-
-    openLayer(roomActionSheet);
-}
-
-function renderSidebarList() {
-    const area = $('chats-list-area');
-    if (!area) return;
-    area.innerHTML = '';
-    const searchVal = ($('pin-search-input')?.value || '').trim();
-    myLockPin = localStorage.getItem('nova_lock_pin') || "";
-    const unlockedBySearch = (myLockPin !== "" && searchVal === myLockPin);
-
-    const archivedRooms = savedRooms.filter(r => r.archived && !r.locked);
-    if (showingArchivedView && (archivedRooms.length === 0 || unlockedBySearch)) {
-        showingArchivedView = false;
-    }
-
-    if (!unlockedBySearch && !searchVal) {
-        if (showingArchivedView) {
-            const backBar = document.createElement('div');
-            backBar.className = 'wa-archived-row';
-            backBar.innerHTML = `
-                <div class="wa-archived-left">
-                    <span class="material-icons" style="color:#25d366; font-size:20px;">arrow_back</span>
-                    <span>Archived Chats (${archivedRooms.length})</span>
-                </div>
-                <span style="font-size:11px; color:var(--text-sub);">Back</span>
-            `;
-            backBar.addEventListener('click', () => { showingArchivedView = false; renderSidebarList(); });
-            area.appendChild(backBar);
-        } else if (archivedRooms.length > 0) {
-            const archUnread = archivedRooms.reduce((sum, r) => sum + (roomSummaries[r.id]?.unreadCount || 0), 0);
-            const archBar = document.createElement('div');
-            archBar.className = 'wa-archived-row';
-            archBar.innerHTML = `
-                <div class="wa-archived-left">
-                    <span class="material-icons" style="color:#25d366; font-size:20px;">archive</span>
-                    <span>Archived</span>
-                </div>
-                <span class="wa-archived-count">${archUnread > 0 ? archUnread : archivedRooms.length}</span>
-            `;
-            archBar.addEventListener('click', () => { showingArchivedView = true; renderSidebarList(); });
-            area.appendChild(archBar);
-        }
-    }
-
-    const visibleRooms = savedRooms.filter(r => {
-        if (unlockedBySearch) return !!r.locked;
-        if (r.locked) return false;
-        if (searchVal) {
-            return r.name.toLowerCase().includes(searchVal.toLowerCase()) || (r.peerCode || '').includes(searchVal);
-        }
-        return showingArchivedView ? !!r.archived : !r.archived;
-    });
-
-    visibleRooms.sort((a, b) => (roomSummaries[b.id]?.lastMs || 0) - (roomSummaries[a.id]?.lastMs || 0));
-
-    if (visibleRooms.length === 0) {
-        const emptyText = showingArchivedView
-            ? `📦 <b>No Archived Chats</b>`
-            : `🔒 <b>Your Private Inbox is Empty</b><br>Tap <b>+ Add ID</b> above and enter your friend's ID number to start a private 1-on-1 chat.`;
-        const emptyDiv = document.createElement('div');
-        emptyDiv.className = 'empty-inbox';
-        emptyDiv.innerHTML = emptyText;
-        area.appendChild(emptyDiv);
-        return;
-    }
-
-    visibleRooms.forEach(r => {
-        const sum = roomSummaries[r.id] || {};
-        const unread = sum.unreadCount || 0;
-        const hasUnread = unread > 0;
-        const tBadge = (r.timer && r.timer !== 'off') ? `<span class="mode-badge">${timerLabels[r.timer]}</span>` : '';
-        const lockBadge = r.locked ? `<span class="mode-badge" style="color:#eab308; border-color:#eab308;">🔒</span>` : '';
-        const init = (r.name || 'U').charAt(0).toUpperCase();
-
-        const previewTick = (sum.lastText && sum.lastIsMe)
-            ? `<span class="material-icons wa-preview-tick ${sum.lastSeen ? 'read' : ''}">${sum.lastSeen ? 'done_all' : 'check'}</span>`
-            : '';
-        const previewHtml = sum.lastText
-            ? `${previewTick}<span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(sum.lastText)}</span>`
-            : `ID: ${escapeHtml(r.peerCode || 'Private')} • Tap to message`;
-
-        const muteHtml = r.muted ? `<span class="material-icons wa-mute-ico" title="Muted">notifications_off</span>` : '';
-        const badgeHtml = hasUnread ? `<span class="wa-unread-badge">${unread >= 25 ? '25+' : unread}</span>` : '';
-
-        const div = document.createElement('div');
-        div.className = `chat-item ${r.id === currentRoom && isRoomActivelyOpen ? 'active' : ''}`;
-        div.innerHTML = `
-            <div class="avatar" style="${r.dp ? `background-image:url(${r.dp})` : ''}">${r.dp ? '' : escapeHtml(init)}<div class="online-dot"></div></div>
-            <div class="chat-item-info">
-                <div class="chat-item-top">
-                    <span class="chat-item-name">${escapeHtml(r.name)} ${tBadge} ${lockBadge}</span>
-                    <span class="wa-chat-time ${hasUnread ? 'unread' : ''}">${escapeHtml(sum.lastTime || '')}</span>
-                </div>
-                <div class="wa-bottom-row">
-                    <div class="wa-preview ${hasUnread ? 'unread' : ''}">${previewHtml}</div>
-                    <div class="wa-indicators">${muteHtml}${badgeHtml}</div>
-                </div>
-            </div>
-            <button type="button" class="wa-more-btn" aria-label="Chat options">
-                <span class="material-icons" style="font-size:20px;">more_vert</span>
-            </button>
-        `;
-
-        const moreBtn = div.querySelector('.wa-more-btn');
-        moreBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openRoomActionSheet(r.id);
-        });
-
-        div.addEventListener('click', () => {
-            if (r.locked) $('pin-search-input').value = '';
-            selectRoom(r.id, true);
-        });
-        area.appendChild(div);
-    });
+function detachChatListener() {
+    if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
 }
 
 function goBackToList(e) {
     if (e) e.stopPropagation();
     if (document.activeElement) document.activeElement.blur();
-    isRoomActivelyOpen = false;
-    $('chat-view').classList.remove('open');
-    closeLayer(drawer); closeLayer(overlay); closeLayer(locModal); closeLayer(clearModal); closeLayer(genericModal); closeLayer(roomActionSheet);
-    if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
+    state.isRoomActivelyOpen = false;
+    $('chat-view')?.classList.remove('open');
+    closeLayer(drawer); closeLayer(overlay); closeLayer($('location-modal'));
+    closeLayer(clearModal); closeLayer(genericModal); closeLayer($('room-action-sheet'));
+    $('emoji-picker')?.classList.remove('show');
     window.scrollTo(0, 0);
     renderSidebarList();
 }
 
 function selectRoom(roomId, openUI = true) {
-    const isSameRoom = (currentRoom === roomId);
-    currentRoom = roomId;
+    const isSameRoom = (state.currentRoom === roomId);
+    state.currentRoom = roomId;
     localStorage.setItem('nova_last_room', roomId);
     const meta = getRoomMeta(roomId);
     updateActiveHeaderBadges(meta);
-    $('toggle-lock-chat').checked = !!meta.locked;
-    $('select-vanish-timer').value = meta.timer || "off";
+    if ($('toggle-lock-chat')) $('toggle-lock-chat').checked = !!meta.locked;
+    if ($('select-vanish-timer')) $('select-vanish-timer').value = meta.timer || "off";
 
     if (openUI) {
-        isRoomActivelyOpen = true;
-        $('chat-view').classList.add('open');
+        state.isRoomActivelyOpen = true;
+        $('chat-view')?.classList.add('open');
         updatePresence("online", true);
         window.scrollTo(0, 0);
     } else {
-        isRoomActivelyOpen = false;
-        $('chat-view').classList.remove('open');
+        state.isRoomActivelyOpen = false;
+        $('chat-view')?.classList.remove('open');
     }
 
     refreshLiveBanner();
@@ -1001,61 +170,30 @@ function selectRoom(roomId, openUI = true) {
     } else if (openUI) {
         markVisibleMessagesSeen();
         const box = $('msgs-container');
-        setTimeout(() => { box.scrollTop = box.scrollHeight; }, 30);
+        if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 30);
     }
 }
 
+// ============================================================================
+// 3. MESSAGING ENGINE (LISTEN, RENDER, SEEN TICKS, SEND & MEDIA)
+// ============================================================================
 async function markVisibleMessagesSeen() {
     if (!isChatActivelyVisible()) return;
     const nowTime = new Date().toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-    for (const id in cachedMessages) {
-        const m = cachedMessages[id];
+    for (const id in state.cachedMessages) {
+        const m = state.cachedMessages[id];
         if (!m || isMyMessage(m) || m.seenStatus || m.manualUnseen || m.isDeletedEveryone || markingSeen.has(id)) continue;
         markingSeen.add(id);
         const vTimer = m.vanishTimer || "off";
         try {
-            await updateDoc(doc(db, currentRoom, id), {
-                seenStatus: true, seenBy: myAccountCode, seenAtStr: nowTime, seenMs: Date.now(),
+            await updateDoc(doc(db, state.currentRoom, id), {
+                seenStatus: true, seenBy: state.myAccountCode, seenAtStr: nowTime, seenMs: Date.now(),
                 ...(vTimer === "instant" ? { isDeletedEveryone: true, deletedByAudit: "Instant Snap Mode" } : {})
             });
         } catch (e) {} finally {
             markingSeen.delete(id);
         }
     }
-}
-
-function listenToPresence(roomId) {
-    if (unsubscribePresence) unsubscribePresence();
-    if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
-    let latestPeer = null;
-
-    const paintPresence = () => {
-        if (!latestPeer) { $('active-room-status').innerText = `Tap name for Info & Clear Chat`; return; }
-        const recent = (Date.now() - (latestPeer.updated || 0)) < 50000;
-        if (recent && (latestPeer.status === "typing..." || latestPeer.status === "recording audio...")) {
-            $('active-room-status').innerText = `✍️ ${latestPeer.name} is ${latestPeer.status}`;
-        } else if (recent && latestPeer.status === "online") {
-            $('active-room-status').innerText = `🟢 Active now`;
-        } else {
-            $('active-room-status').innerText = formatLastSeen(latestPeer.updated) || `Last active at ${latestPeer.time}`;
-        }
-    };
-
-    unsubscribePresence = onSnapshot(doc(db, "novahub_all_rooms", roomId), (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        latestPeer = null;
-        for (let k in data) {
-            if (!k.startsWith('presence_')) continue;
-            if (k === `presence_${myUid}` || k === `presence_user_${myAccountCode}`) continue;
-            const p = data[k];
-            if (!p || (p.accountCode && String(p.accountCode) === String(myAccountCode))) continue;
-            if (!latestPeer || (p.updated || 0) > (latestPeer.updated || 0)) latestPeer = p;
-        }
-        paintPresence();
-    });
-
-    presenceRefreshTimer = setInterval(paintPresence, 15000);
 }
 
 function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
@@ -1073,7 +211,7 @@ function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
                 <div style="font-weight:700; font-size:13px; color:${isActive ? '#fff' : '#cbd5e1'}; display:flex; align-items:center;">
                     Live Location ${isActive ? '<span class="live-tag">● LIVE</span>' : ''}
                 </div>
-                <div style="font-size:11px; color:#cbd5e1;">${statusLine}</div>
+                <div style="font-size:11px; color:#cbd5e1;">${escapeHtml(statusLine)}</div>
                 <div style="font-size:10.5px; color:#00f2fe; margin-top:2px;">Tap to open on Map</div>
             </div>
         </a>`;
@@ -1090,13 +228,13 @@ function buildMessageBodyHTML(roomId, id, m, isMe, encKey) {
             <span class="material-icons" style="font-size:26px; color:#10b981;">location_on</span>
             <div>
                 <div style="font-weight:700; font-size:13px; color:#00f2fe;">Current Location</div>
-                <div style="font-size:11px; color:#cbd5e1;">${m.lat}, ${m.lng} • Tap to open Map</div>
+                <div style="font-size:11px; color:#cbd5e1;">${escapeHtml(m.lat)}, ${escapeHtml(m.lng)} • Tap to open Map</div>
             </div>
         </a>`;
     }
     if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
         if (m.isViewOnce) {
-            const opened = m.viewedBy && m.viewedBy.includes(myUid);
+            const opened = m.viewedBy && m.viewedBy.includes(state.myUid);
             return opened
                 ? `<div class="view-once-pill opened"><span class="material-icons" style="font-size:15px;">timelapse</span> Opened</div>`
                 : `<div class="view-once-pill"><span class="material-icons" style="font-size:15px;">looks_one</span> 1-Time ${m.type.toUpperCase()}</div>`;
@@ -1121,18 +259,19 @@ function getBodySignature(m, encKey) {
     if (m.type === 'live_location') return `live:${m.lat}:${m.lng}:${m.isLiveActive}:${m.lastUpdatedStr}`;
     if (m.type === 'location') return `loc:${m.lat}:${m.lng}`;
     if (m.type === 'image' || m.type === 'video' || m.type === 'audio') {
-        const opened = !!(m.viewedBy && m.viewedBy.includes(myUid));
+        const opened = !!(m.viewedBy && m.viewedBy.includes(state.myUid));
         return `media:${m.type}:${m.isViewOnce}:${opened}`;
     }
     return `txt:${decryptText(m.text, encKey)}`;
 }
 
 function listenToMessages(roomId) {
-    if (unsubscribeChat) unsubscribeChat();
+    detachChatListener();
     const box = $('msgs-container');
+    if (!box) return;
     box.innerHTML = '';
-    cachedMessages = {};
-    domMap = new Map();
+    state.cachedMessages = {};
+    state.domMap = new Map();
     isInitialLoad = true;
     const encKey = localStorage.getItem(`nova_enc_${roomId}`) || "";
     let lastDatePillText = "";
@@ -1148,8 +287,8 @@ function listenToMessages(roomId) {
         snap.forEach(d => {
             const m = d.data();
             const id = d.id;
-            cachedMessages[id] = m;
-            if (m.isDeletedEveryone || (m.deletedFor && m.deletedFor.includes(myUid))) return;
+            state.cachedMessages[id] = m;
+            if (m.isDeletedEveryone || (m.deletedFor && m.deletedFor.includes(state.myUid))) return;
 
             const vTimer = m.vanishTimer || "off";
             if (vTimer !== "off" && vTimer !== "instant" && timerMs[vTimer]) {
@@ -1162,17 +301,17 @@ function listenToMessages(roomId) {
 
             visibleIds.add(id);
             if (m.type === 'image' || m.type === 'video') mediaCount++;
-            if (m.starredBy && m.starredBy.includes(myUid)) starCount++;
+            if (m.starredBy && m.starredBy.includes(state.myUid)) starCount++;
 
             const isMe = isMyMessage(m);
-            const starIcon = (m.starredBy && m.starredBy.includes(myUid)) ? `<span class="material-icons" style="font-size:12px; color:#eab308;">star</span>` : '';
+            const starIcon = (m.starredBy && m.starredBy.includes(state.myUid)) ? `<span class="material-icons" style="font-size:12px; color:#eab308;">star</span>` : '';
             const tick = m.seenStatus ? `<span class="material-icons seen-tick read">done_all</span>` : `<span class="material-icons seen-tick">check</span>`;
             const metaHtml = `${starIcon} ${m.isEdited ? 'Edited' : ''} <span>${m.shortTime || ''}</span> ${tick}`;
             const reactTxt = (m.reactions && Object.keys(m.reactions).length > 0) ? Object.values(m.reactions).join(' ') : '';
             const bodySig = getBodySignature(m, encKey);
 
-            if (domMap.has(id)) {
-                const entry = domMap.get(id);
+            if (state.domMap.has(id)) {
+                const entry = state.domMap.get(id);
                 if (entry.bodySig !== bodySig) { entry.bodyEl.innerHTML = buildMessageBodyHTML(roomId, id, m, isMe, encKey); entry.bodySig = bodySig; }
                 if (entry.metaHtml !== metaHtml) { entry.metaEl.innerHTML = metaHtml; entry.metaHtml = metaHtml; }
                 if (entry.reactTxt !== reactTxt) { entry.reactEl.innerText = reactTxt; entry.reactEl.style.display = reactTxt ? 'flex' : 'none'; entry.reactTxt = reactTxt; }
@@ -1213,8 +352,8 @@ function listenToMessages(roomId) {
 
                 bub.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const fresh = cachedMessages[id] || m;
-                    if (fresh.isViewOnce && (!fresh.viewedBy || !fresh.viewedBy.includes(myUid))) openViewOnceModal(id, fresh);
+                    const fresh = state.cachedMessages[id] || m;
+                    if (fresh.isViewOnce && (!fresh.viewedBy || !fresh.viewedBy.includes(state.myUid))) openViewOnceModal(id, fresh);
                     else openContextMenu(e, id, fresh);
                 });
 
@@ -1224,18 +363,18 @@ function listenToMessages(roomId) {
 
                 wrap.appendChild(bub); wrap.appendChild(reactEl);
                 box.appendChild(wrap);
-                domMap.set(id, { wrap, bodyEl, metaEl, reactEl, bodySig, metaHtml, reactTxt });
+                state.domMap.set(id, { wrap, bodyEl, metaEl, reactEl, bodySig, metaHtml, reactTxt });
                 addedNewNode = true;
             }
         });
 
-        for (const [id, entry] of domMap.entries()) {
-            if (!visibleIds.has(id)) { entry.wrap.remove(); domMap.delete(id); }
+        for (const [id, entry] of state.domMap.entries()) {
+            if (!visibleIds.has(id)) { entry.wrap.remove(); state.domMap.delete(id); }
         }
-        if (domMap.size === 0) { box.innerHTML = ''; lastDatePillText = ""; }
+        if (state.domMap.size === 0) { box.innerHTML = ''; lastDatePillText = ""; }
 
-        $('di-media-count').innerText = mediaCount;
-        $('di-star-count').innerText = starCount > 0 ? starCount : "None";
+        if ($('di-media-count')) $('di-media-count').innerText = mediaCount;
+        if ($('di-star-count')) $('di-star-count').innerText = starCount > 0 ? starCount : "None";
 
         snap.docChanges().forEach(ch => {
             if (ch.type === 'added') {
@@ -1262,12 +401,12 @@ async function openViewOnceModal(id, m) {
         : (m.type === 'audio' ? `<audio src="${m.mediaUrl}" controls autoplay style="width:100%;"></audio>` : `<img src="${m.mediaUrl}" style="width:100%; border-radius:8px;">`);
     openLayer(genericModal);
     let v = [...(m.viewedBy || [])];
-    if (!v.includes(myUid)) v.push(myUid);
-    await updateDoc(doc(db, currentRoom, id), { viewedBy: v });
+    if (!v.includes(state.myUid)) v.push(state.myUid);
+    await updateDoc(doc(db, state.currentRoom, id), { viewedBy: v });
 }
 
 function openContextMenu(e, id, m) {
-    const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
+    const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
     const dec = (m.type === 'location' || m.type === 'live_location') ? (m.mapUrl || m.text) : decryptText(m.text, encKey);
     selectedMsg = { id, ...m, decrypted: dec };
     openLayer(overlay);
@@ -1282,397 +421,47 @@ function openContextMenu(e, id, m) {
 }
 
 async function sendMessage() {
-    if (!currentRoom) return showQuickToast("Please select a friend first!");
+    if (!state.currentRoom) return showQuickToast("Please select a friend first!");
     const inp = $('msg-input');
-    const rawText = inp.value.trim();
+    const rawText = (inp?.value || '').trim();
     if (!rawText) return;
     inp.value = '';
-    if ($('emoji-picker')) $('emoji-picker').classList.remove('show');
+    $('emoji-picker')?.classList.remove('show');
 
-    const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
+    const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
     const finalTxt = encryptText(rawText, encKey);
 
     if (editingMsgId) {
-        await updateDoc(doc(db, currentRoom, editingMsgId), {
+        await updateDoc(doc(db, state.currentRoom, editingMsgId), {
             text: finalTxt,
             originalAuditText: encKey ? "🔐 [Encrypted Message]" : rawText,
             isEdited: true
         });
         editingMsgId = null;
-        $('reply-bar').style.display = 'none';
+        if ($('reply-bar')) $('reply-bar').style.display = 'none';
         return;
     }
 
     const now = new Date();
-    const meta = getRoomMeta(currentRoom);
-    await addDoc(collection(db, currentRoom), {
+    const meta = getRoomMeta(state.currentRoom);
+    await addDoc(collection(db, state.currentRoom), {
         type: "text",
         text: finalTxt,
         originalAuditText: encKey ? "🔐 [Encrypted Message]" : rawText,
-        uid: myUid, accountCode: myAccountCode, name: myName,
+        uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
         shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
         sentMs: Date.now(), vanishTimer: meta.timer || "off",
-        timestamp: serverTimestamp(), replyTo: replyTarget, seenStatus: false, manualUnseen: false,
+        timestamp: serverTimestamp(), replyTo: state.replyTarget, seenStatus: false, manualUnseen: false,
         reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
     });
-    replyTarget = null;
-    $('reply-bar').style.display = 'none';
+    state.replyTarget = null;
+    if ($('reply-bar')) $('reply-bar').style.display = 'none';
     updatePresence("online", true);
-    sendStealthPushToPeer(currentRoom, "text");
-}
-
-function compressImg(file) {
-    return new Promise((res) => {
-        const r = new FileReader();
-        r.onload = e => {
-            const img = new Image();
-            img.onload = () => {
-                const c = document.createElement('canvas');
-                let w = img.width, h = img.height, max = 800;
-                if (w > max) { h = Math.round((h * max) / w); w = max; }
-                c.width = w; c.height = h;
-                c.getContext('2d').drawImage(img, 0, 0, w, h);
-                res(c.toDataURL('image/jpeg', 0.62));
-            };
-            img.src = e.target.result;
-        };
-        r.readAsDataURL(file);
-    });
-}
-
-function uploadWithTimeout(fRef, file, ms = 15000) {
-    return Promise.race([
-        uploadBytes(fRef, file, { contentType: file.type || 'video/mp4' }).then(() => getDownloadURL(fRef)),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Storage timeout / not enabled')), ms))
-    ]);
-}
-
-async function runClearAllChat(forEveryone, targetRoomId = currentRoom, silent = false) {
-    const rId = targetRoomId || currentRoom;
-    if (!rId) return;
-    closeLayer(clearModal);
-    if (!silent) showQuickToast("🧹 Clearing messages...");
-    if (forEveryone && activeLiveSessions[rId]) await stopLiveLocation(rId, activeLiveSessions[rId].msgId);
-    try {
-        const snap = await getDocs(collection(db, rId));
-        const ops = [];
-        snap.docs.forEach(d => {
-            const data = d.data();
-            if (forEveryone) {
-                if (!data.isDeletedEveryone) {
-                    ops.push(updateDoc(doc(db, rId, d.id), { isDeletedEveryone: true, isLiveActive: false, deletedByAudit: myName }).catch(() => {}));
-                }
-            } else {
-                const df = [...(data.deletedFor || [])];
-                if (!df.includes(myUid)) {
-                    df.push(myUid);
-                    ops.push(updateDoc(doc(db, rId, d.id), { deletedFor: df }).catch(() => {}));
-                }
-            }
-        });
-        await Promise.all(ops);
-        if (rId === currentRoom) {
-            $('msgs-container').innerHTML = '';
-            domMap.clear();
-            cachedMessages = {};
-        }
-        roomSummaries[rId] = { lastText: '', lastTime: '', lastMs: 0, lastIsMe: false, lastSeen: false, unreadCount: 0 };
-        renderSidebarList();
-        if (!silent) showQuickToast("✅ Saare messages clear ho gaye!");
-    } catch (e) {
-        if (!silent) showQuickToast("⚠️ Clear chat failed, try again.");
-    }
-}
-
-async function runDeleteEntireChat(roomId, forEveryone) {
-    if (!roomId) return;
-    closeLayer(genericModal);
-    showQuickToast("🗑️ Deleting chat...");
-
-    await runClearAllChat(forEveryone, roomId, true);
-
-    recentlyDeletedRooms.add(roomId);
-    setTimeout(() => recentlyDeletedRooms.delete(roomId), 15000);
-
-    savedRooms = savedRooms.filter(r => r.id !== roomId);
-    if (roomSummaryUnsubs.has(roomId)) {
-        roomSummaryUnsubs.get(roomId)();
-        roomSummaryUnsubs.delete(roomId);
-    }
-    delete roomSummaries[roomId];
-
-    if (currentRoom === roomId) {
-        if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
-        if (unsubscribePresence) { unsubscribePresence(); unsubscribePresence = null; }
-        if (unsubscribeCall) { unsubscribeCall(); unsubscribeCall = null; }
-        if (presenceRefreshTimer) { clearInterval(presenceRefreshTimer); presenceRefreshTimer = null; }
-        currentRoom = "";
-        isRoomActivelyOpen = false;
-        localStorage.removeItem('nova_last_room');
-        $('chat-view')?.classList.remove('open');
-        $('msgs-container').innerHTML = '';
-        domMap.clear();
-        cachedMessages = {};
-    }
-
-    await syncAccountToCloud();
-    renderActiveStrip();
-    renderSidebarList();
-    showQuickToast("🗑️ Chat & messages delete ho gaye!");
-}
-
-async function loadStories() {
-    const feed = $('stories-feed');
-    feed.innerHTML = 'Loading stories...';
-    const snap = await getDocs(query(collection(db, "novahub_stories"), orderBy("timestamp", "desc")));
-    feed.innerHTML = '';
-    const myFriendCodes = savedRooms.filter(r => !r.locked).map(r => r.peerCode);
-
-    snap.forEach(d => {
-        const s = d.data();
-        if (s.accountCode !== myAccountCode && !myFriendCodes.includes(s.accountCode)) return;
-        const item = document.createElement('div');
-        item.className = 'chat-item';
-        item.innerHTML = `
-            <div class="avatar" style="border:2px solid #00f2fe;">${s.type === 'image' ? '📷' : '✍️'}</div>
-            <div class="chat-item-info">
-                <div class="chat-item-name">${escapeHtml(s.name)}</div>
-                <div class="chat-item-sub">${escapeHtml(s.timeStr)} • 👀 ${s.views ? s.views.length : 0} views</div>
-            </div>
-        `;
-        item.addEventListener('click', async () => {
-            let vList = s.views || [];
-            if (!vList.includes(myName)) { vList.push(myName); await updateDoc(doc(db, "novahub_stories", d.id), { views: vList }); }
-            $('modal-title').innerText = `${s.name}'s Story`;
-            $('modal-body').innerHTML = `
-                ${s.type === 'image' ? `<img src="${s.mediaUrl}" style="width:100%; border-radius:10px;">` : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(s.text)}</div>`}
-                <div style="margin-top:12px; font-size:12px; color:var(--text-sub);">👀 Viewed by: ${escapeHtml(vList.join(', ') || 'None')}</div>
-            `;
-            openLayer(genericModal);
-            loadStories();
-        });
-        feed.appendChild(item);
-    });
+    sendStealthPushToPeer(state.currentRoom, "text");
 }
 
 // ============================================================================
-// 8. WEBRTC VOICE & VIDEO CALLS (ICE SUBCOLLECTIONS + TURN + REAL RINGTONE)
-// ============================================================================
-function syncSpk() {
-    const vol = isLoud ? 1.0 : 0.25;
-    if (remoteAud) remoteAud.volume = vol;
-    if (remoteVid) remoteVid.volume = vol;
-    $('btn-spk-call')?.classList.toggle('loud', isLoud);
-    if ($('spk-icon')) $('spk-icon').innerText = isLoud ? 'volume_up' : 'volume_down';
-}
-
-async function drainPendingIce() {
-    if (!pc || !pc.remoteDescription) return;
-    while (pendingIceCandidates.length > 0) {
-        const cand = pendingIceCandidates.shift();
-        try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
-    }
-}
-
-function subscribeRemoteIce(roomId, callId, subcolName) {
-    if (unsubscribeRemoteIce) unsubscribeRemoteIce();
-    const colRef = collection(db, "novahub_calls", roomId, subcolName);
-    unsubscribeRemoteIce = onSnapshot(colRef, (snap) => {
-        snap.docChanges().forEach(async (ch) => {
-            if (ch.type !== 'added') return;
-            const data = ch.doc.data();
-            if (!data || data.callId !== callId || !data.candidate) return;
-            if (pc && pc.remoteDescription) {
-                try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (e) {}
-            } else {
-                pendingIceCandidates.push(data.candidate);
-            }
-        });
-    });
-}
-
-function createPeerConnection(roomId, callId, isVideo, localSubcolName) {
-    const peer = new RTCPeerConnection(RTC_CONFIG);
-    localStream.getTracks().forEach(t => peer.addTrack(t, localStream));
-
-    const remoteStream = new MediaStream();
-    if (isVideo) { remoteVid.srcObject = remoteStream; remoteAud.srcObject = null; }
-    else { remoteAud.srcObject = remoteStream; remoteVid.srcObject = null; }
-
-    peer.ontrack = (e) => {
-        e.streams[0]?.getTracks().forEach(track => remoteStream.addTrack(track));
-        if (isVideo) remoteVid.play().catch(() => {});
-        else remoteAud.play().catch(() => {});
-        syncSpk();
-    };
-
-    peer.onicecandidate = (e) => {
-        if (e.candidate) {
-            addDoc(collection(db, "novahub_calls", roomId, localSubcolName), {
-                callId,
-                candidate: e.candidate.toJSON(),
-                ts: Date.now()
-            }).catch(() => {});
-        }
-    };
-
-    peer.oniceconnectionstatechange = () => {
-        if (!pc) return;
-        const st = peer.iceConnectionState;
-        if (st === 'connected' || st === 'completed') {
-            stopRingtone();
-            clearTimeout(callTimeoutTimer);
-            $('call-status-txt').innerText = isVideo ? "Video Connected 🟢" : "Audio Connected 🟢";
-        } else if (st === 'checking') {
-            $('call-status-txt').innerText = "Connecting...";
-        } else if (st === 'disconnected') {
-            $('call-status-txt').innerText = "Reconnecting...";
-        } else if (st === 'failed') {
-            $('call-status-txt').innerText = "Network Failed";
-            setTimeout(() => cleanupCall(true), 1800);
-        }
-    };
-
-    return peer;
-}
-
-async function cleanupCall(notifyCloud = true) {
-    stopRingtone();
-    clearTimeout(callTimeoutTimer);
-    if (unsubscribeRemoteIce) { unsubscribeRemoteIce(); unsubscribeRemoteIce = null; }
-    pendingIceCandidates = [];
-    if (localStream) localStream.getTracks().forEach(t => t.stop());
-    if (pc) { try { pc.close(); } catch (e) {} }
-    pc = null; localStream = null; isFs = false; isMuted = false; activeCallId = "";
-    if (remoteVid) remoteVid.srcObject = null;
-    if (remoteAud) remoteAud.srcObject = null;
-    if (localVid) localVid.srcObject = null;
-    if ($('btn-accept-call')) $('btn-accept-call').style.display = 'none';
-    if ($('btn-mic-call')) $('btn-mic-call').classList.remove('muted');
-    if ($('mic-icon')) $('mic-icon').innerText = 'mic';
-    callHud.classList.remove('fullscreen');
-    closeLayer(callHud);
-    postToGame({ type: 'NOVA_CALL_FS', fullscreen: false });
-    if (notifyCloud && currentRoom) {
-        await setDoc(doc(db, "novahub_calls", currentRoom), { status: "ended", updated: Date.now() }, { merge: true }).catch(() => {});
-    }
-}
-
-async function startCall(isVideo) {
-    if (!currentRoom) return showQuickToast("Select a friend first!");
-    ensureAudioContext();
-    await cleanupCall(false);
-
-    const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    activeCallId = callId;
-    openLayer(callHud);
-    $('call-vid-box').style.display = isVideo ? 'flex' : 'none';
-    $('call-status-txt').innerText = isVideo ? "Video Ringing..." : "Audio Ringing...";
-    $('btn-accept-call').style.display = 'none';
-    isLoud = isVideo; syncSpk();
-
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: isVideo ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false,
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-        });
-        if (isVideo) localVid.srcObject = localStream;
-    } catch (err) {
-        showQuickToast("⚠️ Mic/Camera permission needed!");
-        await cleanupCall(false);
-        return;
-    }
-
-    pc = createPeerConnection(currentRoom, callId, isVideo, "callerCandidates");
-    subscribeRemoteIce(currentRoom, callId, "calleeCandidates");
-
-    const cDoc = doc(db, "novahub_calls", currentRoom);
-    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo });
-    await pc.setLocalDescription(offer);
-    await setDoc(cDoc, {
-        callId,
-        offer: { type: offer.type, sdp: offer.sdp },
-        answer: null,
-        callerUid: myUid,
-        callerName: myName,
-        isVideo,
-        status: "ringing",
-        updated: Date.now()
-    });
-
-    startRingtone('outgoing');
-    sendStealthPushToPeer(currentRoom, "call");
-
-    clearTimeout(callTimeoutTimer);
-    callTimeoutTimer = setTimeout(() => {
-        if (activeCallId === callId && (!pc || pc.iceConnectionState !== 'connected')) {
-            showQuickToast("📞 No answer");
-            cleanupCall(true);
-        }
-    }, 45000);
-}
-
-function listenToCalls(roomId) {
-    if (unsubscribeCall) unsubscribeCall();
-    const cDoc = doc(db, "novahub_calls", roomId);
-
-    unsubscribeCall = onSnapshot(cDoc, async snap => {
-        if (!snap.exists()) return;
-        const d = snap.data();
-        if (Date.now() - (d.updated || 0) > 65000) return;
-
-        if (d.status === "ringing" && d.callerUid !== myUid) {
-            if (activeCallId === d.callId && isLayerOpen(callHud)) return;
-            activeCallId = d.callId || `inc_${d.updated}`;
-            triggerStealthAlert("call", roomId);
-            if (!isRoomMuted(roomId)) startRingtone('incoming');
-            openLayer(callHud);
-            $('call-vid-box').style.display = 'none';
-            $('call-status-txt').innerText = `${d.callerName || 'Incoming'} (${d.isVideo ? 'Video' : 'Audio'})...`;
-
-            const acc = $('btn-accept-call');
-            acc.style.display = 'flex';
-            acc.onclick = async () => {
-                stopRingtone();
-                acc.style.display = 'none';
-                $('call-vid-box').style.display = d.isVideo ? 'flex' : 'none';
-                $('call-status-txt').innerText = "Connecting...";
-                isLoud = d.isVideo; syncSpk();
-                try {
-                    localStream = await navigator.mediaDevices.getUserMedia({
-                        video: d.isVideo ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false,
-                        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-                    });
-                    if (d.isVideo) localVid.srcObject = localStream;
-                } catch (err) {
-                    showQuickToast("⚠️ Mic/Camera permission needed!");
-                    cleanupCall(true);
-                    return;
-                }
-
-                pc = createPeerConnection(roomId, d.callId, d.isVideo, "calleeCandidates");
-                subscribeRemoteIce(roomId, d.callId, "callerCandidates");
-
-                await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
-                await drainPendingIce();
-                const ans = await pc.createAnswer();
-                await pc.setLocalDescription(ans);
-                await updateDoc(cDoc, { answer: { type: ans.type, sdp: ans.sdp }, status: "connected", updated: Date.now() });
-            };
-        } else if (d.status === "connected" && d.callerUid === myUid && d.callId === activeCallId && pc && !pc.currentRemoteDescription && d.answer) {
-            stopRingtone();
-            clearTimeout(callTimeoutTimer);
-            $('call-status-txt').innerText = "Connecting...";
-            await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
-            await drainPendingIce();
-        } else if (d.status === "ended") {
-            if (isLayerOpen(callHud) || pc || ringInterval) cleanupCall(false);
-        }
-    });
-}
-
-// ============================================================================
-// 9. SECURE ADMIN DASHBOARD
+// 4. SECURE ADMIN DASHBOARD
 // ============================================================================
 async function openGodDashboard() {
     openLayer(godModal);
@@ -1683,7 +472,7 @@ async function openGodDashboard() {
         const pwState = a.passwordHash ? '🔒 SHA-256 Protected' : '⚠️ Pending Migration';
         accHtml += `<span style="display:inline-block; background:#1f2937; border:1px solid #eab308; padding:5px 10px; border-radius:6px; margin:4px;">👤 <b>${escapeHtml(a.name)}</b> | ID: <b style="color:#00f2fe;">${escapeHtml(a.accountCode)}</b> | <span style="color:#10b981;">${pwState}</span></span>`;
     });
-    $('god-users-list').innerHTML = accHtml || 'No users registered.';
+    if ($('god-users-list')) $('god-users-list').innerHTML = accHtml || 'No users registered.';
 
     const snap = await getDocs(collection(db, "novahub_all_rooms"));
     let html = '';
@@ -1693,21 +482,24 @@ async function openGodDashboard() {
             html += `<button onclick="window.inspectGod('${r.roomId}')" style="margin:4px; padding:6px 10px; background:#2b0909; color:#fff; border:1px solid #ef4444; border-radius:6px; cursor:pointer;">🔑 ${escapeHtml(r.roomId)}</button>`;
         }
     });
-    $('god-rooms').innerHTML = html || 'No active chats yet.';
-    if (currentRoom) window.inspectGod(currentRoom);
+    if ($('god-rooms')) $('god-rooms').innerHTML = html || 'No active chats yet.';
+    if (state.currentRoom) window.inspectGod(state.currentRoom);
 }
 
 window.godDelMsg = async (rId, mId) => { await deleteDoc(doc(db, rId, mId)); window.inspectGod(rId); };
 
 window.inspectGod = async (rId) => {
     godRoom = rId;
-    $('god-room-title').innerText = `🕵️ Chat: ${rId}`;
+    if ($('god-room-title')) $('god-room-title').innerText = `🕵️ Chat: ${rId}`;
     const box = $('god-logs');
+    if (!box) return;
     const snap = await getDocs(query(collection(db, rId), orderBy("sentMs", "asc")));
     let html = '';
     snap.forEach(d => {
         const m = d.data();
-        let st = m.isDeletedEveryone ? `<span style="color:#ef4444;">[DELETED FOR ALL by ${escapeHtml(m.deletedByAudit || m.name)}]</span>` : `<span style="color:#10b981;">[ACTIVE]</span>`;
+        let st = m.isDeletedEveryone
+            ? `<span style="color:#ef4444;">[DELETED FOR ALL by ${escapeHtml(m.deletedByAudit || m.name)}]</span>`
+            : `<span style="color:#10b981;">[ACTIVE]</span>`;
         html += `<div style="border-bottom:1px dashed #450a0a; padding:8px 0;">
             <div><b>${escapeHtml(m.name)} (ID: ${escapeHtml(m.accountCode || '')})</b> (${escapeHtml(m.shortTime || '')}) ${st} <button onclick="window.godDelMsg('${rId}','${d.id}')" style="background:#ef4444; color:#fff; border:none; padding:2px 6px; cursor:pointer; float:right;">🔥 Hard Delete</button></div>
             <div style="color:#fff; margin-top:4px;">${m.type === 'image' ? `<img src="${m.mediaUrl}" style="max-width:150px;">` : escapeHtml(m.originalAuditText || m.text)}</div>
@@ -1716,92 +508,19 @@ window.inspectGod = async (rId) => {
     box.innerHTML = html || 'Empty chat.';
 };
 
+// Register cross-module hooks for chat-sidebar.js
+hooks.selectRoom = selectRoom;
+hooks.goBackToList = goBackToList;
+hooks.detachChatListener = detachChatListener;
+hooks.openGodDashboard = openGodDashboard;
+
 // ============================================================================
-// 10. ATTACH ALL UI EVENT LISTENERS (INCLUDING 3-DOTS CHAT ACTION SHEET)
+// 5. BIND ALL MODULES & CORE UI EVENT LISTENERS
 // ============================================================================
-bindClick('ras-close-btn', () => closeLayer(roomActionSheet));
-if (roomActionSheet) roomActionSheet.addEventListener('click', (e) => { if (e.target === roomActionSheet) closeLayer(roomActionSheet); });
-
-bindClick('ras-mute-btn', async () => {
-    const r = savedRooms.find(x => x.id === actionTargetRoomId);
-    closeLayer(roomActionSheet);
-    if (!r) return;
-    r.muted = !r.muted;
-    await syncAccountToCloud();
-    renderSidebarList();
-    showQuickToast(r.muted ? `🔕 ${r.name} muted` : `🔔 ${r.name} unmuted`);
-});
-
-bindClick('ras-archive-btn', async () => {
-    const r = savedRooms.find(x => x.id === actionTargetRoomId);
-    closeLayer(roomActionSheet);
-    if (!r) return;
-    r.archived = !r.archived;
-    await syncAccountToCloud();
-    renderActiveStrip();
-    renderSidebarList();
-    showQuickToast(r.archived ? `📦 ${r.name} archived` : `📤 ${r.name} unarchived`);
-});
-
-bindClick('ras-lock-btn', async () => {
-    const r = savedRooms.find(x => x.id === actionTargetRoomId);
-    closeLayer(roomActionSheet);
-    if (!r) return;
-
-    if (!r.locked) {
-        myLockPin = localStorage.getItem('nova_lock_pin') || "";
-        if (!myLockPin) {
-            const newPin = prompt("🔐 Lock & Hide ke liye apna Secret Search PIN set karein (kam se kam 4 digits):");
-            if (!newPin || newPin.trim().length < 4) {
-                if (newPin !== null) showQuickToast("⚠️ Kam se kam 4 digit ka PIN daalein");
-                return;
-            }
-            myLockPin = newPin.trim();
-            localStorage.setItem('nova_lock_pin', myLockPin);
-            if (myAccountCode) await setDoc(doc(db, "novahub_accounts", myAccountCode), { lockPin: myLockPin }, { merge: true }).catch(() => {});
-        }
-        r.locked = true;
-        if (currentRoom === r.id && isRoomActivelyOpen) goBackToList();
-        showQuickToast(`🔒 ${r.name} locked & hidden! Search bar mein PIN daalein.`);
-    } else {
-        r.locked = false;
-        showQuickToast(`🔓 ${r.name} unlocked!`);
-    }
-    await syncAccountToCloud();
-    renderActiveStrip();
-    renderSidebarList();
-});
-
-bindClick('ras-clear-btn', () => {
-    const targetId = actionTargetRoomId;
-    closeLayer(roomActionSheet);
-    if (!targetId) return;
-    clearTargetRoomId = targetId;
-    openLayer(clearModal);
-});
-
-bindClick('ras-delete-btn', () => {
-    const targetId = actionTargetRoomId;
-    const r = savedRooms.find(x => x.id === targetId);
-    closeLayer(roomActionSheet);
-    if (!r) return;
-
-    $('modal-title').innerText = `🗑️ Delete "${r.name}"?`;
-    $('modal-body').innerHTML = `
-        <p style="font-size:12.5px; color:var(--text-sub); margin-bottom:12px;">
-            Isse saare messages delete ho jayenge aur yeh chat aapki list se poori tarah gayab ho jayegi.
-        </p>
-        <button id="del-chat-me" type="button" class="loc-action-btn" style="background:rgba(255,255,255,0.1); color:#fff; margin-bottom:10px; width:100%;">
-            🗑️ Delete for Me & Remove Chat
-        </button>
-        <button id="del-chat-all" type="button" class="loc-action-btn" style="background:#dc2626; color:#fff; width:100%;">
-            🔥 Delete for Everyone & Remove Chat
-        </button>
-    `;
-    openLayer(genericModal);
-    bindClick('del-chat-me', () => runDeleteEntireChat(targetId, false));
-    bindClick('del-chat-all', () => runDeleteEntireChat(targetId, true));
-});
+initSidebarControls();
+initCallControls();
+initLocationControls();
+initStoryControls();
 
 ['btn-widget-close-side', 'btn-widget-close-chat', 'btn-cyber-close-widget', 'btn-lock-close-widget'].forEach(id => {
     bindClick(id, (e) => {
@@ -1813,67 +532,58 @@ bindClick('ras-delete-btn', () => {
 
 bindClick('my-profile-chip-btn', () => { window.location.href = 'chat-settings.html'; });
 bindClick('btn-mobile-back', goBackToList);
-bindClick('open-contact-info', () => { if (currentRoom) openLayer(drawer); });
+bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners
+// Auth Listeners (SHA-256 Hashing + Seamless Migration)
 bindClick('tab-btn-login', () => {
     authMode = 'login';
-    $('tab-btn-login').classList.add('active');
-    $('tab-btn-signup').classList.remove('active');
-    $('signup-name-field').style.display = 'none';
-    $('btn-auth-submit').innerText = 'LOGIN TO MY ACCOUNT';
-    errEl.innerText = '';
+    $('tab-btn-login')?.classList.add('active');
+    $('tab-btn-signup')?.classList.remove('active');
+    if ($('signup-name-field')) $('signup-name-field').style.display = 'none';
+    if ($('btn-auth-submit')) $('btn-auth-submit').innerText = 'LOGIN TO MY ACCOUNT';
+    if (errEl) errEl.innerText = '';
 });
 bindClick('tab-btn-signup', () => {
     authMode = 'signup';
-    $('tab-btn-signup').classList.add('active');
-    $('tab-btn-login').classList.remove('active');
-    $('signup-name-field').style.display = 'block';
-    $('btn-auth-submit').innerText = 'CREATE NEW PERMANENT ID';
-    errEl.innerText = '';
+    $('tab-btn-signup')?.classList.add('active');
+    $('tab-btn-login')?.classList.remove('active');
+    if ($('signup-name-field')) $('signup-name-field').style.display = 'block';
+    if ($('btn-auth-submit')) $('btn-auth-submit').innerText = 'CREATE NEW PERMANENT ID';
+    if (errEl) errEl.innerText = '';
 });
 bindClick('btn-auth-submit', async () => {
-    const code = codeInp.value.trim();
-    const pass = passInp.value.trim();
-    const name = nameInp.value.trim();
-    errEl.innerText = '';
-    if (!code) { errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
+    const code = (codeInp?.value || '').trim();
+    const pass = (passInp?.value || '').trim();
+    const name = (nameInp?.value || '').trim();
+    if (errEl) errEl.innerText = '';
+    if (!code) { if (errEl) errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
 
     if (await verifyAdminCode(code)) {
         closeLayer(authScreen);
         openGodDashboard();
         return;
     }
-
-    if (!pass) { errEl.innerText = '⚠️ Please enter your secret password!'; return; }
+    if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
 
     const accRef = doc(db, "novahub_accounts", code);
     const snap = await getDoc(accRef);
     const hashedPass = await hashPassword(code, pass);
 
     if (authMode === 'signup') {
-        if (snap.exists()) { errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
-        if (!name) { errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
+        if (snap.exists()) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
+        if (!name) { if (errEl) errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
         wipeLocalSessionData();
-        myAccountCode = code; myUid = 'uid_' + code; myName = name; myDp = ""; myLockPin = ""; appLockEnabled = false; appLockPin = ""; savedRooms = [];
+        state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
+        state.myDp = ""; state.myLockPin = ""; state.appLockEnabled = false; state.appLockPin = ""; state.savedRooms = [];
         await setDoc(accRef, {
-            accountCode: code,
-            passwordHash: hashedPass,
-            uid: myUid,
-            name: myName,
-            dp: "",
-            lockPin: "",
-            appLockEnabled: false,
-            appLockPin: "",
-            savedRooms: [],
-            mutedRooms: [],
-            createdAt: new Date().toLocaleString()
+            accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
+            dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
+            savedRooms: [], mutedRooms: [], createdAt: new Date().toLocaleString()
         });
     } else {
-        if (!snap.exists()) { errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
+        if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
         const data = snap.data();
-
         let passwordOk = false;
         if (data.passwordHash) {
             passwordOk = (data.passwordHash === hashedPass);
@@ -1886,33 +596,32 @@ bindClick('btn-auth-submit', async () => {
             passwordOk = true;
             await updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
         }
-
-        if (!passwordOk) { errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
+        if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
 
         wipeLocalSessionData();
-        myAccountCode = code; myUid = 'uid_' + code; myName = data.name || ("User_" + code);
-        myDp = data.dp || ""; myLockPin = data.lockPin || "";
-        appLockEnabled = !!data.appLockEnabled;
-        appLockPin = data.appLockPin || "";
-        savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
+        state.myAccountCode = code; state.myUid = 'uid_' + code;
+        state.myName = data.name || ("User_" + code);
+        state.myDp = data.dp || ""; state.myLockPin = data.lockPin || "";
+        state.appLockEnabled = !!data.appLockEnabled;
+        state.appLockPin = data.appLockPin || "";
+        state.savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
     }
 
-    isAppUnlocked = true;
+    state.isAppUnlocked = true;
     saveSessionToLocal();
     closeLayer(authScreen);
     startAuthenticatedSession(false);
 });
 
 bindClick('btn-logout-now', () => {
-    if (!confirm(`Logout from ID "${myAccountCode}" (${myName})?`)) return;
+    if (!confirm(`Logout from ID "${state.myAccountCode}" (${state.myName})?`)) return;
     updatePresence("offline", true);
     stopAllLiveSessions();
     cleanupCall(false);
-    for (const unsub of roomSummaryUnsubs.values()) unsub();
-    roomSummaryUnsubs.clear();
-    if (unsubscribeChat) unsubscribeChat();
+    detachAllSummaryListeners();
+    detachChatListener();
+    detachPresenceListener();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
-    if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
     wipeLocalSessionData();
     window.location.reload();
 });
@@ -1923,8 +632,8 @@ if ($('lock-pin-input')) $('lock-pin-input').addEventListener('keypress', e => {
 bindClick('btn-lock-to-decoy', () => openLayer(cyberGate));
 bindClick('btn-app-lock-toggle', () => {
     updateAppLockIconUI();
-    $('set-app-lock-pin').value = appLockPin;
-    $('lock-settings-msg').innerText = '';
+    if ($('set-app-lock-pin')) $('set-app-lock-pin').value = state.appLockPin;
+    if ($('lock-settings-msg')) $('lock-settings-msg').innerText = '';
     openLayer(lockSettingsModal);
 });
 bindClick('btn-close-lock-settings', () => closeLayer(lockSettingsModal));
@@ -1934,26 +643,34 @@ bindClick('btn-save-lock-settings', async () => {
     const newPin = $('set-app-lock-pin').value.trim();
     const msgEl = $('lock-settings-msg');
     if (wantsLock && newPin.length < 4) { msgEl.style.color = '#f87171'; msgEl.innerText = '⚠️ Kam se kam 4 digit ka PIN daalein!'; return; }
-    appLockEnabled = wantsLock;
-    if (newPin.length >= 4) appLockPin = newPin;
-    localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
-    localStorage.setItem('nova_app_lock_pin', appLockPin);
-    if (myAccountCode) await setDoc(doc(db, "novahub_accounts", myAccountCode), { appLockEnabled, appLockPin }, { merge: true }).catch(() => {});
+    state.appLockEnabled = wantsLock;
+    if (newPin.length >= 4) state.appLockPin = newPin;
+    localStorage.setItem('nova_app_lock_enabled', String(state.appLockEnabled));
+    localStorage.setItem('nova_app_lock_pin', state.appLockPin);
+    if (state.myAccountCode) {
+        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
+            appLockEnabled: state.appLockEnabled, appLockPin: state.appLockPin
+        }, { merge: true }).catch(() => {});
+    }
     updateAppLockIconUI();
     msgEl.style.color = '#10b981';
-    msgEl.innerText = appLockEnabled ? '✅ Chat Entry Lock ON ho gaya!' : '🔓 Chat Entry Lock OFF ho gaya!';
+    msgEl.innerText = state.appLockEnabled ? '✅ Chat Entry Lock ON ho gaya!' : '🔓 Chat Entry Lock OFF ho gaya!';
     setTimeout(() => closeLayer(lockSettingsModal), 650);
 });
 bindClick('btn-lock-now-manual', () => {
-    if (!appLockPin || appLockPin.length < 4) { $('lock-settings-msg').style.color = '#f87171'; $('lock-settings-msg').innerText = '⚠️ Pehle 4+ digit PIN daal kar Save karein!'; return; }
-    appLockEnabled = true;
+    if (!state.appLockPin || state.appLockPin.length < 4) {
+        $('lock-settings-msg').style.color = '#f87171';
+        $('lock-settings-msg').innerText = '⚠️ Pehle 4+ digit PIN daal kar Save karein!';
+        return;
+    }
+    state.appLockEnabled = true;
     localStorage.setItem('nova_app_lock_enabled', 'true');
     updateAppLockIconUI();
     closeLayer(lockSettingsModal);
     lockAppIfEnabled();
 });
 
-// Shield Fake Notice Board
+// Shield Fake Notice Board & Theme
 const openFakeNoticeBoard = (e) => { if (e) e.stopPropagation(); stopRingtone(); openLayer(cyberGate); };
 bindClick('btn-panic-now', openFakeNoticeBoard);
 bindClick('btn-chat-panic', openFakeNoticeBoard);
@@ -1963,66 +680,12 @@ bindClick('cyber-triple-tap', () => {
     if (gTaps >= 3) { gTaps = 0; closeLayer(cyberGate); markVisibleMessagesSeen(); }
     else gTimer = setTimeout(() => gTaps = 0, 650);
 });
-
-// Theme & Tabs
 bindClick('btn-theme-mode', () => {
     document.body.classList.toggle('light-mode');
     localStorage.setItem('nova_theme_mode', document.body.classList.contains('light-mode') ? 'light' : 'dark');
 });
-bindClick('tab-chats', () => {
-    $('tab-chats').classList.add('active');
-    $('tab-status').classList.remove('active');
-    $('chats-search-bar').style.display = 'flex';
-    $('chats-list-area').style.display = 'block';
-    $('status-list-area').style.display = 'none';
-});
-bindClick('tab-status', () => {
-    $('tab-status').classList.add('active');
-    $('tab-chats').classList.remove('active');
-    $('chats-search-bar').style.display = 'none';
-    $('chats-list-area').style.display = 'none';
-    $('status-list-area').style.display = 'block';
-    loadStories();
-});
 
-// Search & Add Friend
-bindClick('btn-add-room', async () => {
-    let friendCode = $('pin-search-input').value.trim();
-    if (!friendCode) friendCode = prompt("👤 Enter Friend's Unique ID Number / Code:");
-    if (!friendCode) return;
-    friendCode = friendCode.trim();
-    $('pin-search-input').value = '';
-    if (await verifyAdminCode(friendCode)) { openGodDashboard(); return; }
-    if (friendCode === myAccountCode) return alert("⚠️ That is your own ID! Enter your friend's ID.");
-    const fSnap = await getDoc(doc(db, "novahub_accounts", friendCode));
-    if (!fSnap.exists()) return alert(`❌ User ID "${friendCode}" not found! Ask your friend to Sign Up first.`);
-    const fData = fSnap.data();
-    const dmRoomId = make1on1RoomId(myAccountCode, friendCode);
-    if (!savedRooms.find(r => r.id === dmRoomId)) {
-        savedRooms.push({ id: dmRoomId, name: fData.name || (`User ${friendCode}`), peerCode: friendCode, dp: fData.dp || "", locked: false, muted: false, archived: false, timer: "off" });
-        await syncAccountToCloud();
-        syncRoomSummaryListeners();
-        renderActiveStrip();
-    }
-    let friendRooms = (fData.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
-    if (!friendRooms.find(r => r.id === dmRoomId)) {
-        friendRooms.push({ id: dmRoomId, name: myName, peerCode: myAccountCode, dp: myDp, locked: false, muted: false, archived: false, timer: "off" });
-        await setDoc(doc(db, "novahub_accounts", friendCode), { savedRooms: friendRooms }, { merge: true }).catch(() => {});
-    }
-    selectRoom(dmRoomId, true);
-});
-
-if ($('pin-search-input')) {
-    $('pin-search-input').addEventListener('input', () => renderSidebarList());
-    $('pin-search-input').addEventListener('keypress', async (e) => {
-        if (e.key === 'Enter') {
-            const val = e.target.value.trim();
-            if (val && await verifyAdminCode(val)) { e.target.value = ''; openGodDashboard(); }
-        }
-    });
-}
-
-// Chat Input, Media, Voice Notes, Emoji
+// Message Input, Media, Voice Notes & Emoji
 bindClick('btn-send-msg', sendMessage);
 if ($('msg-input')) {
     $('msg-input').addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
@@ -2032,14 +695,14 @@ if ($('msg-input')) {
         typTimer = setTimeout(() => updatePresence("online", true), 3000);
     });
 }
-bindClick('btn-vo-toggle', () => { isViewOnce = !isViewOnce; voBtn.classList.toggle('active', isViewOnce); });
+bindClick('btn-vo-toggle', () => { isViewOnce = !isViewOnce; voBtn?.classList.toggle('active', isViewOnce); });
 bindClick('btn-attach', () => $('msg-file-input')?.click());
 if ($('msg-file-input')) $('msg-file-input').addEventListener('change', async function() {
-    if (!currentRoom) return showQuickToast("Select a friend first!");
+    if (!state.currentRoom) return showQuickToast("Select a friend first!");
     const file = this.files[0]; if (!file) return;
     this.value = '';
     const isVid = file.type.startsWith('video/');
-    const now = new Date(), meta = getRoomMeta(currentRoom);
+    const now = new Date(), meta = getRoomMeta(state.currentRoom);
     const inp = $('msg-input'), prevPh = inp.placeholder;
     inp.placeholder = isVid ? "🎥 Uploading video..." : "📷 Sending photo...";
     try {
@@ -2048,35 +711,36 @@ if ($('msg-file-input')) $('msg-file-input').addEventListener('change', async fu
             url = await compressImg(file);
         } else {
             const safeName = (file.name || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_');
-            const fRef = sRef(storage, `chat_media/${currentRoom}/${Date.now()}_${safeName}`);
+            const fRef = sRef(storage, `chat_media/${state.currentRoom}/${Date.now()}_${safeName}`);
             try {
                 url = await uploadWithTimeout(fRef, file, 15000);
             } catch (storageErr) {
                 inp.placeholder = prevPh;
                 $('modal-title').innerText = "🎥 Video Upload Issue";
-                $('modal-body').innerHTML = `<p style="margin-bottom:8px;">Firebase Storage par video upload nahi ho paayi (${storageErr.code || storageErr.message}).</p>`;
+                $('modal-body').innerHTML = `<p style="margin-bottom:8px;">Firebase Storage par video upload nahi ho paayi (${escapeHtml(storageErr.code || storageErr.message)}).</p>`;
                 openLayer(genericModal);
                 return;
             }
         }
-        await addDoc(collection(db, currentRoom), {
+        await addDoc(collection(db, state.currentRoom), {
             type: isVid ? "video" : "image", mediaUrl: url, text: isVid ? "🎥 Video" : "📷 Photo",
             originalAuditText: isVid ? "🎥 Video" : "📷 Photo", isViewOnce, viewedBy: [],
-            uid: myUid, accountCode: myAccountCode, name: myName, shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now),
-            sentAtStr: now.toLocaleString(), sentMs: Date.now(), vanishTimer: meta.timer || "off",
+            uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
+            shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
+            sentMs: Date.now(), vanishTimer: meta.timer || "off",
             timestamp: serverTimestamp(), seenStatus: false, manualUnseen: false,
             reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
         });
-        sendStealthPushToPeer(currentRoom, "media");
+        sendStealthPushToPeer(state.currentRoom, "media");
     } catch (err) {
         showQuickToast("⚠️ Media send failed.");
     }
     inp.placeholder = prevPh;
-    isViewOnce = false; voBtn.classList.remove('active');
+    isViewOnce = false; voBtn?.classList.remove('active');
 });
 
 bindClick('btn-vn-rec', async () => {
-    if (!currentRoom) return showQuickToast("Select a friend first!");
+    if (!state.currentRoom) return showQuickToast("Select a friend first!");
     if (!isRec) {
         try {
             const st = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -2087,29 +751,30 @@ bindClick('btn-vn-rec', async () => {
                 st.getTracks().forEach(t => t.stop());
                 const r = new FileReader();
                 r.onload = async ev => {
-                    const now = new Date(), meta = getRoomMeta(currentRoom);
-                    await addDoc(collection(db, currentRoom), {
+                    const now = new Date(), meta = getRoomMeta(state.currentRoom);
+                    await addDoc(collection(db, state.currentRoom), {
                         type: "audio", mediaUrl: ev.target.result, text: "🎙️ Voice Note",
                         originalAuditText: "🎙️ Voice Note", isViewOnce, viewedBy: [],
-                        uid: myUid, accountCode: myAccountCode, name: myName, shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now),
-                        sentAtStr: now.toLocaleString(), sentMs: Date.now(), vanishTimer: meta.timer || "off",
+                        uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
+                        shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
+                        sentMs: Date.now(), vanishTimer: meta.timer || "off",
                         timestamp: serverTimestamp(), seenStatus: false, manualUnseen: false,
                         deletedFor: [], isDeletedEveryone: false
                     });
-                    isViewOnce = false; voBtn.classList.remove('active');
-                    sendStealthPushToPeer(currentRoom, "media");
+                    isViewOnce = false; voBtn?.classList.remove('active');
+                    sendStealthPushToPeer(state.currentRoom, "media");
                 };
                 r.readAsDataURL(new Blob(vnChunks, { type: 'audio/webm' }));
             };
             mediaRec.start();
-            isRec = true; vnBtn.classList.add('rec');
-            $('vn-icon').innerText = 'stop';
+            isRec = true; vnBtn?.classList.add('rec');
+            if ($('vn-icon')) $('vn-icon').innerText = 'stop';
             updatePresence("recording audio...", true);
         } catch (e) { showQuickToast("⚠️ Mic permission needed."); }
     } else {
         mediaRec.stop();
-        isRec = false; vnBtn.classList.remove('rec');
-        $('vn-icon').innerText = 'mic';
+        isRec = false; vnBtn?.classList.remove('rec');
+        if ($('vn-icon')) $('vn-icon').innerText = 'mic';
         updatePresence("online", true);
     }
 });
@@ -2120,81 +785,11 @@ bindClick('btn-emoji', async (e) => {
         emojiPickerLoaded = true;
         try { await import("https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"); } catch (err) {}
     }
-    $('emoji-picker').classList.toggle('show');
+    $('emoji-picker')?.classList.toggle('show');
 });
 if ($('emoji-picker')) $('emoji-picker').addEventListener('emoji-click', e => { $('msg-input').value += e.detail.unicode; });
 
-// Location Picker
-bindClick('btn-share-location', () => {
-    if (!currentRoom) return showQuickToast("Please select a friend first!");
-    if (!navigator.geolocation) return showQuickToast("Location not supported on this browser.");
-    openLayer(locModal);
-});
-bindClick('btn-close-loc-modal', () => closeLayer(locModal));
-if (locModal) locModal.addEventListener('click', e => { if (e.target === locModal) closeLayer(locModal); });
-bindClick('btn-banner-stop-live', () => { const sess = activeLiveSessions[currentRoom]; if (sess) stopLiveLocation(currentRoom, sess.msgId); });
-document.querySelectorAll('.dur-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-        document.querySelectorAll('.dur-chip').forEach(c => c.classList.remove('active'));
-        chip.classList.add('active');
-        selectedLiveHours = Number(chip.getAttribute('data-hours'));
-    });
-});
-bindClick('btn-send-current-loc', () => {
-    closeLayer(locModal);
-    const targetRoom = currentRoom, inp = $('msg-input'), prevPh = inp.placeholder;
-    inp.placeholder = "📍 Fetching GPS...";
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-        inp.placeholder = prevPh;
-        const lat = pos.coords.latitude.toFixed(6), lng = pos.coords.longitude.toFixed(6);
-        const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-        const now = new Date(), meta = getRoomMeta(targetRoom);
-        await addDoc(collection(db, targetRoom), {
-            type: "location", lat, lng, mapUrl, text: `📍 Current Location (${lat}, ${lng})`,
-            originalAuditText: `📍 Current Location: ${mapUrl}`,
-            uid: myUid, accountCode: myAccountCode, name: myName,
-            shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
-            sentMs: Date.now(), vanishTimer: meta.timer || "off",
-            timestamp: serverTimestamp(), replyTo: replyTarget, seenStatus: false, manualUnseen: false,
-            reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
-        });
-        replyTarget = null; $('reply-bar').style.display = 'none';
-        sendStealthPushToPeer(targetRoom, "media");
-    }, () => { inp.placeholder = prevPh; showQuickToast("⚠️ GPS off ya Location permission denied!"); }, { enableHighAccuracy: true, timeout: 12000 });
-});
-bindClick('btn-start-live-loc', () => {
-    closeLayer(locModal);
-    const targetRoom = currentRoom, hours = selectedLiveHours, inp = $('msg-input'), prevPh = inp.placeholder;
-    inp.placeholder = "🛰️ Starting Live GPS...";
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-        inp.placeholder = prevPh;
-        if (activeLiveSessions[targetRoom]) await stopLiveLocation(targetRoom, activeLiveSessions[targetRoom].msgId);
-        const lat = pos.coords.latitude.toFixed(6), lng = pos.coords.longitude.toFixed(6);
-        const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-        const now = new Date(), meta = getRoomMeta(targetRoom);
-        const expiresAt = hours > 0 ? (Date.now() + hours * 3600000) : 0;
-        const endStr = hours > 0 ? getShortTime(new Date(expiresAt)) : "";
-        const durLabel = hours === 0 ? "Until turned off" : (hours === 1 ? `1 hr (until ${endStr})` : `${hours} hrs (until ${endStr})`);
-
-        const docRef = await addDoc(collection(db, targetRoom), {
-            type: "live_location", isLiveActive: true, liveDurationHours: hours, liveDurationLabel: durLabel,
-            liveExpiresAt: expiresAt, lastUpdatedStr: getShortTime(now), lat, lng, mapUrl,
-            text: `🛰️ Live Location (${durLabel})`, originalAuditText: `🛰️ Live Location (${durLabel}): ${mapUrl}`,
-            uid: myUid, accountCode: myAccountCode, name: myName,
-            shortTime: getShortTime(now), dateLabel: getDateGroupLabel(now), sentAtStr: now.toLocaleString(),
-            sentMs: Date.now(), vanishTimer: meta.timer || "off",
-            timestamp: serverTimestamp(), replyTo: replyTarget, seenStatus: false, manualUnseen: false,
-            reactions: {}, starredBy: [], deletedFor: [], isDeletedEveryone: false
-        });
-        replyTarget = null; $('reply-bar').style.display = 'none';
-
-        await saveLiveShareCloud(targetRoom, { msgId: docRef.id, expiresAt, label: durLabel });
-        attachLiveLocationWatcher(targetRoom, docRef.id, expiresAt, durLabel);
-        sendStealthPushToPeer(targetRoom, "media");
-    }, () => { inp.placeholder = prevPh; showQuickToast("⚠️ GPS off ya Location permission denied!"); }, { enableHighAccuracy: true, timeout: 12000 });
-});
-
-// Context Menu, Modals & Drawer
+// Context Menu & Generic Modal Listeners
 bindClick('btn-close-generic-modal', () => closeLayer(genericModal));
 if (genericModal) genericModal.addEventListener('click', e => { if (e.target === genericModal) closeLayer(genericModal); });
 if (overlay) overlay.addEventListener('click', () => closeLayer(overlay));
@@ -2204,18 +799,18 @@ document.querySelectorAll('.react-emo').forEach(el => {
         e.stopPropagation(); closeLayer(overlay);
         const emo = el.getAttribute('data-emo');
         let r = { ...(selectedMsg.reactions || {}) };
-        if (r[myUid] === emo) delete r[myUid]; else r[myUid] = emo;
-        await updateDoc(doc(db, currentRoom, selectedMsg.id), { reactions: r });
+        if (r[state.myUid] === emo) delete r[state.myUid]; else r[state.myUid] = emo;
+        await updateDoc(doc(db, state.currentRoom, selectedMsg.id), { reactions: r });
     });
 });
 bindClick('cm-reply', (e) => {
     e.stopPropagation(); closeLayer(overlay);
-    replyTarget = { name: selectedMsg.name, text: selectedMsg.decrypted };
+    state.replyTarget = { name: selectedMsg.name, text: selectedMsg.decrypted };
     $('reply-title').innerText = `Replying to ${selectedMsg.name}`;
     $('reply-text').innerText = selectedMsg.decrypted;
     $('reply-bar').style.display = 'flex';
 });
-bindClick('btn-cancel-reply', () => { replyTarget = null; editingMsgId = null; $('reply-bar').style.display = 'none'; });
+bindClick('btn-cancel-reply', () => { state.replyTarget = null; editingMsgId = null; $('reply-bar').style.display = 'none'; });
 bindClick('cm-copy', (e) => { e.stopPropagation(); closeLayer(overlay); navigator.clipboard.writeText(selectedMsg.decrypted || '').catch(() => {}); showQuickToast("📋 Copied!"); });
 bindClick('cm-info', (e) => {
     e.stopPropagation(); closeLayer(overlay);
@@ -2226,9 +821,9 @@ bindClick('cm-info', (e) => {
 bindClick('cm-star', async (e) => {
     e.stopPropagation(); closeLayer(overlay);
     let s = [...(selectedMsg.starredBy || [])];
-    const i = s.indexOf(myUid);
-    if (i > -1) s.splice(i, 1); else s.push(myUid);
-    await updateDoc(doc(db, currentRoom, selectedMsg.id), { starredBy: s });
+    const i = s.indexOf(state.myUid);
+    if (i > -1) s.splice(i, 1); else s.push(state.myUid);
+    await updateDoc(doc(db, state.currentRoom, selectedMsg.id), { starredBy: s });
 });
 bindClick('cm-edit', (e) => {
     e.stopPropagation(); closeLayer(overlay);
@@ -2242,7 +837,10 @@ bindClick('cm-edit', (e) => {
 bindClick('cm-seen', async (e) => {
     e.stopPropagation(); closeLayer(overlay);
     const next = !selectedMsg.seenStatus;
-    await updateDoc(doc(db, currentRoom, selectedMsg.id), { seenStatus: next, manualUnseen: !next, seenAtStr: next ? new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : "" });
+    await updateDoc(doc(db, state.currentRoom, selectedMsg.id), {
+        seenStatus: next, manualUnseen: !next,
+        seenAtStr: next ? new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ""
+    });
 });
 bindClick('cm-del', (e) => {
     e.stopPropagation(); closeLayer(overlay);
@@ -2253,81 +851,85 @@ bindClick('cm-del', (e) => {
     bindClick('del-one-me', async () => {
         closeLayer(genericModal);
         let d = [...(target.deletedFor || [])];
-        if (!d.includes(myUid)) d.push(myUid);
-        await updateDoc(doc(db, currentRoom, target.id), { deletedFor: d });
+        if (!d.includes(state.myUid)) d.push(state.myUid);
+        await updateDoc(doc(db, state.currentRoom, target.id), { deletedFor: d });
     });
     bindClick('del-one-all', async () => {
         closeLayer(genericModal);
-        if (target.type === 'live_location' && target.isLiveActive && isMyMessage(target)) await stopLiveLocation(currentRoom, target.id);
-        await updateDoc(doc(db, currentRoom, target.id), { isDeletedEveryone: true, deletedByAudit: myName });
+        if (target.type === 'live_location' && target.isLiveActive && isMyMessage(target)) {
+            await stopLiveLocation(state.currentRoom, target.id);
+        }
+        await updateDoc(doc(db, state.currentRoom, target.id), { isDeletedEveryone: true, deletedByAudit: state.myName });
     });
 });
 
+// Contact Info Drawer Listeners
 const openClearChatModal = (e) => {
     if (e) e.stopPropagation();
-    if (!currentRoom) return;
-    clearTargetRoomId = currentRoom;
+    if (!state.currentRoom) return;
+    state.clearTargetRoomId = state.currentRoom;
     closeLayer(overlay); closeLayer(drawer); openLayer(clearModal);
 };
 bindClick('cm-clear-chat', openClearChatModal);
 bindClick('di-storage', openClearChatModal);
-bindClick('btn-close-clear-modal', () => closeLayer(clearModal));
-if (clearModal) clearModal.addEventListener('click', e => { if (e.target === clearModal) closeLayer(clearModal); });
-bindClick('btn-clear-me', () => runClearAllChat(false, clearTargetRoomId || currentRoom));
-bindClick('btn-clear-all', () => runClearAllChat(true, clearTargetRoomId || currentRoom));
 
 bindClick('btn-edit-contact-name', () => {
-    const meta = getRoomMeta(currentRoom);
+    const meta = getRoomMeta(state.currentRoom);
     let n = prompt("Edit Friend's Nickname:", meta.name);
     if (n && n.trim()) { meta.name = n.trim(); syncAccountToCloud(); updateActiveHeaderBadges(meta); renderSidebarList(); }
 });
 if ($('toggle-lock-chat')) $('toggle-lock-chat').addEventListener('change', (e) => {
-    myLockPin = localStorage.getItem('nova_lock_pin') || "";
-    if (e.target.checked && !myLockPin) { e.target.checked = false; alert("⚠️ Please set your Secret Lock PIN in Settings first!"); window.location.href = 'chat-settings.html'; return; }
-    const meta = getRoomMeta(currentRoom);
+    state.myLockPin = localStorage.getItem('nova_lock_pin') || "";
+    if (e.target.checked && !state.myLockPin) {
+        e.target.checked = false;
+        alert("⚠️ Please set your Secret Lock PIN in Settings first!");
+        window.location.href = 'chat-settings.html';
+        return;
+    }
+    const meta = getRoomMeta(state.currentRoom);
     meta.locked = e.target.checked;
     syncAccountToCloud(); renderSidebarList(); renderActiveStrip();
     if (meta.locked) goBackToList();
 });
 if ($('select-vanish-timer')) $('select-vanish-timer').addEventListener('change', (e) => {
-    const meta = getRoomMeta(currentRoom);
+    const meta = getRoomMeta(state.currentRoom);
     meta.timer = e.target.value;
     syncAccountToCloud(); updateActiveHeaderBadges(meta); renderSidebarList();
 });
 bindClick('di-enc', () => {
-    const curKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
+    const curKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
     let k = prompt("🔐 Enter Secret Encryption Password for this chat:", curKey);
     if (k === null) return;
-    localStorage.setItem(`nova_enc_${currentRoom}`, k.trim());
-    updateActiveHeaderBadges(getRoomMeta(currentRoom));
-    listenToMessages(currentRoom);
+    localStorage.setItem(`nova_enc_${state.currentRoom}`, k.trim());
+    updateActiveHeaderBadges(getRoomMeta(state.currentRoom));
+    listenToMessages(state.currentRoom);
 });
 bindClick('di-vib', () => {
-    vibrationEnabled = !vibrationEnabled;
-    localStorage.setItem('nova_vib', vibrationEnabled);
-    $('di-vib-val').innerText = vibrationEnabled ? "ON" : "OFF";
-    if (vibrationEnabled) playAlertBeep();
+    state.vibrationEnabled = !state.vibrationEnabled;
+    localStorage.setItem('nova_vib', state.vibrationEnabled);
+    if ($('di-vib-val')) $('di-vib-val').innerText = state.vibrationEnabled ? "ON" : "OFF";
+    if (state.vibrationEnabled) playAlertBeep();
 });
 bindClick('di-notif', async () => {
     if ("Notification" in window && Notification.permission !== "granted") await Notification.requestPermission().catch(() => {});
-    stealthNotifEnabled = !stealthNotifEnabled;
-    localStorage.setItem('nova_stealth_notif', stealthNotifEnabled);
-    $('di-notif-val').innerText = stealthNotifEnabled ? "ON" : "OFF";
-    if (stealthNotifEnabled) initStealthFCM();
-    triggerStealthAlert("text", currentRoom);
+    state.stealthNotifEnabled = !state.stealthNotifEnabled;
+    localStorage.setItem('nova_stealth_notif', state.stealthNotifEnabled);
+    if ($('di-notif-val')) $('di-notif-val').innerText = state.stealthNotifEnabled ? "ON" : "OFF";
+    if (state.stealthNotifEnabled) initStealthFCM();
+    triggerStealthAlert("text", state.currentRoom);
 });
-bindClick('di-remove-chat', () => {
-    runDeleteEntireChat(currentRoom, false);
-});
+bindClick('di-remove-chat', () => runDeleteEntireChat(state.currentRoom, false));
 bindClick('di-media', () => {
     $('modal-title').innerText = "🖼️ Shared Media";
     let html = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">', count = 0;
-    for (let id in cachedMessages) {
-        const m = cachedMessages[id];
+    for (let id in state.cachedMessages) {
+        const m = state.cachedMessages[id];
         if ((m.type === 'image' || m.type === 'video') && !m.isViewOnce && !m.isDeletedEveryone) {
             count++;
             const pUrl = (m.mediaUrl || '').startsWith('http') ? m.mediaUrl + '#t=0.001' : m.mediaUrl;
-            html += m.type === 'video' ? `<video src="${pUrl}" controls playsinline webkit-playsinline preload="metadata" style="width:100%; border-radius:8px; background:#000;"></video>` : `<img src="${m.mediaUrl}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">`;
+            html += m.type === 'video'
+                ? `<video src="${pUrl}" controls playsinline webkit-playsinline preload="metadata" style="width:100%; border-radius:8px; background:#000;"></video>`
+                : `<img src="${m.mediaUrl}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">`;
         }
     }
     html += '</div>';
@@ -2337,10 +939,10 @@ bindClick('di-media', () => {
 bindClick('di-starred', () => {
     $('modal-title').innerText = "⭐ Starred Messages";
     let html = '';
-    const encKey = localStorage.getItem(`nova_enc_${currentRoom}`) || "";
-    for (let id in cachedMessages) {
-        const m = cachedMessages[id];
-        if (m.starredBy && m.starredBy.includes(myUid) && !m.isDeletedEveryone) {
+    const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
+    for (let id in state.cachedMessages) {
+        const m = state.cachedMessages[id];
+        if (m.starredBy && m.starredBy.includes(state.myUid) && !m.isDeletedEveryone) {
             html += `<div style="background:var(--bg-nav); padding:8px; border-radius:8px; margin-bottom:8px; border-left:3px solid #eab308;"><div style="font-size:11px; color:var(--text-sub);"><b>${escapeHtml(m.name)}</b> • ${escapeHtml(m.dateLabel || '')} ${escapeHtml(m.shortTime || '')}</div><div style="margin-top:3px;">${m.type === 'image' ? `<img src="${m.mediaUrl}" style="max-width:120px; border-radius:4px;">` : escapeHtml(decryptText(m.text, encKey))}</div></div>`;
         }
     }
@@ -2348,52 +950,16 @@ bindClick('di-starred', () => {
     openLayer(genericModal);
 });
 
-// Stories
-bindClick('btn-add-status', async () => {
-    let typeChoice = prompt("Post Story:\n1. Text Story\n2. Photo Story");
-    if (typeChoice === "1") {
-        let txt = prompt("Enter Story Text:");
-        if (!txt) return;
-        await addDoc(collection(db, "novahub_stories"), { uid: myUid, accountCode: myAccountCode, name: myName, type: "text", text: txt, timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }), views: [], timestamp: serverTimestamp() });
-        loadStories();
-    } else if (typeChoice === "2") $('status-file-input')?.click();
-});
-if ($('status-file-input')) $('status-file-input').addEventListener('change', async function() {
-    const file = this.files[0]; if (!file) return;
-    const url = await compressImg(file);
-    await addDoc(collection(db, "novahub_stories"), { uid: myUid, accountCode: myAccountCode, name: myName, type: "image", mediaUrl: url, text: "📷 Story", timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }), views: [], timestamp: serverTimestamp() });
-    loadStories();
-});
-
-// Calls
-bindClick('btn-voice-call', (e) => { e.stopPropagation(); startCall(false); });
-bindClick('btn-video-call', (e) => { e.stopPropagation(); startCall(true); });
-bindClick('btn-end-call', () => cleanupCall(true));
-bindClick('btn-spk-call', () => { isLoud = !isLoud; syncSpk(); });
-bindClick('btn-mic-call', () => {
-    if (localStream && localStream.getAudioTracks()[0]) {
-        const t = localStream.getAudioTracks()[0];
-        t.enabled = !t.enabled; isMuted = !t.enabled;
-        $('btn-mic-call').classList.toggle('muted', isMuted);
-        $('mic-icon').innerText = isMuted ? 'mic_off' : 'mic';
-    }
-});
-bindClick('btn-fs-vid', () => {
-    isFs = !isFs; callHud.classList.toggle('fullscreen', isFs);
-    $('fs-icon').innerText = isFs ? 'close_fullscreen' : 'fullscreen';
-    postToGame({ type: 'NOVA_CALL_FS', fullscreen: isFs });
-});
-bindClick('btn-hide-vid', () => {
-    const op = remoteVid.style.opacity === '0' ? '1' : '0';
-    remoteVid.style.opacity = op; localVid.style.opacity = op;
-});
-
-// Admin Dashboard
+// Admin Dashboard Buttons
 bindClick('btn-close-god-modal', () => closeLayer(godModal));
 bindClick('god-purge-btn', async () => {
     if (!godRoom) return;
     const snap = await getDocs(collection(db, godRoom));
-    for (const d of snap.docs) if (d.data().isDeletedEveryone || (d.data().deletedFor && d.data().deletedFor.length > 0)) await deleteDoc(doc(db, godRoom, d.id));
+    for (const d of snap.docs) {
+        if (d.data().isDeletedEveryone || (d.data().deletedFor && d.data().deletedFor.length > 0)) {
+            await deleteDoc(doc(db, godRoom, d.id));
+        }
+    }
     window.inspectGod(godRoom);
 });
 bindClick('god-wipe-btn', async () => {
@@ -2407,12 +973,12 @@ bindClick('god-wipe-btn', async () => {
 window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
-    isWidgetOpen = !!d.open;
-    if (d.panic && (pc || localStream || ringInterval)) cleanupCall(false);
-    if (!isWidgetOpen) {
+    state.isWidgetOpen = !!d.open;
+    if (d.panic && hasActiveCall()) cleanupCall(false);
+    if (!state.isWidgetOpen) {
         updatePresence("offline", true);
         lockAppIfEnabled();
-    } else if (isWidgetOpen && isAppUnlocked && isRoomActivelyOpen) {
+    } else if (state.isWidgetOpen && state.isAppUnlocked && state.isRoomActivelyOpen) {
         updatePresence("online", true);
         markVisibleMessagesSeen();
         const box = $('msgs-container');
@@ -2423,53 +989,54 @@ document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
         updatePresence("offline", true);
         lockAppIfEnabled();
-    } else if (document.visibilityState === 'visible' && isAppUnlocked) {
+    } else if (document.visibilityState === 'visible' && state.isAppUnlocked) {
         updatePresence("online", true);
         markVisibleMessagesSeen();
     }
 });
 
 // ============================================================================
-// 11. START SESSION & HANDOFF FROM index.html
+// 6. START SESSION & HANDOFF FROM index.html
 // ============================================================================
 function startAuthenticatedSession(shouldApplyLock = true) {
-    $('my-top-name').innerText = myName;
-    $('my-top-id-tag').innerText = `My ID: ${myAccountCode}`;
+    if ($('my-top-name')) $('my-top-name').innerText = state.myName;
+    if ($('my-top-id-tag')) $('my-top-id-tag').innerText = `My ID: ${state.myAccountCode}`;
     const dpEl = $('my-top-dp');
-    if (myDp) { dpEl.innerHTML = '<div class="online-dot"></div>'; dpEl.style.backgroundImage = `url(${myDp})`; }
-    else { dpEl.style.backgroundImage = ''; dpEl.innerHTML = `<span class="material-icons" style="font-size:20px;">person</span><div class="online-dot"></div>`; }
+    if (dpEl) {
+        if (state.myDp) { dpEl.innerHTML = '<div class="online-dot"></div>'; dpEl.style.backgroundImage = `url(${state.myDp})`; }
+        else { dpEl.style.backgroundImage = ''; dpEl.innerHTML = `<span class="material-icons" style="font-size:20px;">person</span><div class="online-dot"></div>`; }
+    }
     updateAppLockIconUI();
     if (shouldApplyLock) lockAppIfEnabled();
 
     initStealthFCM();
 
     if (unsubscribeAccountSync) unsubscribeAccountSync();
-    unsubscribeAccountSync = onSnapshot(doc(db, "novahub_accounts", myAccountCode), (snap) => {
+    unsubscribeAccountSync = onSnapshot(doc(db, "novahub_accounts", state.myAccountCode), (snap) => {
         if (!snap.exists()) return;
         const d = snap.data();
-        if (d.lockPin && d.lockPin !== myLockPin) {
-            myLockPin = d.lockPin;
-            localStorage.setItem('nova_lock_pin', myLockPin);
+        if (d.lockPin && d.lockPin !== state.myLockPin) {
+            state.myLockPin = d.lockPin;
+            localStorage.setItem('nova_lock_pin', state.myLockPin);
         }
         if (typeof d.appLockEnabled === 'boolean' && d.appLockPin) {
-            appLockEnabled = d.appLockEnabled;
-            appLockPin = d.appLockPin;
-            localStorage.setItem('nova_app_lock_enabled', String(appLockEnabled));
-            localStorage.setItem('nova_app_lock_pin', appLockPin);
+            state.appLockEnabled = d.appLockEnabled;
+            state.appLockPin = d.appLockPin;
+            localStorage.setItem('nova_app_lock_enabled', String(state.appLockEnabled));
+            localStorage.setItem('nova_app_lock_pin', state.appLockPin);
             updateAppLockIconUI();
         }
         if (d.savedRooms) {
             let updated = false;
             d.savedRooms.forEach(cloudRoom => {
-                if (cloudRoom.id === 'global_novahub_chat' || recentlyDeletedRooms.has(cloudRoom.id)) return;
-                const localRoom = savedRooms.find(r => r.id === cloudRoom.id);
-                if (!localRoom) {
-                    savedRooms.push(cloudRoom);
+                if (cloudRoom.id === 'global_novahub_chat' || state.recentlyDeletedRooms.has(cloudRoom.id)) return;
+                if (!state.savedRooms.find(r => r.id === cloudRoom.id)) {
+                    state.savedRooms.push(cloudRoom);
                     updated = true;
                 }
             });
             if (updated) {
-                localStorage.setItem('nova_saved_rooms', JSON.stringify(savedRooms));
+                localStorage.setItem('nova_saved_rooms', JSON.stringify(state.savedRooms));
                 syncRoomSummaryListeners();
                 renderSidebarList();
                 renderActiveStrip();
@@ -2489,7 +1056,7 @@ function startAuthenticatedSession(shouldApplyLock = true) {
     renderActiveStrip();
 
     const lastId = localStorage.getItem('nova_last_room');
-    const bgRoom = savedRooms.find(r => r.id === lastId) || savedRooms[0];
+    const bgRoom = state.savedRooms.find(r => r.id === lastId) || state.savedRooms[0];
     if (bgRoom) selectRoom(bgRoom.id, false);
 }
 
@@ -2498,7 +1065,7 @@ try {
         sessionStorage.removeItem('nova_open_admin');
         closeLayer(authScreen);
         openGodDashboard();
-    } else if (myAccountCode && myName) {
+    } else if (state.myAccountCode && state.myName) {
         closeLayer(authScreen);
         startAuthenticatedSession(true);
     } else {
