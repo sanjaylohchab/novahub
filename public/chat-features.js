@@ -922,3 +922,128 @@ function initSleepGuard() {
     resetSleepTimer();
 }
 initSleepGuard();
+// ============================================================================
+// 7. SMART CLEAR CHAT (KEEP STARRED VS DELETE ALL - ENGLISH UI)
+// ============================================================================
+function initSmartClearChat() {
+    const clearModal = $('clear-chat-modal');
+    if (!clearModal || document.getElementById('nova-smart-clear-card')) return;
+
+    if (!document.getElementById('nova-smart-clear-styles')) {
+        const st = document.createElement('style');
+        st.id = 'nova-smart-clear-styles';
+        st.textContent = `
+            .scc-card {
+                width: 100%; max-width: 350px; background: #0f172a;
+                border: 1px solid rgba(255,255,255,0.14); border-radius: 18px;
+                padding: 18px; color: #f8fafc; box-shadow: 0 20px 50px rgba(0,0,0,0.65);
+            }
+            body.light-mode .scc-card { background: #ffffff; color: #0f172a; border-color: rgba(15,23,42,0.14); }
+            .scc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+            .scc-title { font-size: 15.5px; font-weight: 800; }
+            .scc-close { width: 28px; height: 28px; border-radius: 999px; border: none; background: rgba(255,255,255,0.1); color: inherit; font-size: 18px; cursor: pointer; }
+            .scc-box {
+                background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+                border-radius: 13px; padding: 12px; margin-bottom: 11px;
+            }
+            body.light-mode .scc-box { background: #f8fafc; border-color: rgba(15,23,42,0.12); }
+            .scc-box-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+            .scc-box-sub { font-size: 11.5px; color: #94a3b8; margin-bottom: 10px; }
+            .scc-btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+            .scc-btn {
+                padding: 9px 10px; border-radius: 10px; border: none;
+                font-size: 12px; font-weight: 700; cursor: pointer;
+            }
+            .scc-btn.me { background: rgba(56,189,248,0.18); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); }
+            .scc-btn.all { background: rgba(239,68,68,0.18); color: #f87171; border: 1px solid rgba(239,68,68,0.38); }
+            .scc-cancel {
+                width: 100%; padding: 10px; border-radius: 11px; border: none;
+                background: rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 700; cursor: pointer;
+            }
+        `;
+        document.head.appendChild(st);
+    }
+
+    clearModal.innerHTML = `
+        <div class="scc-card" id="nova-smart-clear-card">
+            <div class="scc-head">
+                <div class="scc-title">🧹 Clear Chat</div>
+                <button type="button" class="scc-close" id="scc-close-x">×</button>
+            </div>
+
+            <div class="scc-box">
+                <div class="scc-box-title" style="color:#eab308;">⭐ Keep Starred Messages</div>
+                <div class="scc-box-sub">Delete unstarred messages only. Starred messages stay safe.</div>
+                <div class="scc-btn-row">
+                    <button type="button" class="scc-btn me" id="scc-unstarred-me">For Me</button>
+                    <button type="button" class="scc-btn all" id="scc-unstarred-all">For Everyone</button>
+                </div>
+            </div>
+
+            <div class="scc-box">
+                <div class="scc-box-title" style="color:#f87171;">🗑️ Delete All Messages</div>
+                <div class="scc-box-sub">Clear entire chat including starred messages.</div>
+                <div class="scc-btn-row">
+                    <button type="button" class="scc-btn me" id="scc-all-me">For Me</button>
+                    <button type="button" class="scc-btn all" id="scc-all-everyone">For Everyone</button>
+                </div>
+            </div>
+
+            <button type="button" class="scc-cancel" id="scc-cancel-btn">Cancel</button>
+        </div>
+    `;
+
+    async function executeSmartClear(keepStarred, forEveryone) {
+        const roomId = state.clearTargetRoomId || state.currentRoom;
+        if (!roomId) return closeLayer(clearModal);
+
+        const label = keepStarred ? "all UNSTARRED messages" : "ALL messages (including starred)";
+        const scope = forEveryone ? "for EVERYONE" : "for YOU only";
+        if (!confirm(`Delete ${label} ${scope}?`)) return;
+
+        closeLayer(clearModal);
+        showQuickToast("🧹 Clearing chat...");
+
+        try {
+            const snap = await getDocs(collection(db, roomId));
+            let count = 0;
+            const jobs = [];
+
+            snap.forEach(d => {
+                const m = d.data();
+                if (m.isDeletedEveryone) return;
+                if (!forEveryone && Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) return;
+                if (keepStarred && Array.isArray(m.starredBy) && m.starredBy.includes(state.myUid)) return;
+
+                count++;
+                if (forEveryone) {
+                    jobs.push(updateDoc(doc(db, roomId, d.id), {
+                        isDeletedEveryone: true,
+                        deletedByAudit: state.myName
+                    }).catch(() => {}));
+                } else {
+                    const delArr = Array.isArray(m.deletedFor) ? [...m.deletedFor] : [];
+                    if (!delArr.includes(state.myUid)) delArr.push(state.myUid);
+                    jobs.push(updateDoc(doc(db, roomId, d.id), { deletedFor: delArr }).catch(() => {}));
+                }
+            });
+
+            await Promise.all(jobs);
+            showQuickToast(
+                count === 0
+                    ? "ℹ️ No messages to delete."
+                    : (keepStarred ? `✅ Deleted ${count} messages (Starred kept)` : `🗑️ Deleted all ${count} messages`)
+            );
+        } catch (e) {
+            showQuickToast("⚠️ Clear chat failed. Check connection.");
+        }
+    }
+
+    bindClick('scc-close-x', () => closeLayer(clearModal));
+    bindClick('scc-cancel-btn', () => closeLayer(clearModal));
+    bindClick('scc-unstarred-me', () => executeSmartClear(true, false));
+    bindClick('scc-unstarred-all', () => executeSmartClear(true, true));
+    bindClick('scc-all-me', () => executeSmartClear(false, false));
+    bindClick('scc-all-everyone', () => executeSmartClear(false, true));
+}
+initSmartClearChat();
