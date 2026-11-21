@@ -30,15 +30,15 @@ function applyAndroidApkViewportFix() {
                 max-height: 100dvh !important;
                 overflow: hidden !important;
             }
-            #chat-view {
+                      #chat-view {
                 height: 100% !important;
                 height: 100dvh !important;
                 max-height: 100dvh !important;
-                display: flex !important;
                 flex-direction: column !important;
                 box-sizing: border-box !important;
                 padding-bottom: env(safe-area-inset-bottom, 0px) !important;
             }
+
             #msgs-container {
                 flex: 1 1 auto !important;
                 min-height: 0 !important;
