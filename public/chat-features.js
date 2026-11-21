@@ -6,7 +6,7 @@ import {
     escapeHtml, openLayer, closeLayer, postToGame, showQuickToast, playAlertBeep,
     isRoomMuted, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
     getShortTime, formatLastSeen, compressImg,
-    doc, setDoc, getDoc, getDocs, updateDoc, onSnapshot, collection,
+    doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection,
     addDoc, query, orderBy, serverTimestamp
 } from "./chat-shared.js";
 
@@ -15,6 +15,45 @@ let presenceRefreshTimer = null;
 let lastPresStatus = "";
 let lastPresMs = 0;
 let selectedLiveHours = 1;
+
+// ============================================================================
+// 0. ANDROID FULL-SCREEN APK VIEWPORT FIX (KEEPS BOTTOM INPUT BAR VISIBLE)
+// ============================================================================
+function applyAndroidApkViewportFix() {
+    if (!document.getElementById('nova-apk-viewport-fix')) {
+        const st = document.createElement('style');
+        st.id = 'nova-apk-viewport-fix';
+        st.textContent = `
+            html, body {
+                height: 100% !important;
+                height: 100dvh !important;
+                max-height: 100dvh !important;
+                overflow: hidden !important;
+            }
+            #chat-view {
+                height: 100% !important;
+                height: 100dvh !important;
+                max-height: 100dvh !important;
+                display: flex !important;
+                flex-direction: column !important;
+                box-sizing: border-box !important;
+                padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+            }
+            #msgs-container {
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                overflow-y: auto !important;
+            }
+        `;
+        document.head.appendChild(st);
+    }
+    const inp = $('msg-input');
+    if (inp && inp.parentElement) {
+        inp.parentElement.style.flexShrink = '0';
+        inp.parentElement.style.paddingBottom = 'max(10px, env(safe-area-inset-bottom, 10px))';
+    }
+}
+applyAndroidApkViewportFix();
 
 // ============================================================================
 // 1. FCM STEALTH PUSH & IN-APP / OS ALERTS (RESPECTS MUTE)
@@ -112,7 +151,6 @@ export async function triggerStealthAlert(type, roomId = state.currentRoom) {
     }
 }
 
-// Register hooks for chat-calls.js and chat-sidebar.js
 hooks.sendStealthPushToPeer = sendStealthPushToPeer;
 hooks.triggerStealthAlert = triggerStealthAlert;
 
@@ -375,8 +413,23 @@ export function initLocationControls() {
 }
 
 // ============================================================================
-// 4. STORIES FEED & STORY UPLOADER
+// 4. STORIES FEED (24-HOUR AUTO-EXPIRE + MANUAL DELETE)
 // ============================================================================
+const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function deleteStoryById(storyId) {
+    if (!storyId) return;
+    if (!confirm("Kya aap is story ko delete karna chahte hain?")) return;
+    try {
+        await deleteDoc(doc(db, "novahub_stories", storyId));
+        closeLayer($('generic-modal'));
+        showQuickToast("🗑️ Story delete ho gayi!");
+        loadStories();
+    } catch (e) {
+        showQuickToast("⚠️ Story delete nahi ho paayi.");
+    }
+}
+
 export async function loadStories() {
     const feed = $('stories-feed');
     if (!feed) return;
@@ -384,19 +437,41 @@ export async function loadStories() {
     const snap = await getDocs(query(collection(db, "novahub_stories"), orderBy("timestamp", "desc")));
     feed.innerHTML = '';
     const myFriendCodes = state.savedRooms.filter(r => !r.locked).map(r => r.peerCode);
+    const nowMs = Date.now();
+    let shownCount = 0;
 
     snap.forEach(d => {
         const s = d.data();
+        const storyMs = s.createdAtMs || (s.timestamp && typeof s.timestamp.toMillis === 'function' ? s.timestamp.toMillis() : 0);
+
+        // 24 ghante se purani story auto-delete karein
+        if (storyMs > 0 && (nowMs - storyMs) > STORY_TTL_MS) {
+            deleteDoc(doc(db, "novahub_stories", d.id)).catch(() => {});
+            return;
+        }
+
         if (s.accountCode !== state.myAccountCode && !myFriendCodes.includes(s.accountCode)) return;
+        shownCount++;
+        const isMine = (s.accountCode === state.myAccountCode);
+
         const item = document.createElement('div');
         item.className = 'chat-item';
         item.innerHTML = `
             <div class="avatar" style="border:2px solid #00f2fe;">${s.type === 'image' ? '📷' : '✍️'}</div>
             <div class="chat-item-info">
-                <div class="chat-item-name">${escapeHtml(s.name)}</div>
+                <div class="chat-item-name">${escapeHtml(s.name)} ${isMine ? '<span style="font-size:10px; color:#10b981;">(You)</span>' : ''}</div>
                 <div class="chat-item-sub">${escapeHtml(s.timeStr)} • 👀 ${s.views ? s.views.length : 0} views</div>
             </div>
+            ${isMine ? `<button type="button" class="story-del-btn" title="Delete Story" style="background:rgba(239,68,68,0.15); color:#f87171; border:none; border-radius:8px; width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><span class="material-icons" style="font-size:18px;">delete</span></button>` : ''}
         `;
+
+        if (isMine) {
+            item.querySelector('.story-del-btn')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteStoryById(d.id);
+            });
+        }
+
         item.addEventListener('click', async () => {
             let vList = s.views || [];
             if (!vList.includes(state.myName)) {
@@ -409,12 +484,18 @@ export async function loadStories() {
                     ? `<img src="${s.mediaUrl}" style="width:100%; border-radius:10px;">`
                     : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(s.text)}</div>`}
                 <div style="margin-top:12px; font-size:12px; color:var(--text-sub);">👀 Viewed by: ${escapeHtml(vList.join(', ') || 'None')}</div>
+                ${isMine ? `<button id="btn-modal-del-story" type="button" class="loc-action-btn" style="background:#dc2626; color:#fff; width:100%; margin-top:12px;">🗑️ Delete My Story</button>` : ''}
             `;
             openLayer($('generic-modal'));
+            if (isMine) bindClick('btn-modal-del-story', () => deleteStoryById(d.id));
             loadStories();
         });
         feed.appendChild(item);
     });
+
+    if (shownCount === 0) {
+        feed.innerHTML = `<div class="empty-inbox">✨ Koi active story nahi hai (stories 24 ghante mein auto-delete ho jati hain).</div>`;
+    }
 }
 
 export function initStoryControls() {
@@ -425,7 +506,7 @@ export function initStoryControls() {
             if (!txt) return;
             await addDoc(collection(db, "novahub_stories"), {
                 uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
-                type: "text", text: txt,
+                type: "text", text: txt, createdAtMs: Date.now(),
                 timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }),
                 views: [], timestamp: serverTimestamp()
             });
@@ -442,7 +523,7 @@ export function initStoryControls() {
             const url = await compressImg(file);
             await addDoc(collection(db, "novahub_stories"), {
                 uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
-                type: "image", mediaUrl: url, text: "📷 Story",
+                type: "image", mediaUrl: url, text: "📷 Story", createdAtMs: Date.now(),
                 timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }),
                 views: [], timestamp: serverTimestamp()
             });
