@@ -1158,10 +1158,12 @@ function initWhatsAppRedesign() {
     `;
     sidebar.insertBefore(topBar, sidebar.firstChild);
 
-    bindClick('wa-add-fab', () => {
-        const oldAdd = $('btn-add-friend');
+        function triggerAddFriend() {
+        const oldAdd = $('btn-add-friend') || $('btn-add-room') || $('btn-new-chat') || $('btn-add-id')
+            || document.querySelector('.search-bar button, .search-wrap button');
         if (oldAdd) oldAdd.click();
-    });
+    }
+
 
     // 3. Create Calls & You Tab Containers
     const callsTab = document.createElement('div');
