@@ -1,13 +1,13 @@
 // ============================================================================
-// NOVAMESSENGER MODULE 3: PUSH, PRESENCE, LIVE LOCATION, STORIES & EXTRAS
+// NOVAMESSENGER MODULE 3: PUSH, PRESENCE, LIVE LOCATION, STORIES & UI
 // ============================================================================
 import {
     app, db, FCM_VAPID_KEY, PUSH_RELAY_URL, state, hooks, $, bindClick,
     escapeHtml, openLayer, closeLayer, postToGame, showQuickToast, playAlertBeep,
     isRoomMuted, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
     getShortTime, formatLastSeen, compressImg,
-    doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, collection,
-    addDoc, query, orderBy, serverTimestamp
+    doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
+    onSnapshot, collection, addDoc, query, orderBy, serverTimestamp
 } from "./chat-shared.js";
 
 let unsubscribePresence = null;
@@ -16,8 +16,23 @@ let lastPresStatus = "";
 let lastPresMs = 0;
 let selectedLiveHours = 1;
 
+function isGlobalNotifOn() {
+    if (localStorage.getItem('nova_stealth_notif') === 'false') return false;
+    return state.stealthNotifEnabled !== false;
+}
+
+function isChatMutedStrict(roomId) {
+    if (!roomId) return false;
+    if (isRoomMuted(roomId)) return true;
+    try {
+        const localMuted = JSON.parse(localStorage.getItem('nova_muted_rooms') || '[]');
+        if (Array.isArray(localMuted) && localMuted.includes(roomId)) return true;
+    } catch (e) {}
+    return false;
+}
+
 // ============================================================================
-// 0. ANDROID FULL-SCREEN APK VIEWPORT FIX (KEEPS BOTTOM INPUT BAR VISIBLE)
+// 0. ANDROID FULL-SCREEN APK VIEWPORT FIX
 // ============================================================================
 function applyAndroidApkViewportFix() {
     if (!document.getElementById('nova-apk-viewport-fix')) {
@@ -56,10 +71,19 @@ function applyAndroidApkViewportFix() {
 applyAndroidApkViewportFix();
 
 // ============================================================================
-// 1. FCM STEALTH PUSH & IN-APP / OS ALERTS (SUPPRESSED WHEN CHAT IS OPEN)
+// 1. FCM STEALTH PUSH & STRICT MUTE / LOGOUT CLEANUP
 // ============================================================================
+export async function clearStealthFCMOnLogout(accountCode) {
+    if (!accountCode) return;
+    try {
+        await updateDoc(doc(db, "novahub_accounts", accountCode), {
+            fcmToken: deleteField()
+        }).catch(() => {});
+    } catch (e) {}
+}
+
 export async function initStealthFCM() {
-    if (!state.myAccountCode || !("Notification" in window) || !("serviceWorker" in navigator)) return;
+    if (!state.myAccountCode || !isGlobalNotifOn() || !("Notification" in window) || !("serviceWorker" in navigator)) return;
     try {
         if (Notification.permission === "default") {
             await Notification.requestPermission().catch(() => {});
@@ -78,13 +102,14 @@ export async function initStealthFCM() {
             vapidKey: FCM_VAPID_KEY,
             serviceWorkerRegistration: reg
         });
-        if (token) {
+        if (token && state.myAccountCode && isGlobalNotifOn()) {
             await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
                 fcmToken: token,
                 fcmUpdatedAt: Date.now()
             }, { merge: true }).catch(() => {});
         }
         fcmMod.onMessage(messaging, () => {
+            if (!state.myAccountCode || !isGlobalNotifOn()) return;
             if (!isChatActivelyVisible()) triggerStealthAlert("text", state.currentRoom);
         });
     } catch (e) {}
@@ -98,6 +123,7 @@ export async function sendStealthPushToPeer(roomId, kind = "text") {
         const peerSnap = await getDoc(doc(db, "novahub_accounts", meta.peerCode));
         if (!peerSnap.exists()) return;
         const peerData = peerSnap.data();
+        if (peerData.notifEnabled === false) return;
         if (Array.isArray(peerData.mutedRooms) && peerData.mutedRooms.includes(roomId)) return;
         const token = peerData.fcmToken || "";
         if (!token) return;
@@ -115,8 +141,13 @@ export async function sendStealthPushToPeer(roomId, kind = "text") {
 }
 
 export async function triggerStealthAlert(type, roomId = state.currentRoom) {
-    if (isRoomMuted(roomId)) return;
-    // Do not show toast, sound, or notification if this exact chat is already open
+    // 1. Block completely if user is logged out
+    if (!state.myAccountCode) return;
+    // 2. Block if global notifications are OFF
+    if (!isGlobalNotifOn()) return;
+    // 3. Block if this specific person/chat is muted
+    if (isChatMutedStrict(roomId)) return;
+    // 4. Block if this exact chat is already open on screen
     if (type !== 'call' && roomId === state.currentRoom && isChatActivelyVisible()) return;
 
     if (state.vibrationEnabled && type !== 'call') {
@@ -128,10 +159,9 @@ export async function triggerStealthAlert(type, roomId = state.currentRoom) {
     else if (type === "call") txt = "Multiplayer lobby active! Join now ⭐️⭐️";
 
     if (state.isWidgetMode && !state.isWidgetOpen) {
-        if (type === 'call') postToGame({ type: 'NOVA_CALL_INCOMING', toastText: state.stealthNotifEnabled ? txt : '' });
-        else postToGame({ type: 'NOVA_UNREAD', toastText: state.stealthNotifEnabled ? txt : '' });
+        if (type === 'call') postToGame({ type: 'NOVA_CALL_INCOMING', toastText: txt });
+        else postToGame({ type: 'NOVA_UNREAD', toastText: txt });
     }
-    if (!state.stealthNotifEnabled) return;
     showQuickToast(txt);
 
     if ("Notification" in window && Notification.permission === "granted" && !isChatActivelyVisible()) {
@@ -551,27 +581,17 @@ function initScheme2KeypadAndPanic() {
         st.id = 'nova-scheme2-styles';
         st.textContent = `
             #auth-screen a[href*="index"], #auth-screen .return-btn, #btn-return-arcade-big {
-                display: flex !important;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                width: 100%;
-                padding: 13px 16px !important;
-                margin-top: 14px !important;
+                display: flex !important; align-items: center; justify-content: center; gap: 8px;
+                width: 100%; padding: 13px 16px !important; margin-top: 14px !important;
                 background: rgba(255,255,255,0.08) !important;
                 border: 1px solid rgba(255,255,255,0.18) !important;
-                border-radius: 12px !important;
-                color: #e2e8f0 !important;
-                font-size: 14px !important;
-                font-weight: 700 !important;
-                text-decoration: none !important;
-                cursor: pointer;
-                box-sizing: border-box;
+                border-radius: 12px !important; color: #e2e8f0 !important;
+                font-size: 14px !important; font-weight: 700 !important;
+                text-decoration: none !important; cursor: pointer; box-sizing: border-box;
             }
             #auth-screen a[href*="index"]:active, #btn-return-arcade-big:active {
                 background: rgba(255,255,255,0.16) !important;
             }
-
             #nova-keypad-wrap { width: 100%; max-width: 280px; margin: 12px auto 0; text-align: center; }
             .kp-dots { display: flex; justify-content: center; gap: 14px; margin: 14px 0 18px; }
             .kp-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #38bdf8; background: transparent; transition: all 0.15s; }
@@ -717,7 +737,6 @@ function initScheme2KeypadAndPanic() {
         window.addEventListener('mouseup', onEnd);
     }
 
-    // Shake-to-Panic Exit (Android + iPhone Motion Permission)
     let lastShakeMs = 0;
     let shakeAttached = false;
 
@@ -770,9 +789,7 @@ function initSleepGuard() {
                 background: rgba(16,185,129,0.16); color: #34d399;
                 font-size: 11px; font-weight: 700; cursor: pointer; margin-right: 4px;
             }
-            #btn-sleep-guard-top.sg-off {
-                background: rgba(255,255,255,0.06); color: #94a3b8;
-            }
+            #btn-sleep-guard-top.sg-off { background: rgba(255,255,255,0.06); color: #94a3b8; }
             #sleep-guard-modal {
                 position: fixed; inset: 0; background: rgba(0,0,0,0.75);
                 backdrop-filter: blur(3px); z-index: 9996; display: none;
@@ -914,7 +931,7 @@ function initSleepGuard() {
 initSleepGuard();
 
 // ============================================================================
-// 7. SMART CLEAR CHAT (KEEP STARRED VS DELETE ALL - ENGLISH UI)
+// 7. SMART CLEAR CHAT (KEEP STARRED VS DELETE ALL - SKIPS PREVIOUSLY DELETED)
 // ============================================================================
 function initSmartClearChat() {
     const clearModal = $('clear-chat-modal');
@@ -984,7 +1001,7 @@ function initSmartClearChat() {
         </div>
     `;
 
-        async function executeSmartClear(keepStarred, forEveryone) {
+    async function executeSmartClear(keepStarred, forEveryone) {
         const roomId = state.clearTargetRoomId || state.currentRoom;
         if (!roomId) return closeLayer(clearModal);
 
@@ -1003,7 +1020,6 @@ function initSmartClearChat() {
             snap.forEach(d => {
                 const m = d.data();
                 if (m.isDeletedEveryone) return;
-                // Jo message aapne pehle hi "Delete for Me" kar diya hai, use hamesha skip karein
                 if (Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) return;
                 if (keepStarred && Array.isArray(m.starredBy) && m.starredBy.includes(state.myUid)) return;
 
@@ -1031,7 +1047,6 @@ function initSmartClearChat() {
         }
     }
 
-
     bindClick('scc-close-x', () => closeLayer(clearModal));
     bindClick('scc-cancel-btn', () => closeLayer(clearModal));
     bindClick('scc-unstarred-me', () => executeSmartClear(true, false));
@@ -1040,8 +1055,9 @@ function initSmartClearChat() {
     bindClick('scc-all-everyone', () => executeSmartClear(false, true));
 }
 initSmartClearChat();
+
 // ============================================================================
-// 8. WHATSAPP-STYLE REDESIGN (BOTTOM TABS, YOU TAB, STORY RING & LAST SEEN)
+// 8. WHATSAPP-STYLE REDESIGN (4 TABS + WORKING + BUTTON + STORY RING)
 // ============================================================================
 function initWhatsAppRedesign() {
     if (document.getElementById('nova-wa-redesign-styles')) return;
@@ -1049,12 +1065,9 @@ function initWhatsAppRedesign() {
     const st = document.createElement('style');
     st.id = 'nova-wa-redesign-styles';
     st.textContent = `
-        /* Hide old red-circled story strip & old top tabs */
         #active-strip, .active-strip, .nav-tabs, #tab-messages, #tab-stories {
             display: none !important;
         }
-
-        /* Clean WhatsApp-style Top Header */
         .sidebar-header, .side-header {
             padding: 12px 14px 6px !important;
             border-bottom: none !important;
@@ -1074,18 +1087,12 @@ function initWhatsAppRedesign() {
             display: flex; align-items: center; justify-content: center; cursor: pointer;
             box-shadow: 0 3px 10px rgba(16,185,129,0.35);
         }
-
-        /* Full-width rounded Search Bar */
-        .search-bar, .search-wrap {
-            padding: 6px 14px 10px !important;
-        }
+        .search-bar, .search-wrap { padding: 6px 14px 10px !important; }
         .search-bar button, #btn-add-friend { display: none !important; }
         #search-friends, .search-bar input {
             width: 100% !important; border-radius: 999px !important;
             padding: 10px 16px !important; font-size: 14px !important;
         }
-
-        /* Bottom Navigation Bar (WhatsApp Style) */
         #wa-bottom-nav {
             display: grid; grid-template-columns: repeat(4, 1fr);
             background: rgba(15,23,42,0.96); backdrop-filter: blur(12px);
@@ -1106,8 +1113,6 @@ function initWhatsAppRedesign() {
         .wa-nav-btn.active .material-icons {
             background: rgba(16,185,129,0.16); padding: 2px 14px; border-radius: 999px;
         }
-
-        /* Extra Tabs: Calls & You */
         .wa-extra-tab {
             flex: 1; overflow-y: auto; padding: 12px 14px 20px; display: none;
         }
@@ -1116,24 +1121,18 @@ function initWhatsAppRedesign() {
             background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
             border-radius: 16px; padding: 14px; margin-bottom: 12px;
         }
-        body.light-mode .wa-you-card {
-            background: #f8fafc; border-color: rgba(15,23,42,0.1);
-        }
+        body.light-mode .wa-you-card { background: #f8fafc; border-color: rgba(15,23,42,0.1); }
         .wa-you-row {
             display: flex; align-items: center; justify-content: space-between;
             padding: 11px 6px; border-bottom: 1px solid rgba(255,255,255,0.07);
             cursor: pointer; font-size: 14px; font-weight: 600;
         }
         .wa-you-row:last-child { border-bottom: none; }
-
-        /* Story Ring on Chat List DP */
         .avatar.has-story-ring {
             border: 2.5px solid #10b981 !important;
             box-shadow: 0 0 0 2px rgba(16,185,129,0.28);
             cursor: pointer;
         }
-
-        /* Subtle Last Seen pill in Chat List */
         .wa-list-presence {
             font-size: 10.5px; color: #94a3b8; margin-top: 2px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1145,11 +1144,9 @@ function initWhatsAppRedesign() {
     const sidebar = $('sidebar') || document.querySelector('.sidebar');
     if (!sidebar) return;
 
-    // 1. Hide old top header (keep its buttons alive in DOM so click listeners work)
     const oldHeader = sidebar.querySelector('.sidebar-header, .side-header, header');
     if (oldHeader) oldHeader.style.display = 'none';
 
-    // 2. Insert Clean WhatsApp Top Bar
     const topBar = document.createElement('div');
     topBar.id = 'wa-top-bar';
     topBar.innerHTML = `
@@ -1158,14 +1155,12 @@ function initWhatsAppRedesign() {
     `;
     sidebar.insertBefore(topBar, sidebar.firstChild);
 
-        function triggerAddFriend() {
+    function triggerAddFriend() {
         const oldAdd = $('btn-add-friend') || $('btn-add-room') || $('btn-new-chat') || $('btn-add-id')
             || document.querySelector('.search-bar button, .search-wrap button');
         if (oldAdd) oldAdd.click();
     }
 
-
-    // 3. Create Calls & You Tab Containers
     const callsTab = document.createElement('div');
     callsTab.id = 'wa-calls-tab';
     callsTab.className = 'wa-extra-tab';
@@ -1201,7 +1196,6 @@ function initWhatsAppRedesign() {
         </div>
     `;
 
-    // 4. Create 4-Tab Bottom Navigation Bar
     const bottomNav = document.createElement('div');
     bottomNav.id = 'wa-bottom-nav';
     bottomNav.innerHTML = `
@@ -1215,7 +1209,6 @@ function initWhatsAppRedesign() {
     sidebar.appendChild(youTab);
     sidebar.appendChild(bottomNav);
 
-    // Wire "You" Tab Rows to Existing Buttons
     bindClick('wa-you-profile-box', () => { window.location.href = 'chat-settings.html'; });
     bindClick('wa-row-sg', () => $('btn-sleep-guard-top')?.click());
     bindClick('wa-row-lock', () => $('btn-app-lock-toggle')?.click());
@@ -1224,7 +1217,6 @@ function initWhatsAppRedesign() {
     bindClick('wa-row-settings', () => { window.location.href = 'chat-settings.html'; });
     bindClick('wa-row-logout', () => $('btn-logout-now')?.click());
 
-    // Tab Switching Logic
     const chatListEl = $('chat-list');
     const searchBarEl = sidebar.querySelector('.search-bar, .search-wrap');
     const storiesPanel = $('stories-panel') || $('stories-feed')?.parentElement;
@@ -1233,12 +1225,11 @@ function initWhatsAppRedesign() {
         bottomNav.querySelectorAll('.wa-nav-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === tab));
         const titleMap = { updates: 'Updates', calls: 'Calls', chats: 'Chats', you: 'You' };
         if ($('wa-page-title')) $('wa-page-title').innerText = titleMap[tab] || 'Chats';
-        if ($('wa-add-fab')) $('wa-add-fab').style.display = (tab === 'chats' || tab === 'updates') ? 'flex' : 'none';
-
-        if (tab === 'updates') {
-            $('wa-add-fab').onclick = () => $('btn-add-status')?.click();
-        } else {
-            $('wa-add-fab').onclick = () => $('btn-add-friend')?.click();
+        if ($('wa-add-fab')) {
+            $('wa-add-fab').style.display = (tab === 'chats' || tab === 'updates') ? 'flex' : 'none';
+            $('wa-add-fab').onclick = (tab === 'updates')
+                ? () => $('btn-add-status')?.click()
+                : triggerAddFriend;
         }
 
         if (chatListEl) chatListEl.style.display = (tab === 'chats') ? '' : 'none';
@@ -1261,7 +1252,6 @@ function initWhatsAppRedesign() {
     });
     switchWaTab('chats');
 
-    // 5. Story Ring on Chat List DP + Live Last Seen in Chat List
     const activeStoryByCode = {};
     const presenceByRoom = {};
 
@@ -1289,7 +1279,6 @@ function initWhatsAppRedesign() {
             const room = state.savedRooms.filter(r => !r.locked)[idx];
             if (!room) return;
 
-            // Story Ring on DP
             const ava = item.querySelector('.avatar');
             const stObj = activeStoryByCode[room.peerCode];
             if (ava) {
@@ -1304,7 +1293,6 @@ function initWhatsAppRedesign() {
                 } : null;
             }
 
-            // Small Last Seen / Online indicator
             const info = item.querySelector('.chat-item-info');
             if (info && presenceByRoom[room.id]) {
                 let pEl = info.querySelector('.wa-list-presence');
@@ -1320,7 +1308,6 @@ function initWhatsAppRedesign() {
         });
     }
 
-    // Listen to room presence for chat list
     setInterval(() => {
         if (!state.savedRooms || !state.savedRooms.length) return;
         state.savedRooms.forEach(r => {
@@ -1361,5 +1348,4 @@ function initWhatsAppRedesign() {
 initWhatsAppRedesign();
 
 import "./chat-filters.js";
-
 import "./chat-extras.js";
