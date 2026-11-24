@@ -19,7 +19,7 @@ import {
 } from "./chat-calls.js";
 
 import {
-    initStealthFCM, sendStealthPushToPeer, triggerStealthAlert,
+    initStealthFCM, clearStealthFCMOnLogout, sendStealthPushToPeer, triggerStealthAlert,
     updatePresence, detachPresenceListener, listenToPresence,
     refreshLiveBanner, clearLocalLiveWatcher, attachLiveLocationWatcher,
     stopLiveLocation, stopAllLiveSessions, initLocationControls, initStoryControls
@@ -46,6 +46,9 @@ let mediaRec = null, vnChunks = [], isRec = false;
 let emojiPickerLoaded = false;
 let godRoom = "";
 state.replyTarget = null;
+
+// Sync global notification boolean properly from localStorage
+state.stealthNotifEnabled = (localStorage.getItem('nova_stealth_notif') !== 'false');
 
 const authScreen = $('auth-screen');
 const appLockScreen = $('app-lock-screen');
@@ -100,12 +103,10 @@ function unlockAppWithPin() {
         closeLayer(appLockScreen);
         window.scrollTo(0, 0);
     } else {
-        // Galat PIN dalte hi seedha Hospital Lab wali fake chat khul jayegi
         if ($('lock-pin-input')) $('lock-pin-input').value = '';
         window.location.href = 'decoy-chat.html';
     }
 }
-
 
 // ============================================================================
 // 2. ROOM NAVIGATION & HEADER BADGES
@@ -125,6 +126,7 @@ function updateActiveHeaderBadges(meta) {
     }
     const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
     if ($('di-enc-sub')) $('di-enc-sub').innerText = encKey ? "🔒 Custom Cipher Key Active" : "Optional cipher password";
+    if ($('di-notif-val')) $('di-notif-val').innerText = state.stealthNotifEnabled ? "ON" : "OFF";
 }
 
 function detachChatListener() {
@@ -278,10 +280,10 @@ function listenToMessages(roomId) {
     isInitialLoad = true;
     const encKey = localStorage.getItem(`nova_enc_${roomId}`) || "";
 
-    // Server timestamp se sort karein taaki Android/iOS clock mismatch kabhi na ho
     const q = query(collection(db, roomId), orderBy("timestamp", "asc"), limitToLast(40));
 
     unsubscribeChat = onSnapshot(q, (snap) => {
+        if (!state.myAccountCode) return;
         let mediaCount = 0, starCount = 0;
         const wasNearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 140;
 
@@ -307,7 +309,6 @@ function listenToMessages(roomId) {
         });
         docs.sort((a, b) => a.sortMs - b.sortMs);
 
-        // Purane date pills hata kar clean order mein dubara lagayein (1 din = 1 pill)
         box.querySelectorAll('.date-pill').forEach(el => el.remove());
         const visibleIds = new Set();
         let lastDatePillText = "";
@@ -528,7 +529,6 @@ window.inspectGod = async (rId) => {
     box.innerHTML = html || 'Empty chat.';
 };
 
-// Register cross-module hooks for chat-sidebar.js
 hooks.selectRoom = selectRoom;
 hooks.goBackToList = goBackToList;
 hooks.detachChatListener = detachChatListener;
@@ -555,7 +555,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners (SHA-256 Hashing + Seamless Migration)
+// Auth Listeners
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login')?.classList.add('active');
@@ -599,7 +599,7 @@ bindClick('btn-auth-submit', async () => {
         await setDoc(accRef, {
             accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
             dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
-            savedRooms: [], mutedRooms: [], createdAt: new Date().toLocaleString()
+            savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
         });
     } else {
         if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
@@ -625,6 +625,11 @@ bindClick('btn-auth-submit', async () => {
         state.appLockEnabled = !!data.appLockEnabled;
         state.appLockPin = data.appLockPin || "";
         state.savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
+        state.mutedRooms = Array.isArray(data.mutedRooms) ? data.mutedRooms : [];
+        if (typeof data.notifEnabled === 'boolean') {
+            state.stealthNotifEnabled = data.notifEnabled;
+            localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
+        }
     }
 
     state.isAppUnlocked = true;
@@ -633,8 +638,10 @@ bindClick('btn-auth-submit', async () => {
     startAuthenticatedSession(false);
 });
 
-bindClick('btn-logout-now', () => {
+// CLEAN LOGOUT: Removes FCM Token from Firestore so logged-out ID never sends pushes!
+bindClick('btn-logout-now', async () => {
     if (!confirm(`Logout from ID "${state.myAccountCode}" (${state.myName})?`)) return;
+    const oldCode = state.myAccountCode;
     updatePresence("offline", true);
     stopAllLiveSessions();
     cleanupCall(false);
@@ -642,7 +649,10 @@ bindClick('btn-logout-now', () => {
     detachChatListener();
     detachPresenceListener();
     if (unsubscribeAccountSync) unsubscribeAccountSync();
+    await clearStealthFCMOnLogout(oldCode);
     wipeLocalSessionData();
+    state.myAccountCode = "";
+    state.myUid = "";
     window.location.reload();
 });
 
@@ -662,7 +672,7 @@ bindClick('btn-save-lock-settings', async () => {
     const wantsLock = $('toggle-app-lock-sw').checked;
     const newPin = $('set-app-lock-pin').value.trim();
     const msgEl = $('lock-settings-msg');
-    if (wantsLock && newPin.length < 4) { msgEl.style.color = '#f87171'; msgEl.innerText = '⚠️ Kam se kam 4 digit ka PIN daalein!'; return; }
+    if (wantsLock && newPin.length < 4) { msgEl.style.color = '#f87171'; msgEl.innerText = '⚠️ Enter at least a 4-digit PIN!'; return; }
     state.appLockEnabled = wantsLock;
     if (newPin.length >= 4) state.appLockPin = newPin;
     localStorage.setItem('nova_app_lock_enabled', String(state.appLockEnabled));
@@ -674,13 +684,13 @@ bindClick('btn-save-lock-settings', async () => {
     }
     updateAppLockIconUI();
     msgEl.style.color = '#10b981';
-    msgEl.innerText = state.appLockEnabled ? '✅ Chat Entry Lock ON ho gaya!' : '🔓 Chat Entry Lock OFF ho gaya!';
+    msgEl.innerText = state.appLockEnabled ? '✅ App Lock Enabled!' : '🔓 App Lock Disabled!';
     setTimeout(() => closeLayer(lockSettingsModal), 650);
 });
 bindClick('btn-lock-now-manual', () => {
     if (!state.appLockPin || state.appLockPin.length < 4) {
         $('lock-settings-msg').style.color = '#f87171';
-        $('lock-settings-msg').innerText = '⚠️ Pehle 4+ digit PIN daal kar Save karein!';
+        $('lock-settings-msg').innerText = '⚠️ Set a 4+ digit PIN and Save first!';
         return;
     }
     state.appLockEnabled = true;
@@ -737,7 +747,7 @@ if ($('msg-file-input')) $('msg-file-input').addEventListener('change', async fu
             } catch (storageErr) {
                 inp.placeholder = prevPh;
                 $('modal-title').innerText = "🎥 Video Upload Issue";
-                $('modal-body').innerHTML = `<p style="margin-bottom:8px;">Firebase Storage par video upload nahi ho paayi (${escapeHtml(storageErr.code || storageErr.message)}).</p>`;
+                $('modal-body').innerHTML = `<p style="margin-bottom:8px;">Video upload failed (${escapeHtml(storageErr.code || storageErr.message)}).</p>`;
                 openLayer(genericModal);
                 return;
             }
@@ -926,18 +936,35 @@ bindClick('di-enc', () => {
 });
 bindClick('di-vib', () => {
     state.vibrationEnabled = !state.vibrationEnabled;
-    localStorage.setItem('nova_vib', state.vibrationEnabled);
+    localStorage.setItem('nova_vib', String(state.vibrationEnabled));
     if ($('di-vib-val')) $('di-vib-val').innerText = state.vibrationEnabled ? "ON" : "OFF";
     if (state.vibrationEnabled) playAlertBeep();
 });
+
+// GLOBAL NOTIFICATION TOGGLE (Syncs to LocalStorage + Firestore Cloud)
 bindClick('di-notif', async () => {
-    if ("Notification" in window && Notification.permission !== "granted") await Notification.requestPermission().catch(() => {});
     state.stealthNotifEnabled = !state.stealthNotifEnabled;
-    localStorage.setItem('nova_stealth_notif', state.stealthNotifEnabled);
+    localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
     if ($('di-notif-val')) $('di-notif-val').innerText = state.stealthNotifEnabled ? "ON" : "OFF";
-    if (state.stealthNotifEnabled) initStealthFCM();
-    triggerStealthAlert("text", state.currentRoom);
+
+    if (state.myAccountCode) {
+        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
+            notifEnabled: state.stealthNotifEnabled
+        }, { merge: true }).catch(() => {});
+    }
+
+    if (state.stealthNotifEnabled) {
+        if ("Notification" in window && Notification.permission !== "granted") {
+            await Notification.requestPermission().catch(() => {});
+        }
+        initStealthFCM();
+        showQuickToast("🔔 Notifications ON");
+    } else {
+        await clearStealthFCMOnLogout(state.myAccountCode);
+        showQuickToast("🔕 All Notifications OFF");
+    }
 });
+
 bindClick('di-remove-chat', () => runDeleteEntireChat(state.currentRoom, false));
 bindClick('di-media', () => {
     $('modal-title').innerText = "🖼️ Shared Media";
@@ -989,7 +1016,7 @@ bindClick('god-wipe-btn', async () => {
     window.inspectGod(godRoom);
 });
 
-// Widget & Visibility Sync (Strict Online/Seen)
+// Widget & Visibility Sync
 window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
@@ -1034,12 +1061,21 @@ function startAuthenticatedSession(shouldApplyLock = true) {
     updateAppLockIconUI();
     if (shouldApplyLock) lockAppIfEnabled();
 
-    initStealthFCM();
+    if (state.stealthNotifEnabled) initStealthFCM();
 
     if (unsubscribeAccountSync) unsubscribeAccountSync();
     unsubscribeAccountSync = onSnapshot(doc(db, "novahub_accounts", state.myAccountCode), (snap) => {
         if (!snap.exists()) return;
         const d = snap.data();
+        if (typeof d.notifEnabled === 'boolean') {
+            state.stealthNotifEnabled = d.notifEnabled;
+            localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
+            if ($('di-notif-val')) $('di-notif-val').innerText = state.stealthNotifEnabled ? "ON" : "OFF";
+        }
+        if (Array.isArray(d.mutedRooms)) {
+            state.mutedRooms = d.mutedRooms;
+            localStorage.setItem('nova_muted_rooms', JSON.stringify(state.mutedRooms));
+        }
         if (d.lockPin && d.lockPin !== state.myLockPin) {
             state.myLockPin = d.lockPin;
             localStorage.setItem('nova_lock_pin', state.myLockPin);
