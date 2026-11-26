@@ -1,5 +1,5 @@
 // ============================================================================
-// NOVAMESSENGER MODULE 6: FUTURISTIC PREMIUM UI, iOS KEYBOARD FIX & GESTURES
+// NOVAMESSENGER MODULE 6: PREMIUM WHATSAPP UI, KEYBOARD FIX, MULTILINE & BLUR
 // ============================================================================
 import {
     db, state, $, bindClick, decryptText, showQuickToast, doc, updateDoc
@@ -16,6 +16,9 @@ function initPremiumChatUI() {
             position: fixed !important;
             left: 0 !important;
             right: 0 !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            box-sizing: border-box !important;
             display: flex !important;
             flex-direction: column !important;
             overflow: hidden !important;
@@ -24,36 +27,10 @@ function initPremiumChatUI() {
         }
         body.light-mode #chat-view.open { background: #efeae2 !important; }
 
-        /* Futuristic Ambient Themes */
-        #chat-view.open.theme-aurora {
-            background: radial-gradient(circle at 15% 20%, rgba(56,189,248,0.16), transparent 45%),
-                        radial-gradient(circle at 85% 80%, rgba(168,85,247,0.18), transparent 48%),
-                        #070b14 !important;
-        }
-        #chat-view.open.theme-aurora .msg-wrap.me .msg-bubble {
-            background: linear-gradient(135deg, #0ea5e9, #6366f1) !important;
-            box-shadow: 0 4px 16px rgba(99,102,241,0.32);
-        }
-        #chat-view.open.theme-cyber {
-            background: radial-gradient(circle at 50% 0%, rgba(0,242,254,0.12), transparent 55%),
-                        #030712 !important;
-        }
-        #chat-view.open.theme-cyber .msg-wrap.me .msg-bubble {
-            background: linear-gradient(135deg, #06b6d4, #0284c7) !important;
-            border: 1px solid rgba(56,189,248,0.45);
-            box-shadow: 0 0 14px rgba(6,182,212,0.28);
-        }
-        #chat-view.open.theme-cyber .msg-wrap.other .msg-bubble {
-            background: rgba(15,23,42,0.88) !important;
-            border: 1px solid rgba(255,255,255,0.09);
-        }
-        #chat-view.open.theme-emerald {
-            background: radial-gradient(circle at 80% 15%, rgba(16,185,129,0.16), transparent 45%),
-                        #061311 !important;
-        }
-        #chat-view.open.theme-emerald .msg-wrap.me .msg-bubble {
-            background: linear-gradient(135deg, #059669, #047857) !important;
-            box-shadow: 0 4px 14px rgba(16,185,129,0.28);
+        /* Preserve Multi-Line Breaks Inside Message Bubbles */
+        .msg-body, .msg-body span {
+            white-space: pre-wrap !important;
+            word-break: break-word !important;
         }
 
         /* Header Glassmorphism */
@@ -92,28 +69,38 @@ function initPremiumChatUI() {
             animation: msgPopIn 0.18s ease-out;
         }
 
-        /* Stealth Privacy Blur Curtain */
+        /* Stealth Privacy Blur Curtain (No Text Selection / Callout While Holding) */
+        #chat-view.privacy-blur-on .msg-wrap,
+        #chat-view.privacy-blur-on .msg-bubble,
+        #chat-view.privacy-blur-on .msg-bubble * {
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            -webkit-touch-callout: none !important;
+        }
         #chat-view.privacy-blur-on .msg-bubble {
             filter: blur(7px);
-            transition: filter 0.2s ease;
+            transition: filter 0.18s ease;
         }
-        #chat-view.privacy-blur-on .msg-wrap:active .msg-bubble,
         #chat-view.privacy-blur-on .msg-wrap.unblurred .msg-bubble {
             filter: blur(0px) !important;
         }
 
         /* Hide Cluttered Old Buttons (Kept Alive in DOM) */
         #btn-attach, #btn-share-location, #btn-vo-toggle, #btn-snap-cam,
-        #btn-emoji, #btn-vn-rec, #btn-send-msg {
+        #btn-emoji, #btn-vn-rec, #btn-send-msg, #old-msg-input-hidden {
             display: none !important;
         }
 
-        /* 2. Ultra-Premium WhatsApp Bottom Input Bar */
+        /* 2. Ultra-Premium WhatsApp Bottom Input Bar (Strict Fit Inside Screen) */
         .nova-prem-bar {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
             display: flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-            padding: 8px 10px max(10px, env(safe-area-inset-bottom, 10px)) !important;
+            align-items: flex-end !important;
+            gap: 6px !important;
+            padding: 8px 8px max(10px, env(safe-area-inset-bottom, 10px)) !important;
             background: rgba(17, 27, 33, 0.94) !important;
             backdrop-filter: blur(18px) !important;
             -webkit-backdrop-filter: blur(18px) !important;
@@ -131,45 +118,64 @@ function initPremiumChatUI() {
         }
 
         #prem-plus-btn {
-            width: 36px; height: 36px; border-radius: 50%; border: none;
-            background: transparent; color: #e9edef; font-size: 28px; font-weight: 300;
+            width: 34px; height: 40px; border-radius: 50%; border: none;
+            background: transparent; color: #e9edef; font-size: 27px; font-weight: 300;
             display: flex; align-items: center; justify-content: center; cursor: pointer;
             flex-shrink: 0; transition: transform 0.22s ease, background 0.2s;
-            position: relative;
+            position: relative; padding: 0;
         }
         body.light-mode #prem-plus-btn { color: #0f172a; }
         #prem-plus-btn.open { transform: rotate(45deg); background: rgba(255,255,255,0.08); }
         #prem-plus-dot {
-            position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
+            position: absolute; top: 6px; right: 4px; width: 7px; height: 7px;
             border-radius: 50%; background: #10b981; display: none;
             box-shadow: 0 0 6px #10b981;
         }
 
         .prem-pill-wrap {
-            flex: 1; display: flex; align-items: center; gap: 6px;
+            flex: 1 1 0% !important;
+            min-width: 0 !important;
+            width: 0 !important;
+            box-sizing: border-box !important;
+            display: flex; align-items: flex-end; gap: 4px;
             background: #202c33; border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 22px; padding: 2px 8px 2px 14px; min-height: 40px;
+            border-radius: 22px; padding: 4px 8px 4px 14px; min-height: 40px;
         }
         body.light-mode .prem-pill-wrap {
             background: #ffffff; border-color: rgba(15,23,42,0.12);
         }
         .prem-pill-wrap #msg-input {
-            flex: 1 !important; border: none !important; outline: none !important;
-            background: transparent !important; padding: 8px 0 !important;
-            margin: 0 !important; font-size: 16px !important; color: #e9edef !important;
-            min-width: 0 !important; box-shadow: none !important;
+            flex: 1 1 0% !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+            padding: 6px 0 !important;
+            margin: 0 !important;
+            font-family: inherit !important;
+            font-size: 16px !important;
+            line-height: 1.35 !important;
+            color: #e9edef !important;
+            resize: none !important;
+            overflow-y: auto !important;
+            max-height: 105px !important;
+            box-shadow: none !important;
         }
         body.light-mode .prem-pill-wrap #msg-input { color: #0f172a !important; }
 
         #prem-emoji-btn {
-            width: 30px; height: 30px; border-radius: 50%; border: none;
+            width: 30px; height: 32px; border-radius: 50%; border: none;
             background: transparent; color: #8696a0; cursor: pointer;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            padding: 0;
         }
         #prem-cam-btn {
-            width: 36px; height: 36px; border-radius: 50%; border: none;
+            width: 34px; height: 40px; border-radius: 50%; border: none;
             background: transparent; color: #e9edef; cursor: pointer;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            padding: 0;
         }
         body.light-mode #prem-cam-btn { color: #0f172a; }
 
@@ -179,6 +185,7 @@ function initPremiumChatUI() {
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
             box-shadow: 0 3px 12px rgba(0,168,132,0.38);
             transition: transform 0.14s ease, background 0.2s ease;
+            padding: 0;
         }
         #prem-action-btn:active { transform: scale(0.92); }
         #prem-action-btn.recording {
@@ -186,7 +193,7 @@ function initPremiumChatUI() {
             box-shadow: 0 0 0 6px rgba(239,68,68,0.28);
         }
 
-        /* 3. Frosted Glass "+" Attachment & Futuristic Controls Sheet */
+        /* 3. Frosted Glass "+" Attachment Sheet */
         #prem-plus-backdrop {
             position: fixed; inset: 0; background: rgba(0,0,0,0.45);
             z-index: 9990; display: none;
@@ -233,21 +240,6 @@ function initPremiumChatUI() {
             display: none;
         }
 
-        /* Theme Strip inside "+" Sheet */
-        #prem-theme-strip {
-            display: none; align-items: center; justify-content: space-between; gap: 6px;
-            padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);
-        }
-        #prem-theme-strip.open { display: flex; }
-        .prem-theme-pill {
-            flex: 1; padding: 8px 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14);
-            background: rgba(255,255,255,0.06); color: inherit; font-size: 11px; font-weight: 700;
-            cursor: pointer; text-align: center;
-        }
-        .prem-theme-pill.active {
-            border-color: #00f2fe; background: rgba(0,242,254,0.16); color: #38bdf8;
-        }
-
         /* 4. Floating Scroll-to-Bottom Pill */
         #prem-scroll-down {
             position: absolute; right: 14px; bottom: 72px; z-index: 38;
@@ -282,11 +274,11 @@ function initPremiumChatUI() {
     document.head.appendChild(st);
 
     // ========================================================================
-    // A. ROCK-SOLID iOS & ANDROID KEYBOARD FIX (OVERRIDES !important HEIGHT)
+    // A. ROCK-SOLID iOS & ANDROID KEYBOARD FIX
     // ========================================================================
     const chatViewEl = $('chat-view');
-    const inp = $('msg-input');
-    const barEl = inp ? inp.parentElement : null;
+    const origInp = $('msg-input');
+    const barEl = origInp ? origInp.parentElement : null;
 
     function syncKeyboardViewport() {
         if (!chatViewEl || !chatViewEl.classList.contains('open')) return;
@@ -338,26 +330,21 @@ function initPremiumChatUI() {
     }
 
     // ========================================================================
-    // B. APPLY SAVED FUTURISTIC THEME
+    // B. BUILD PREMIUM BOTTOM BAR + MULTILINE TEXTAREA (ENTER = NEXT LINE)
     // ========================================================================
-    let activeTheme = localStorage.getItem('nova_futuristic_theme') || 'carbon';
-    function applyFuturisticTheme(t) {
-        activeTheme = t;
-        localStorage.setItem('nova_futuristic_theme', t);
-        if (!chatViewEl) return;
-        chatViewEl.classList.remove('theme-aurora', 'theme-cyber', 'theme-emerald');
-        if (t !== 'carbon') chatViewEl.classList.add(`theme-${t}`);
-        document.querySelectorAll('.prem-theme-pill').forEach(p => {
-            p.classList.toggle('active', p.getAttribute('data-theme') === t);
-        });
-    }
-    applyFuturisticTheme(activeTheme);
+    let privacyBlurOn = false;
 
-    // ========================================================================
-    // C. BUILD PREMIUM WHATSAPP BOTTOM BAR & "+" FUTURISTIC SHEET
-    // ========================================================================
-    if (inp && barEl && !document.getElementById('prem-plus-btn')) {
+    if (origInp && barEl && !document.getElementById('prem-plus-btn')) {
         barEl.classList.add('nova-prem-bar');
+
+        // Keep original input hidden so typing presence listener keeps working,
+        // and replace #msg-input with a multi-line <textarea> so Enter = New Line!
+        origInp.id = 'old-msg-input-hidden';
+        const ta = document.createElement('textarea');
+        ta.id = 'msg-input';
+        ta.rows = 1;
+        ta.placeholder = origInp.placeholder || 'Message...';
+        ta.autocomplete = 'off';
 
         const plusBtn = document.createElement('button');
         plusBtn.id = 'prem-plus-btn';
@@ -378,7 +365,7 @@ function initPremiumChatUI() {
         camBtn.id = 'prem-cam-btn';
         camBtn.type = 'button';
         camBtn.title = 'Snap Camera';
-        camBtn.innerHTML = `<span class="material-icons" style="font-size:23px;">photo_camera</span>`;
+        camBtn.innerHTML = `<span class="material-icons" style="font-size:22px;">photo_camera</span>`;
 
         const actBtn = document.createElement('button');
         actBtn.id = 'prem-action-btn';
@@ -387,10 +374,15 @@ function initPremiumChatUI() {
 
         barEl.appendChild(plusBtn);
         barEl.appendChild(pill);
-        pill.appendChild(inp);
+        pill.appendChild(ta);
         pill.appendChild(emoBtn);
         barEl.appendChild(camBtn);
         barEl.appendChild(actBtn);
+
+        function autoResizeTextarea() {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(105, ta.scrollHeight) + 'px';
+        }
 
         // Floating Scroll-to-Bottom Pill
         if (chatViewEl && !document.getElementById('prem-scroll-down')) {
@@ -456,22 +448,12 @@ function initPremiumChatUI() {
                     <div class="prem-sheet-ico" style="background:linear-gradient(135deg,#10b981,#14b8a6);">
                         <span class="material-icons">auto_awesome</span>
                     </div>
-                    <span class="prem-sheet-lbl">Glass Themes</span>
+                    <span class="prem-sheet-lbl">Chat Themes</span>
                 </button>
-            </div>
-            <div id="prem-theme-strip">
-                <button type="button" class="prem-theme-pill" data-theme="carbon">Carbon</button>
-                <button type="button" class="prem-theme-pill" data-theme="aurora">Aurora</button>
-                <button type="button" class="prem-theme-pill" data-theme="cyber">Cyber</button>
-                <button type="button" class="prem-theme-pill" data-theme="emerald">Emerald</button>
             </div>
         `;
         document.body.appendChild(backdrop);
         document.body.appendChild(sheet);
-
-        applyFuturisticTheme(activeTheme);
-
-        let privacyBlurOn = false;
 
         function refreshPlusIndicators() {
             const isLive = !!(state.activeLiveSessions && state.activeLiveSessions[state.currentRoom]);
@@ -497,7 +479,6 @@ function initPremiumChatUI() {
             sheet.classList.remove('open');
             backdrop.classList.remove('open');
             plusBtn.classList.remove('open');
-            $('prem-theme-strip')?.classList.remove('open');
         }
 
         plusBtn.addEventListener('click', (e) => {
@@ -528,17 +509,8 @@ function initPremiumChatUI() {
             privacyBlurOn = !privacyBlurOn;
             chatViewEl?.classList.toggle('privacy-blur-on', privacyBlurOn);
             refreshPlusIndicators();
-            showQuickToast(privacyBlurOn ? '👁️ Privacy Blur ON (Hold message to view)' : '👁️ Privacy Blur OFF');
+            showQuickToast(privacyBlurOn ? '👁️ Privacy Blur ON (Hold message to peek)' : '👁️ Privacy Blur OFF');
             closePlusSheet();
-        });
-        bindClick('ps-theme', () => {
-            $('prem-theme-strip')?.classList.toggle('open');
-        });
-        sheet.querySelectorAll('.prem-theme-pill').forEach(p => {
-            p.addEventListener('click', () => {
-                applyFuturisticTheme(p.getAttribute('data-theme'));
-                showQuickToast(`✨ Theme: ${p.innerText}`);
-            });
         });
 
         emoBtn.addEventListener('click', (e) => {
@@ -552,7 +524,7 @@ function initPremiumChatUI() {
         });
 
         function updateActionButton() {
-            const hasText = (inp.value || '').trim().length > 0;
+            const hasText = (ta.value || '').trim().length > 0;
             const isRec = !!($('btn-vn-rec')?.classList.contains('rec'));
             const ico = $('prem-action-ico');
             if (!ico) return;
@@ -569,25 +541,34 @@ function initPremiumChatUI() {
                 ico.innerText = 'mic';
                 camBtn.style.display = 'flex';
             }
+            if (!ta.value) ta.style.height = 'auto';
         }
 
-        inp.addEventListener('input', updateActionButton);
-        inp.addEventListener('focus', () => {
+        ta.addEventListener('input', () => {
+            autoResizeTextarea();
+            updateActionButton();
+            // Trigger typing presence on original hidden input
+            origInp.dispatchEvent(new Event('input'));
+        });
+        ta.addEventListener('focus', () => {
             closePlusSheet();
             setTimeout(syncKeyboardViewport, 60);
             setTimeout(syncKeyboardViewport, 220);
             setTimeout(syncKeyboardViewport, 420);
         });
-        inp.addEventListener('blur', () => {
+        ta.addEventListener('blur', () => {
             setTimeout(syncKeyboardViewport, 120);
         });
 
         actBtn.addEventListener('click', () => {
-            const hasText = (inp.value || '').trim().length > 0;
+            const hasText = (ta.value || '').trim().length > 0;
             const isRec = !!($('btn-vn-rec')?.classList.contains('rec'));
             if (hasText && !isRec) {
                 $('btn-send-msg')?.click();
-                setTimeout(updateActionButton, 30);
+                setTimeout(() => {
+                    ta.style.height = 'auto';
+                    updateActionButton();
+                }, 30);
             } else {
                 $('btn-vn-rec')?.click();
                 setTimeout(updateActionButton, 80);
@@ -601,62 +582,33 @@ function initPremiumChatUI() {
         setInterval(() => {
             updateActionButton();
             refreshPlusIndicators();
-        }, 1200);
+        }, 1000);
     }
 
     // ========================================================================
-    // D. SWIPE-TO-REPLY + DOUBLE-TAP ❤️ REACTION
+    // C. PRIVACY BLUR HOLD-TO-PEEK (NO TEXT SELECTION / NO ACCIDENTAL MENU)
+    //    + SWIPE-TO-REPLY + DOUBLE-TAP ❤️ REACTION
     // ========================================================================
     const msgsBox = $('msgs-container');
     if (msgsBox && !msgsBox.dataset.gesturesReady) {
         msgsBox.dataset.gesturesReady = '1';
         let startX = 0, startY = 0, activeWrap = null, activeBubble = null, activeIco = null, dx = 0, locked = false;
         let lastTapMs = 0, lastTapId = "";
+        let blurPeekWrap = null, blurPeekStart = 0, suppressClickUntil = 0;
 
-        // Double-Tap to Heart React
-        msgsBox.addEventListener('touchend', async (e) => {
-            if (locked || dx > 10) return;
-            const wrap = e.target.closest('.msg-wrap');
-            if (!wrap) return;
-            const msgId = wrap.dataset.msgId;
-            const now = Date.now();
-
-            if (msgId && msgId === lastTapId && (now - lastTapMs) < 300) {
-                lastTapMs = 0;
-                lastTapId = "";
-                const touch = e.changedTouches && e.changedTouches[0];
-                const bx = touch ? touch.clientX : window.innerWidth / 2;
-                const by = touch ? touch.clientY : window.innerHeight / 2;
-
-                // Close context menu if single tap opened it
-                const ov = $('msg-overlay');
-                if (ov) { ov.classList.remove('open'); ov.style.display = 'none'; }
-
-                // Floating Heart Burst
-                const h = document.createElement('div');
-                h.className = 'prem-heart-burst';
-                h.innerText = '❤️';
-                h.style.left = `${bx}px`;
-                h.style.top = `${by}px`;
-                document.body.appendChild(h);
-                setTimeout(() => h.remove(), 700);
-                if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
-
-                // Save Heart Reaction to Firestore
-                const m = state.cachedMessages && state.cachedMessages[msgId];
-                if (m && state.currentRoom && state.myUid) {
-                    const r = { ...(m.reactions || {}) };
-                    if (r[state.myUid] === '❤️') delete r[state.myUid];
-                    else r[state.myUid] = '❤️';
-                    await updateDoc(doc(db, state.currentRoom, msgId), { reactions: r }).catch(() => {});
-                }
-            } else {
-                lastTapMs = now;
-                lastTapId = msgId || "";
+        // Block accidental context menu / selection after peeking in Privacy Blur mode
+        msgsBox.addEventListener('click', (e) => {
+            if (Date.now() < suppressClickUntil) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
             }
-        }, { passive: true });
+        }, true);
 
-        // Swipe-to-Reply
+        msgsBox.addEventListener('contextmenu', (e) => {
+            if (privacyBlurOn) e.preventDefault();
+        });
+
+        // Touch Start: Swipe-to-Reply + Blur Hold-to-Peek
         msgsBox.addEventListener('touchstart', (e) => {
             const wrap = e.target.closest('.msg-wrap');
             if (!wrap) return;
@@ -667,8 +619,15 @@ function initPremiumChatUI() {
             activeBubble = wrap.querySelector('.msg-bubble');
             dx = 0;
             locked = false;
+
+            if (privacyBlurOn) {
+                blurPeekWrap = wrap;
+                blurPeekStart = Date.now();
+                wrap.classList.add('unblurred');
+            }
         }, { passive: true });
 
+        // Touch Move: Swipe-to-Reply
         msgsBox.addEventListener('touchmove', (e) => {
             if (!activeWrap || !activeBubble) return;
             const t = e.touches[0];
@@ -702,33 +661,87 @@ function initPremiumChatUI() {
             }
         }, { passive: true });
 
-        msgsBox.addEventListener('touchend', () => {
-            if (!activeWrap || !activeBubble) return;
-            const triggered = dx >= 48;
-            const msgId = activeWrap.dataset.msgId;
-
-            activeWrap.classList.remove('swiping');
-            activeBubble.style.transform = 'translateX(0)';
-            if (activeIco) activeIco.style.opacity = '0';
-
-            if (triggered && msgId && state.cachedMessages && state.cachedMessages[msgId]) {
-                if (navigator.vibrate) { try { navigator.vibrate(16); } catch (e) {} }
-                const m = state.cachedMessages[msgId];
-                const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
-                const dec = (m.type === 'text') ? decryptText(m.text, encKey) : (m.text || m.type || 'Media');
-                state.replyTarget = { name: m.name || 'Friend', text: dec };
-                if ($('reply-title')) $('reply-title').innerText = `Replying to ${m.name || 'Friend'}`;
-                if ($('reply-text')) $('reply-text').innerText = dec;
-                if ($('reply-bar')) $('reply-bar').style.display = 'flex';
-                $('msg-input')?.focus();
+        // Touch End: End Blur Peek + Trigger Swipe Reply + Double-Tap ❤️
+        msgsBox.addEventListener('touchend', async (e) => {
+            // 1. Cleanly end Privacy Blur hold without opening menu
+            if (blurPeekWrap) {
+                blurPeekWrap.classList.remove('unblurred');
+                if ((Date.now() - blurPeekStart) > 140) {
+                    suppressClickUntil = Date.now() + 380;
+                }
+                blurPeekWrap = null;
             }
 
+            // 2. Complete Swipe-to-Reply
+            const wasSwiping = locked || dx > 10;
+            if (activeWrap && activeBubble) {
+                const triggered = dx >= 48;
+                const msgId = activeWrap.dataset.msgId;
+
+                activeWrap.classList.remove('swiping');
+                activeBubble.style.transform = 'translateX(0)';
+                if (activeIco) activeIco.style.opacity = '0';
+
+                if (triggered && msgId && state.cachedMessages && state.cachedMessages[msgId]) {
+                    if (navigator.vibrate) { try { navigator.vibrate(16); } catch (err) {} }
+                    const m = state.cachedMessages[msgId];
+                    const encKey = localStorage.getItem(`nova_enc_${state.currentRoom}`) || "";
+                    const dec = (m.type === 'text') ? decryptText(m.text, encKey) : (m.text || m.type || 'Media');
+                    state.replyTarget = { name: m.name || 'Friend', text: dec };
+                    if ($('reply-title')) $('reply-title').innerText = `Replying to ${m.name || 'Friend'}`;
+                    if ($('reply-text')) $('reply-text').innerText = dec;
+                    if ($('reply-bar')) $('reply-bar').style.display = 'flex';
+                    $('msg-input')?.focus();
+                }
+            }
             activeWrap = null;
             activeBubble = null;
             activeIco = null;
             dx = 0;
             locked = false;
-        });
+
+            // 3. Double-Tap to Heart React (only if not swiping and not holding blur)
+            if (wasSwiping || Date.now() < suppressClickUntil) return;
+            const wrap = e.target.closest('.msg-wrap');
+            if (!wrap) return;
+            const msgId = wrap.dataset.msgId;
+            const now = Date.now();
+
+            if (msgId && msgId === lastTapId && (now - lastTapMs) < 300) {
+                lastTapMs = 0;
+                lastTapId = "";
+                const touch = e.changedTouches && e.changedTouches[0];
+                const bx = touch ? touch.clientX : window.innerWidth / 2;
+                const by = touch ? touch.clientY : window.innerHeight / 2;
+
+                const ov = $('msg-overlay');
+                if (ov) { ov.classList.remove('open'); ov.style.display = 'none'; }
+
+                const h = document.createElement('div');
+                h.className = 'prem-heart-burst';
+                h.innerText = '❤️';
+                h.style.left = `${bx}px`;
+                h.style.top = `${by}px`;
+                document.body.appendChild(h);
+                setTimeout(() => h.remove(), 700);
+                if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
+
+                const m = state.cachedMessages && state.cachedMessages[msgId];
+                if (m && state.currentRoom && state.myUid) {
+                    const r = { ...(m.reactions || {}) };
+                    if (r[state.myUid] === '❤️') delete r[state.myUid];
+                    else r[state.myUid] = '❤️';
+                    await updateDoc(doc(db, state.currentRoom, msgId), { reactions: r }).catch(() => {});
+                }
+            } else {
+                lastTapMs = now;
+                lastTapId = msgId || "";
+            }
+        }, { passive: true });
+
+        msgsBox.addEventListener('touchcancel', () => {
+            if (blurPeekWrap) { blurPeekWrap.classList.remove('unblurred'); blurPeekWrap = null; }
+        }, { passive: true });
     }
 }
 
