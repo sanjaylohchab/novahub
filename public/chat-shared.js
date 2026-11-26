@@ -5,14 +5,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebas
 import {
     getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
-    onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp
+    onSnapshot, collection, addDoc, query, orderBy, limit, limitToLast, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     getStorage, ref as sRef, uploadBytesResumable, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // ============================================================================
-// 1. FIREBASE CONFIGURATION & INITIALIZATION (OFFLINE CACHE + 4G AUTO-POLL)
+// 1. FIREBASE & WEBRTC CONFIGURATION (OFFLINE CACHE + 4G AUTO-POLL)
 // ============================================================================
 export const firebaseConfig = {
     apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
@@ -23,7 +23,14 @@ export const firebaseConfig = {
     appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
 };
 
-// Optional Web Push keys (leave empty if not configured)
+export const RTC_CONFIG = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" }
+    ]
+};
+
 export const FCM_VAPID_KEY = "";
 export const PUSH_RELAY_URL = "";
 
@@ -43,7 +50,7 @@ export const storage = getStorage(app);
 
 export {
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
-    onSnapshot, collection, addDoc, query, orderBy, limitToLast,
+    onSnapshot, collection, addDoc, query, orderBy, limit, limitToLast,
     serverTimestamp, sRef, uploadBytesResumable, getDownloadURL
 };
 
@@ -73,6 +80,10 @@ export const state = {
 
     cachedMessages: {},
     domMap: new Map(),
+    roomSummaryUnsubs: new Map(),
+    roomSummaries: {},
+    showingArchivedView: false,
+    actionTargetRoomId: "",
     replyTarget: null,
     clearTargetRoomId: "",
     activeLiveSessions: {},
@@ -89,7 +100,6 @@ try {
     if (!Array.isArray(state.mutedRooms)) state.mutedRooms = [];
 } catch (e) { state.mutedRooms = []; }
 
-// Late-bound cross-module callbacks to avoid circular imports
 export const hooks = {
     selectRoom: null,
     goBackToList: null,
@@ -117,7 +127,7 @@ export const timerMs = {
 };
 
 // ============================================================================
-// 3. DOM, UI, CRYPTO & SESSION HELPERS
+// 3. DOM, UI, AUDIO, CRYPTO & SESSION HELPERS
 // ============================================================================
 export const $ = (id) => document.getElementById(id);
 
@@ -137,14 +147,19 @@ export function escapeHtml(str) {
 
 export function openLayer(el) {
     if (!el) return;
-    el.classList.add('open');
+    el.classList.add('open', 'is-open');
     el.style.display = 'flex';
 }
 
 export function closeLayer(el) {
     if (!el) return;
-    el.classList.remove('open');
+    el.classList.remove('open', 'is-open');
     el.style.display = 'none';
+}
+
+export function isLayerOpen(el) {
+    if (!el) return false;
+    return el.classList.contains('open') || el.classList.contains('is-open') || el.style.display === 'flex';
 }
 
 export function postToGame(payload) {
@@ -175,11 +190,21 @@ export function showQuickToast(text) {
     t._hideTimer = setTimeout(() => { t.style.opacity = '0'; }, 2800);
 }
 
-export function playAlertBeep() {
+let _sharedAudioCtx = null;
+export function ensureAudioContext() {
     try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
+        if (!AudioCtx) return null;
+        if (!_sharedAudioCtx) _sharedAudioCtx = new AudioCtx();
+        if (_sharedAudioCtx.state === 'suspended') _sharedAudioCtx.resume().catch(() => {});
+        return _sharedAudioCtx;
+    } catch (e) { return null; }
+}
+
+export function playAlertBeep() {
+    try {
+        const ctx = ensureAudioContext();
+        if (!ctx) return;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
@@ -225,15 +250,20 @@ export function encryptText(plain, key) {
         for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ kBytes[i % kBytes.length];
         let bin = '';
         out.forEach(b => bin += String.fromCharCode(b));
-        return 'ENC::' + btoa(bin);
+        return '🔒ENC:' + btoa(bin);
     } catch (e) { return plain; }
 }
 
 export function decryptText(cipher, key) {
-    if (!cipher || !String(cipher).startsWith('ENC::')) return cipher;
+    const str = String(cipher || '');
+    let prefix = '';
+    if (str.startsWith('🔒ENC:')) prefix = '🔒ENC:';
+    else if (str.startsWith('ENC::')) prefix = 'ENC::';
+    else return cipher;
+
     if (!key) return "🔒 [Encrypted Message - Tap Name & Enter Key]";
     try {
-        const bin = atob(String(cipher).slice(5));
+        const bin = atob(str.slice(prefix.length));
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         const kBytes = new TextEncoder().encode(key);
@@ -241,6 +271,11 @@ export function decryptText(cipher, key) {
         for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ kBytes[i % kBytes.length];
         return new TextDecoder().decode(out);
     } catch (e) { return "🔒 [Wrong Encryption Key]"; }
+}
+
+export function make1on1RoomId(codeA, codeB) {
+    const [a, b] = [String(codeA || '').trim(), String(codeB || '').trim()].sort();
+    return `dm_${a}_${b}`;
 }
 
 export function isMyMessage(m) {
@@ -253,14 +288,17 @@ export function isMyMessage(m) {
 export function getRoomMeta(roomId) {
     let r = state.savedRooms.find(x => x.id === roomId);
     if (!r) {
-        r = { id: roomId, name: "Chat", peerCode: "", dp: "", locked: false, timer: "off" };
+        r = { id: roomId, name: "Chat", peerCode: "", dp: "", locked: false, muted: false, archived: false, timer: "off" };
         state.savedRooms.push(r);
     }
     return r;
 }
 
 export function isRoomMuted(roomId) {
-    return Array.isArray(state.mutedRooms) && state.mutedRooms.includes(roomId);
+    if (!roomId) return false;
+    if (Array.isArray(state.mutedRooms) && state.mutedRooms.includes(roomId)) return true;
+    const r = state.savedRooms.find(x => x.id === roomId);
+    return !!(r && r.muted);
 }
 
 export function isChatActivelyVisible() {
@@ -284,6 +322,19 @@ export function getDateGroupLabel(dateObj) {
 
 export function getShortTime(dateObj = new Date()) {
     return dateObj.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+export function formatChatListTime(ms, fallback = '') {
+    if (!ms) return fallback;
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return fallback;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((today - target) / 86400000);
+    if (diffDays === 0) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+    if (diffDays === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 export function formatLastSeen(ms) {
@@ -354,6 +405,7 @@ export function wipeLocalSessionData() {
     state.currentRoom = "";
     state.cachedMessages = {};
     state.domMap = new Map();
+    state.roomSummaries = {};
     state.recentlyDeletedRooms.clear();
 }
 
@@ -370,6 +422,7 @@ export function saveSessionToLocal() {
 }
 
 export async function syncAccountToCloud() {
+    state.mutedRooms = state.savedRooms.filter(r => r.muted).map(r => r.id);
     localStorage.setItem('nova_saved_rooms', JSON.stringify(state.savedRooms));
     localStorage.setItem('nova_muted_rooms', JSON.stringify(state.mutedRooms));
     if (!state.myAccountCode) return;
@@ -390,7 +443,6 @@ export async function syncAccountToCloud() {
     } catch (e) {}
 }
 
-// Apply saved theme immediately on load
 if (localStorage.getItem('nova_theme_mode') === 'light') {
     document.body.classList.add('light-mode');
 }
