@@ -1349,3 +1349,4 @@ initWhatsAppRedesign();
 
 import "./chat-filters.js";
 import "./chat-extras.js";
+import "./chat-premium-ui.js";
