@@ -252,7 +252,7 @@ export function listenToPresence(roomId) {
 }
 
 // ============================================================================
-// 3. CROSS-DEVICE LIVE LOCATION (NO TOP BANNER + GREEN/RED ICON INDICATOR)
+// 3. CROSS-DEVICE LIVE LOCATION
 // ============================================================================
 export function refreshLiveBanner() {
     const liveBanner = $('active-live-banner');
@@ -442,7 +442,7 @@ export function initLocationControls() {
 }
 
 // ============================================================================
-// 4. STORIES FEED (24-HOUR AUTO-EXPIRE + MANUAL DELETE)
+// 4. STORIES FEED
 // ============================================================================
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -561,7 +561,7 @@ export function initStoryControls() {
 }
 
 // ============================================================================
-// 5. SCHEME 2: 4-DIGIT MOBILE KEYPAD + BIG RETURN + DRAGGABLE PANIC EXIT
+// 5. 4-DIGIT MOBILE KEYPAD + BIG RETURN + DRAGGABLE PANIC EXIT
 // ============================================================================
 function exitToArcadeNow() {
     if (state.isWidgetMode) {
@@ -584,9 +584,6 @@ function initScheme2KeypadAndPanic() {
                 border-radius: 12px !important; color: #e2e8f0 !important;
                 font-size: 14px !important; font-weight: 700 !important;
                 text-decoration: none !important; cursor: pointer; box-sizing: border-box;
-            }
-            #auth-screen a[href*="index"]:active, #btn-return-arcade-big:active {
-                background: rgba(255,255,255,0.16) !important;
             }
             #nova-keypad-wrap { width: 100%; max-width: 280px; margin: 12px auto 0; text-align: center; }
             .kp-dots { display: flex; justify-content: center; gap: 14px; margin: 14px 0 18px; }
@@ -611,7 +608,6 @@ function initScheme2KeypadAndPanic() {
                 box-shadow: 0 4px 14px rgba(0,0,0,0.45);
                 touch-action: none; user-select: none; -webkit-user-select: none;
             }
-            #nova-top-arcade-exit:active { background: rgba(239,68,68,0.35); cursor: grabbing; }
         `;
         document.head.appendChild(st);
     }
@@ -695,10 +691,8 @@ function initScheme2KeypadAndPanic() {
             if (!moved) return;
             const maxX = window.innerWidth - exitBtn.offsetWidth - 6;
             const maxY = window.innerHeight - exitBtn.offsetHeight - 6;
-            const nx = Math.min(Math.max(6, origX + dx), maxX);
-            const ny = Math.min(Math.max(6, origY + dy), maxY);
-            exitBtn.style.left = nx + 'px';
-            exitBtn.style.top = ny + 'px';
+            exitBtn.style.left = Math.min(Math.max(6, origX + dx), maxX) + 'px';
+            exitBtn.style.top = Math.min(Math.max(6, origY + dy), maxY) + 'px';
             exitBtn.style.right = 'auto';
             exitBtn.style.bottom = 'auto';
         };
@@ -713,62 +707,18 @@ function initScheme2KeypadAndPanic() {
             }
         };
 
-        exitBtn.addEventListener('touchstart', (e) => {
-            const t = e.touches[0];
-            onStart(t.clientX, t.clientY);
-        }, { passive: true });
-        exitBtn.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
-            const t = e.touches[0];
-            onMove(t.clientX, t.clientY);
-            if (moved) e.preventDefault();
-        }, { passive: false });
+        exitBtn.addEventListener('touchstart', (e) => { const t = e.touches[0]; onStart(t.clientX, t.clientY); }, { passive: true });
+        exitBtn.addEventListener('touchmove', (e) => { if (!isDragging) return; const t = e.touches[0]; onMove(t.clientX, t.clientY); if (moved) e.preventDefault(); }, { passive: false });
         exitBtn.addEventListener('touchend', onEnd);
-
-        exitBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            onStart(e.clientX, e.clientY);
-        });
+        exitBtn.addEventListener('mousedown', (e) => { e.preventDefault(); onStart(e.clientX, e.clientY); });
         window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
         window.addEventListener('mouseup', onEnd);
-    }
-
-    let lastShakeMs = 0;
-    let shakeAttached = false;
-
-    function startShakeListener() {
-        if (shakeAttached) return;
-        shakeAttached = true;
-        window.addEventListener('devicemotion', (e) => {
-            const acc = e.accelerationIncludingGravity;
-            if (!acc) return;
-            const force = Math.abs(acc.x || 0) + Math.abs(acc.y || 0) + Math.abs(acc.z || 0);
-            if (force > 34 && (Date.now() - lastShakeMs) > 1500) {
-                lastShakeMs = Date.now();
-                exitToArcadeNow();
-            }
-        });
-    }
-
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        const askIosMotion = async () => {
-            try {
-                const res = await DeviceMotionEvent.requestPermission();
-                if (res === 'granted') {
-                    startShakeListener();
-                    showQuickToast('📱 Shake-to-Exit Enabled!');
-                }
-            } catch (e) {}
-        };
-        document.addEventListener('click', askIosMotion, { once: true });
-    } else {
-        startShakeListener();
     }
 }
 initScheme2KeypadAndPanic();
 
 // ============================================================================
-// 6. SLEEP GUARD (INACTIVITY AUTO-EXIT TIMER - 100% ENGLISH UI)
+// 6. SLEEP GUARD
 // ============================================================================
 function initSleepGuard() {
     let sgEnabled = localStorage.getItem('nova_sg_enabled') !== 'false';
@@ -827,7 +777,6 @@ function initSleepGuard() {
         sgBtn = document.createElement('button');
         sgBtn.id = 'btn-sleep-guard-top';
         sgBtn.type = 'button';
-        sgBtn.title = 'Sleep Guard Settings';
         lockBtn.parentElement.insertBefore(sgBtn, lockBtn);
     }
 
@@ -840,21 +789,17 @@ function initSleepGuard() {
                     <div class="sg-title">🌙 Sleep Guard</div>
                     <button type="button" class="sg-close" id="sg-close-btn">×</button>
                 </div>
-                <p style="font-size:12px; color:#94a3b8; margin:0 0 12px;">
-                    Auto-exit to Arcade Games when inactive.
-                </p>
+                <p style="font-size:12px; color:#94a3b8; margin:0 0 12px;">Auto-exit to Arcade Games when inactive.</p>
                 <div class="sg-row">
                     <span style="font-size:13.5px; font-weight:600;">Enable Sleep Guard</span>
                     <input type="checkbox" id="sg-toggle-sw" style="width:18px; height:18px; accent-color:#10b981; cursor:pointer;">
                 </div>
-                <div style="font-size:11.5px; color:#94a3b8; margin-bottom:6px; font-weight:600;">Quick Presets</div>
                 <div class="sg-chips">
                     <button type="button" class="sg-chip" data-min="2">2 min</button>
                     <button type="button" class="sg-chip" data-min="5">5 min</button>
                     <button type="button" class="sg-chip" data-min="10">10 min</button>
                 </div>
-                <div style="font-size:11.5px; color:#94a3b8; margin-bottom:6px; font-weight:600;">Custom Minutes</div>
-                <input type="number" id="sg-custom-min" min="1" max="120" class="sg-input" placeholder="Enter minutes (e.g. 3)" />
+                <input type="number" id="sg-custom-min" min="1" max="120" class="sg-input" placeholder="Enter minutes" />
                 <button type="button" class="sg-save-btn" id="sg-save-btn">Save Settings</button>
             </div>
         `;
@@ -871,189 +816,42 @@ function initSleepGuard() {
         sgBtn.innerText = sgEnabled ? `🌙 ${sgMinutes}m` : '🌙 Off';
         sgBtn.classList.toggle('sg-off', !sgEnabled);
     }
-
-    function syncModalUI() {
-        if (sw) sw.checked = sgEnabled;
-        if (customInp) customInp.value = sgMinutes;
-        chips.forEach(c => c.classList.toggle('active', Number(c.getAttribute('data-min')) === sgMinutes));
-    }
-
     function resetSleepTimer() {
         clearTimeout(sgTimer);
         if (!sgEnabled || !state.myAccountCode) return;
-        sgTimer = setTimeout(() => {
-            updatePresence("offline", true);
-            exitToArcadeNow();
-        }, sgMinutes * 60 * 1000);
+        sgTimer = setTimeout(() => { updatePresence("offline", true); exitToArcadeNow(); }, sgMinutes * 60 * 1000);
     }
 
-    if (sgBtn) {
-        sgBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            syncModalUI();
-            openLayer(modal);
-        });
-    }
+    if (sgBtn) sgBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (sw) sw.checked = sgEnabled;
+        if (customInp) customInp.value = sgMinutes;
+        chips.forEach(c => c.classList.toggle('active', Number(c.getAttribute('data-min')) === sgMinutes));
+        openLayer(modal);
+    });
     bindClick('sg-close-btn', () => closeLayer(modal));
     if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeLayer(modal); });
-
-    chips.forEach(c => {
-        c.addEventListener('click', () => {
-            const m = Number(c.getAttribute('data-min'));
-            if (customInp) customInp.value = m;
-            chips.forEach(x => x.classList.toggle('active', x === c));
-        });
-    });
-
+    chips.forEach(c => c.addEventListener('click', () => {
+        const m = Number(c.getAttribute('data-min'));
+        if (customInp) customInp.value = m;
+        chips.forEach(x => x.classList.toggle('active', x === c));
+    }));
     bindClick('sg-save-btn', () => {
         const val = parseInt(customInp?.value || '2', 10);
         sgEnabled = !!(sw && sw.checked);
         sgMinutes = (isNaN(val) || val < 1) ? 2 : Math.min(val, 120);
         localStorage.setItem('nova_sg_enabled', String(sgEnabled));
         localStorage.setItem('nova_sg_minutes', String(sgMinutes));
-        updateBadgeUI();
-        resetSleepTimer();
-        closeLayer(modal);
-        showQuickToast(sgEnabled ? `🌙 Sleep Guard ON (${sgMinutes} min)` : '🌙 Sleep Guard OFF');
+        updateBadgeUI(); resetSleepTimer(); closeLayer(modal);
     });
 
-    ['touchstart', 'click', 'keydown', 'scroll', 'input'].forEach(evt => {
-        window.addEventListener(evt, resetSleepTimer, { passive: true });
-    });
-
-    updateBadgeUI();
-    resetSleepTimer();
+    ['touchstart', 'click', 'keydown', 'scroll', 'input'].forEach(evt => window.addEventListener(evt, resetSleepTimer, { passive: true }));
+    updateBadgeUI(); resetSleepTimer();
 }
 initSleepGuard();
 
 // ============================================================================
-// 7. SMART CLEAR CHAT (KEEP STARRED VS DELETE ALL - SKIPS PREVIOUSLY DELETED)
-// ============================================================================
-function initSmartClearChat() {
-    const clearModal = $('clear-chat-modal');
-    if (!clearModal || document.getElementById('nova-smart-clear-card')) return;
-
-    if (!document.getElementById('nova-smart-clear-styles')) {
-        const st = document.createElement('style');
-        st.id = 'nova-smart-clear-styles';
-        st.textContent = `
-            .scc-card {
-                width: 100%; max-width: 350px; background: #0f172a;
-                border: 1px solid rgba(255,255,255,0.14); border-radius: 18px;
-                padding: 18px; color: #f8fafc; box-shadow: 0 20px 50px rgba(0,0,0,0.65);
-            }
-            body.light-mode .scc-card { background: #ffffff; color: #0f172a; border-color: rgba(15,23,42,0.14); }
-            .scc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-            .scc-title { font-size: 15.5px; font-weight: 800; }
-            .scc-close { width: 28px; height: 28px; border-radius: 999px; border: none; background: rgba(255,255,255,0.1); color: inherit; font-size: 18px; cursor: pointer; }
-            .scc-box {
-                background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 13px; padding: 12px; margin-bottom: 11px;
-            }
-            body.light-mode .scc-box { background: #f8fafc; border-color: rgba(15,23,42,0.12); }
-            .scc-box-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
-            .scc-box-sub { font-size: 11.5px; color: #94a3b8; margin-bottom: 10px; }
-            .scc-btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-            .scc-btn {
-                padding: 9px 10px; border-radius: 10px; border: none;
-                font-size: 12px; font-weight: 700; cursor: pointer;
-            }
-            .scc-btn.me { background: rgba(56,189,248,0.18); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); }
-            .scc-btn.all { background: rgba(239,68,68,0.18); color: #f87171; border: 1px solid rgba(239,68,68,0.38); }
-            .scc-cancel {
-                width: 100%; padding: 10px; border-radius: 11px; border: none;
-                background: rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 700; cursor: pointer;
-            }
-        `;
-        document.head.appendChild(st);
-    }
-
-    clearModal.innerHTML = `
-        <div class="scc-card" id="nova-smart-clear-card">
-            <div class="scc-head">
-                <div class="scc-title">🧹 Clear Chat</div>
-                <button type="button" class="scc-close" id="scc-close-x">×</button>
-            </div>
-
-            <div class="scc-box">
-                <div class="scc-box-title" style="color:#eab308;">⭐ Keep Starred Messages</div>
-                <div class="scc-box-sub">Delete unstarred messages only. Starred messages stay safe.</div>
-                <div class="scc-btn-row">
-                    <button type="button" class="scc-btn me" id="scc-unstarred-me">For Me</button>
-                    <button type="button" class="scc-btn all" id="scc-unstarred-all">For Everyone</button>
-                </div>
-            </div>
-
-            <div class="scc-box">
-                <div class="scc-box-title" style="color:#f87171;">🗑️ Delete All Messages</div>
-                <div class="scc-box-sub">Clear entire chat including starred messages.</div>
-                <div class="scc-btn-row">
-                    <button type="button" class="scc-btn me" id="scc-all-me">For Me</button>
-                    <button type="button" class="scc-btn all" id="scc-all-everyone">For Everyone</button>
-                </div>
-            </div>
-
-            <button type="button" class="scc-cancel" id="scc-cancel-btn">Cancel</button>
-        </div>
-    `;
-
-    async function executeSmartClear(keepStarred, forEveryone) {
-        const roomId = state.clearTargetRoomId || state.currentRoom;
-        if (!roomId) return closeLayer(clearModal);
-
-        const label = keepStarred ? "all UNSTARRED messages" : "ALL messages (including starred)";
-        const scope = forEveryone ? "for EVERYONE" : "for YOU only";
-        if (!confirm(`Delete ${label} ${scope}?`)) return;
-
-        closeLayer(clearModal);
-        showQuickToast("🧹 Clearing chat...");
-
-        try {
-            const snap = await getDocs(collection(db, roomId));
-            let count = 0;
-            const jobs = [];
-
-            snap.forEach(d => {
-                const m = d.data();
-                if (m.isDeletedEveryone) return;
-                if (Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) return;
-                if (keepStarred && Array.isArray(m.starredBy) && m.starredBy.includes(state.myUid)) return;
-
-                count++;
-                if (forEveryone) {
-                    jobs.push(updateDoc(doc(db, roomId, d.id), {
-                        isDeletedEveryone: true,
-                        deletedByAudit: state.myName
-                    }).catch(() => {}));
-                } else {
-                    const delArr = Array.isArray(m.deletedFor) ? [...m.deletedFor] : [];
-                    if (!delArr.includes(state.myUid)) delArr.push(state.myUid);
-                    jobs.push(updateDoc(doc(db, roomId, d.id), { deletedFor: delArr }).catch(() => {}));
-                }
-            });
-
-            await Promise.all(jobs);
-            showQuickToast(
-                count === 0
-                    ? "ℹ️ No messages to delete."
-                    : (keepStarred ? `✅ Deleted ${count} messages (Starred kept)` : `🗑️ Deleted all ${count} messages`)
-            );
-        } catch (e) {
-            showQuickToast("⚠️ Clear chat failed. Check connection.");
-        }
-    }
-
-    bindClick('scc-close-x', () => closeLayer(clearModal));
-    bindClick('scc-cancel-btn', () => closeLayer(clearModal));
-    bindClick('scc-unstarred-me', () => executeSmartClear(true, false));
-    bindClick('scc-unstarred-all', () => executeSmartClear(true, true));
-    bindClick('scc-all-me', () => executeSmartClear(false, false));
-    bindClick('scc-all-everyone', () => executeSmartClear(false, true));
-}
-initSmartClearChat();
-
-// ============================================================================
-// 8. WHATSAPP-STYLE REDESIGN (4 TABS + WORKING + BUTTON + STORY RING)
+// 7. WHATSAPP-STYLE REDESIGN (4 TABS + WORKING + BUTTON)
 // ============================================================================
 function initWhatsAppRedesign() {
     if (document.getElementById('nova-wa-redesign-styles')) return;
@@ -1061,22 +859,10 @@ function initWhatsAppRedesign() {
     const st = document.createElement('style');
     st.id = 'nova-wa-redesign-styles';
     st.textContent = `
-        #active-strip, .active-strip, .nav-tabs, #tab-messages, #tab-stories {
-            display: none !important;
-        }
-        .sidebar-header, .side-header {
-            padding: 12px 14px 6px !important;
-            border-bottom: none !important;
-            background: transparent !important;
-        }
-        #wa-top-bar {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 16px 6px; flex-shrink: 0;
-        }
-        #wa-page-title {
-            font-size: 24px; font-weight: 800; letter-spacing: -0.3px;
-            color: var(--text-main, #f8fafc);
-        }
+        #active-strip, .active-strip, .nav-tabs, #tab-messages, #tab-stories { display: none !important; }
+        .sidebar-header, .side-header { padding: 12px 14px 6px !important; border-bottom: none !important; background: transparent !important; }
+        #wa-top-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 6px; flex-shrink: 0; }
+        #wa-page-title { font-size: 24px; font-weight: 800; letter-spacing: -0.3px; color: var(--text-main, #f8fafc); }
         #wa-add-fab {
             width: 34px; height: 34px; border-radius: 50%; border: none;
             background: #10b981; color: #052e16; font-size: 22px; font-weight: 800;
@@ -1085,10 +871,7 @@ function initWhatsAppRedesign() {
         }
         .search-bar, .search-wrap { padding: 6px 14px 10px !important; }
         .search-bar button, #btn-add-friend { display: none !important; }
-        #search-friends, .search-bar input {
-            width: 100% !important; border-radius: 999px !important;
-            padding: 10px 16px !important; font-size: 14px !important;
-        }
+        #search-friends, .search-bar input { width: 100% !important; border-radius: 999px !important; padding: 10px 16px !important; font-size: 14px !important; }
         #wa-bottom-nav {
             display: grid; grid-template-columns: repeat(4, 1fr);
             background: rgba(15,23,42,0.96); backdrop-filter: blur(12px);
@@ -1096,9 +879,7 @@ function initWhatsAppRedesign() {
             padding: 6px 4px max(8px, env(safe-area-inset-bottom, 8px));
             flex-shrink: 0; z-index: 30;
         }
-        body.light-mode #wa-bottom-nav {
-            background: rgba(255,255,255,0.96); border-top-color: rgba(15,23,42,0.1);
-        }
+        body.light-mode #wa-bottom-nav { background: rgba(255,255,255,0.96); border-top-color: rgba(15,23,42,0.1); }
         .wa-nav-btn {
             background: none; border: none; color: #94a3b8;
             display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -1106,34 +887,13 @@ function initWhatsAppRedesign() {
         }
         .wa-nav-btn .material-icons { font-size: 22px; }
         .wa-nav-btn.active { color: #10b981; }
-        .wa-nav-btn.active .material-icons {
-            background: rgba(16,185,129,0.16); padding: 2px 14px; border-radius: 999px;
-        }
-        .wa-extra-tab {
-            flex: 1; overflow-y: auto; padding: 12px 14px 20px; display: none;
-        }
+        .wa-nav-btn.active .material-icons { background: rgba(16,185,129,0.16); padding: 2px 14px; border-radius: 999px; }
+        .wa-extra-tab { flex: 1; overflow-y: auto; padding: 12px 14px 20px; display: none; }
         .wa-extra-tab.active { display: block; }
-        .wa-you-card {
-            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 16px; padding: 14px; margin-bottom: 12px;
-        }
+        .wa-you-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
         body.light-mode .wa-you-card { background: #f8fafc; border-color: rgba(15,23,42,0.1); }
-        .wa-you-row {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 11px 6px; border-bottom: 1px solid rgba(255,255,255,0.07);
-            cursor: pointer; font-size: 14px; font-weight: 600;
-        }
+        .wa-you-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 6px; border-bottom: 1px solid rgba(255,255,255,0.07); cursor: pointer; font-size: 14px; font-weight: 600; }
         .wa-you-row:last-child { border-bottom: none; }
-        .avatar.has-story-ring {
-            border: 2.5px solid #10b981 !important;
-            box-shadow: 0 0 0 2px rgba(16,185,129,0.28);
-            cursor: pointer;
-        }
-        .wa-list-presence {
-            font-size: 10.5px; color: #94a3b8; margin-top: 2px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .wa-list-presence.is-online { color: #10b981; font-weight: 600; }
     `;
     document.head.appendChild(st);
 
@@ -1145,14 +905,11 @@ function initWhatsAppRedesign() {
 
     const topBar = document.createElement('div');
     topBar.id = 'wa-top-bar';
-    topBar.innerHTML = `
-        <div id="wa-page-title">Chats</div>
-        <button type="button" id="wa-add-fab" title="Add Friend ID">+</button>
-    `;
+    topBar.innerHTML = `<div id="wa-page-title">Chats</div><button type="button" id="wa-add-fab" title="Add Friend ID">+</button>`;
     sidebar.insertBefore(topBar, sidebar.firstChild);
 
     function triggerAddFriend() {
-        const oldAdd = $('btn-add-friend') || $('btn-add-room') || $('btn-new-chat') || $('btn-add-id')
+        const oldAdd = $('btn-add-room') || $('btn-add-friend') || $('btn-new-chat') || $('btn-add-id')
             || document.querySelector('.search-bar button, .search-wrap button');
         if (oldAdd) oldAdd.click();
     }
@@ -1160,26 +917,15 @@ function initWhatsAppRedesign() {
     const callsTab = document.createElement('div');
     callsTab.id = 'wa-calls-tab';
     callsTab.className = 'wa-extra-tab';
-    callsTab.innerHTML = `
-        <div class="wa-you-card" style="text-align:center; padding:28px 16px;">
-            <span class="material-icons" style="font-size:40px; color:#10b981; margin-bottom:8px;">call</span>
-            <div style="font-size:15px; font-weight:700; margin-bottom:4px;">Call History</div>
-            <div style="font-size:12.5px; color:#94a3b8;">Recent voice & video call logs will appear here.</div>
-        </div>
-    `;
+    callsTab.innerHTML = `<div class="wa-you-card" style="text-align:center; padding:28px 16px;"><span class="material-icons" style="font-size:40px; color:#10b981; margin-bottom:8px;">call</span><div style="font-size:15px; font-weight:700; margin-bottom:4px;">Call History</div><div style="font-size:12.5px; color:#94a3b8;">Recent voice & video call logs will appear here.</div></div>`;
 
     const youTab = document.createElement('div');
     youTab.id = 'wa-you-tab';
     youTab.className = 'wa-extra-tab';
     youTab.innerHTML = `
         <div class="wa-you-card" id="wa-you-profile-box" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
-            <div class="avatar" style="width:52px; height:52px; font-size:22px; background:#10b981; color:#052e16;">
-                <span class="material-icons">person</span>
-            </div>
-            <div style="flex:1; min-width:0;">
-                <div id="wa-you-name" style="font-size:16px; font-weight:800;">My Profile</div>
-                <div id="wa-you-id" style="font-size:12.5px; color:#38bdf8; margin-top:2px;">My ID: --</div>
-            </div>
+            <div class="avatar" style="width:52px; height:52px; font-size:22px; background:#10b981; color:#052e16;"><span class="material-icons">person</span></div>
+            <div style="flex:1; min-width:0;"><div id="wa-you-name" style="font-size:16px; font-weight:800;">My Profile</div><div id="wa-you-id" style="font-size:12.5px; color:#38bdf8; margin-top:2px;">My ID: --</div></div>
             <span class="material-icons" style="color:#94a3b8;">chevron_right</span>
         </div>
         <div class="wa-you-card">
@@ -1213,9 +959,9 @@ function initWhatsAppRedesign() {
     bindClick('wa-row-settings', () => { window.location.href = 'chat-settings.html'; });
     bindClick('wa-row-logout', () => $('btn-logout-now')?.click());
 
-    const chatListEl = $('chat-list');
-    const searchBarEl = sidebar.querySelector('.search-bar, .search-wrap');
-    const storiesPanel = $('stories-panel') || $('stories-feed')?.parentElement;
+    const chatListEl = $('chats-list-area') || $('chat-list');
+    const searchBarEl = $('chats-search-bar') || sidebar.querySelector('.search-bar, .search-wrap');
+    const storiesPanel = $('status-list-area') || $('stories-panel');
 
     function switchWaTab(tab) {
         bottomNav.querySelectorAll('.wa-nav-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === tab));
@@ -1223,14 +969,11 @@ function initWhatsAppRedesign() {
         if ($('wa-page-title')) $('wa-page-title').innerText = titleMap[tab] || 'Chats';
         if ($('wa-add-fab')) {
             $('wa-add-fab').style.display = (tab === 'chats' || tab === 'updates') ? 'flex' : 'none';
-            $('wa-add-fab').onclick = (tab === 'updates')
-                ? () => $('btn-add-status')?.click()
-                : triggerAddFriend;
+            $('wa-add-fab').onclick = (tab === 'updates') ? () => $('btn-add-status')?.click() : triggerAddFriend;
         }
-
         if (chatListEl) chatListEl.style.display = (tab === 'chats') ? '' : 'none';
         if (searchBarEl) searchBarEl.style.display = (tab === 'chats') ? '' : 'none';
-        if (storiesPanel && storiesPanel !== sidebar) storiesPanel.style.display = (tab === 'updates') ? 'block' : 'none';
+        if (storiesPanel) storiesPanel.style.display = (tab === 'updates') ? 'block' : 'none';
         callsTab.classList.toggle('active', tab === 'calls');
         youTab.classList.toggle('active', tab === 'you');
 
@@ -1243,107 +986,13 @@ function initWhatsAppRedesign() {
         }
     }
 
-    bottomNav.querySelectorAll('.wa-nav-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchWaTab(btn.getAttribute('data-tab')));
-    });
+    bottomNav.querySelectorAll('.wa-nav-btn').forEach(btn => btn.addEventListener('click', () => switchWaTab(btn.getAttribute('data-tab'))));
     switchWaTab('chats');
-
-    const activeStoryByCode = {};
-    const presenceByRoom = {};
-
-    async function refreshStoryRings() {
-        try {
-            const snap = await getDocs(query(collection(db, "novahub_stories"), orderBy("timestamp", "desc")));
-            const nowMs = Date.now();
-            Object.keys(activeStoryByCode).forEach(k => delete activeStoryByCode[k]);
-            snap.forEach(d => {
-                const s = d.data();
-                const ms = s.createdAtMs || (s.timestamp && typeof s.timestamp.toMillis === 'function' ? s.timestamp.toMillis() : 0);
-                if (ms > 0 && (nowMs - ms) > 86400000) return;
-                if (s.accountCode && !activeStoryByCode[s.accountCode]) {
-                    activeStoryByCode[s.accountCode] = { id: d.id, ...s };
-                }
-            });
-            decorateChatListItems();
-        } catch (e) {}
-    }
-
-    function decorateChatListItems() {
-        if (!chatListEl) return;
-        const items = chatListEl.querySelectorAll('.chat-item');
-        items.forEach((item, idx) => {
-            const room = state.savedRooms.filter(r => !r.locked)[idx];
-            if (!room) return;
-
-            const ava = item.querySelector('.avatar');
-            const stObj = activeStoryByCode[room.peerCode];
-            if (ava) {
-                ava.classList.toggle('has-story-ring', !!stObj);
-                ava.onclick = stObj ? (e) => {
-                    e.stopPropagation();
-                    $('modal-title').innerText = `${stObj.name}'s Story`;
-                    $('modal-body').innerHTML = stObj.type === 'image'
-                        ? `<img src="${stObj.mediaUrl}" style="width:100%; border-radius:10px;">`
-                        : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(stObj.text)}</div>`;
-                    openLayer($('generic-modal'));
-                } : null;
-            }
-
-            const info = item.querySelector('.chat-item-info');
-            if (info && presenceByRoom[room.id]) {
-                let pEl = info.querySelector('.wa-list-presence');
-                if (!pEl) {
-                    pEl = document.createElement('div');
-                    pEl.className = 'wa-list-presence';
-                    info.appendChild(pEl);
-                }
-                const p = presenceByRoom[room.id];
-                pEl.innerText = p.text;
-                pEl.classList.toggle('is-online', p.online);
-            }
-        });
-    }
-
-    setInterval(() => {
-        if (!state.savedRooms || !state.savedRooms.length) return;
-        state.savedRooms.forEach(r => {
-            if (r._waPresListening) return;
-            r._waPresListening = true;
-            onSnapshot(doc(db, "novahub_all_rooms", r.id), (snap) => {
-                if (!snap.exists()) return;
-                const data = snap.data();
-                let peer = null;
-                for (let k in data) {
-                    if (!k.startsWith('presence_')) continue;
-                    if (k === `presence_${state.myUid}` || k === `presence_user_${state.myAccountCode}`) continue;
-                    const p = data[k];
-                    if (!p || (p.accountCode && String(p.accountCode) === String(state.myAccountCode))) continue;
-                    if (!peer || (p.updated || 0) > (peer.updated || 0)) peer = p;
-                }
-                if (peer) {
-                    const recent = (Date.now() - (peer.updated || 0)) < 50000;
-                    if (recent && (peer.status === 'typing...' || peer.status === 'recording audio...')) {
-                        presenceByRoom[r.id] = { text: `✍️ ${peer.status}`, online: true };
-                    } else if (recent && peer.status === 'online') {
-                        presenceByRoom[r.id] = { text: '🟢 Online', online: true };
-                    } else {
-                        presenceByRoom[r.id] = { text: formatLastSeen(peer.updated) || `Last seen ${peer.time || ''}`, online: false };
-                    }
-                    decorateChatListItems();
-                }
-            });
-        });
-    }, 3000);
-
-    if (chatListEl) {
-        new MutationObserver(() => decorateChatListItems()).observe(chatListEl, { childList: true });
-    }
-    setTimeout(refreshStoryRings, 1200);
-    setInterval(refreshStoryRings, 300000);
 }
 initWhatsAppRedesign();
 
-import "./chat-filters.js";
-import "./chat-extras.js";
-import "./chat-premium-ui.js";
-import "./themes/chat-themes.js";
+// Safe dynamic loading of optional add-ons (never blocks main app or PIN screen)
+import("./chat-filters.js").catch(() => {});
+import("./chat-extras.js").catch(() => {});
+import("./chat-premium-ui.js").catch(() => {});
+import("./themes/chat-themes.js").catch(() => {});
