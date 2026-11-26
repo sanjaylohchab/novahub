@@ -66,6 +66,13 @@ const passInp = $('auth-pass');
 const voBtn = $('btn-vo-toggle');
 const vnBtn = $('btn-vn-rec');
 
+function withTimeout(promise, ms = 12000) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout — internet ya Firebase slow hai")), ms))
+    ]);
+}
+
 // ============================================================================
 // 1. APP ENTRY PIN LOCK
 // ============================================================================
@@ -570,7 +577,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners
+// Auth Listeners (With Loading Feedback & Error Catching)
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login')?.classList.add('active');
@@ -587,70 +594,87 @@ bindClick('tab-btn-signup', () => {
     if ($('btn-auth-submit')) $('btn-auth-submit').innerText = 'CREATE NEW PERMANENT ID';
     if (errEl) errEl.innerText = '';
 });
+
 bindClick('btn-auth-submit', async () => {
+    const submitBtn = $('btn-auth-submit');
     const code = (codeInp?.value || '').trim();
     const pass = (passInp?.value || '').trim();
     const name = (nameInp?.value || '').trim();
     if (errEl) errEl.innerText = '';
     if (!code) { if (errEl) errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
 
-    if (await verifyAdminCode(code)) {
-        closeLayer(authScreen);
-        openGodDashboard();
-        return;
-    }
-    if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
+    const prevBtnTxt = submitBtn ? submitBtn.innerText : '';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = '⏳ CONNECTING...'; }
 
-    const accRef = doc(db, "novahub_accounts", code);
-    const snap = await getDoc(accRef);
-    const hashedPass = await hashPassword(code, pass);
+    try {
+        if (await verifyAdminCode(code)) {
+            closeLayer(authScreen);
+            openGodDashboard();
+            return;
+        }
+        if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
 
-    if (authMode === 'signup') {
-        if (snap.exists()) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
-        if (!name) { if (errEl) errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
-        wipeLocalSessionData();
-        state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
-        state.myDp = ""; state.myLockPin = ""; state.appLockEnabled = false; state.appLockPin = ""; state.savedRooms = [];
-        await setDoc(accRef, {
-            accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
-            dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
-            savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
-        });
-    } else {
-        if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
-        const data = snap.data();
-        let passwordOk = false;
-        if (data.passwordHash) {
-            passwordOk = (data.passwordHash === hashedPass);
-        } else if (data.password) {
-            if (data.password === pass) {
-                passwordOk = true;
-                await updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
-            }
+        const accRef = doc(db, "novahub_accounts", code);
+        const snap = await withTimeout(getDoc(accRef), 12000);
+        const hashedPass = await hashPassword(code, pass);
+
+        if (authMode === 'signup') {
+            if (snap.exists()) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
+            if (!name) { if (errEl) errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
+            wipeLocalSessionData();
+            state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
+            state.myDp = ""; state.myLockPin = ""; state.appLockEnabled = false; state.appLockPin = ""; state.savedRooms = [];
+            await withTimeout(setDoc(accRef, {
+                accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
+                dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
+                savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
+            }), 12000);
         } else {
-            passwordOk = true;
-            await updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
-        }
-        if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
+            if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
+            const data = snap.data();
+            let passwordOk = false;
+            if (data.passwordHash) {
+                passwordOk = (data.passwordHash === hashedPass);
+            } else if (data.password) {
+                if (data.password === pass) {
+                    passwordOk = true;
+                    await updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
+                }
+            } else {
+                passwordOk = true;
+                await updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
+            }
+            if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
 
-        wipeLocalSessionData();
-        state.myAccountCode = code; state.myUid = 'uid_' + code;
-        state.myName = data.name || ("User_" + code);
-        state.myDp = data.dp || ""; state.myLockPin = data.lockPin || "";
-        state.appLockEnabled = !!data.appLockEnabled;
-        state.appLockPin = data.appLockPin || "";
-        state.savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
-        state.mutedRooms = Array.isArray(data.mutedRooms) ? data.mutedRooms : [];
-        if (typeof data.notifEnabled === 'boolean') {
-            state.stealthNotifEnabled = data.notifEnabled;
-            localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
+            wipeLocalSessionData();
+            state.myAccountCode = code; state.myUid = 'uid_' + code;
+            state.myName = data.name || ("User_" + code);
+            state.myDp = data.dp || ""; state.myLockPin = data.lockPin || "";
+            state.appLockEnabled = !!data.appLockEnabled;
+            state.appLockPin = data.appLockPin || "";
+            state.savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
+            state.mutedRooms = Array.isArray(data.mutedRooms) ? data.mutedRooms : [];
+            if (typeof data.notifEnabled === 'boolean') {
+                state.stealthNotifEnabled = data.notifEnabled;
+                localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
+            }
+        }
+
+        state.isAppUnlocked = true;
+        saveSessionToLocal();
+        closeLayer(authScreen);
+        startAuthenticatedSession(false);
+    } catch (err) {
+        console.error("Auth error:", err);
+        if (errEl) {
+            errEl.innerText = `⚠️ ${err?.code || err?.message || 'Login failed. Check internet!'}`;
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = prevBtnTxt || (authMode === 'signup' ? 'CREATE NEW PERMANENT ID' : 'LOGIN TO MY ACCOUNT');
         }
     }
-
-    state.isAppUnlocked = true;
-    saveSessionToLocal();
-    closeLayer(authScreen);
-    startAuthenticatedSession(false);
 });
 
 // CLEAN LOGOUT
