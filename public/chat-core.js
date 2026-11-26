@@ -3,12 +3,12 @@
 // Clean Modular Engine: Auth, App Lock, Messaging, Drawer & Admin Dashboard
 // ============================================================================
 import {
-    firebaseConfig, db, storage, state, hooks, timerLabels, timerMs, $, bindClick, escapeHtml,
+    db, storage, state, hooks, timerLabels, timerMs, $, bindClick, escapeHtml,
     openLayer, closeLayer, postToGame, showQuickToast, playAlertBeep,
     hashPassword, verifyAdminCode, encryptText, decryptText,
     isMyMessage, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
     getShortTime, compressImg, uploadWithTimeout, wipeLocalSessionData,
-    saveSessionToLocal, syncAccountToCloud,
+    saveSessionToLocal, syncAccountToCloud, fetchAccountViaRest, saveAccountViaRest,
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
     onSnapshot, collection, addDoc, query, orderBy, limitToLast,
     serverTimestamp, sRef
@@ -66,43 +66,11 @@ const passInp = $('auth-pass');
 const voBtn = $('btn-vo-toggle');
 const vnBtn = $('btn-vn-rec');
 
-function withTimeout(promise, ms = 12000) {
+function withTimeout(promise, ms = 4000) {
     return Promise.race([
         promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout (12s) — Firebase backend slow")), ms))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("SDK fast-fallback")), ms))
     ]);
-}
-
-function parseFirestoreRestVal(v) {
-    if (!v || typeof v !== 'object') return null;
-    if ('stringValue' in v) return v.stringValue;
-    if ('integerValue' in v) return Number(v.integerValue);
-    if ('doubleValue' in v) return Number(v.doubleValue);
-    if ('booleanValue' in v) return Boolean(v.booleanValue);
-    if ('nullValue' in v) return null;
-    if ('arrayValue' in v) return (v.arrayValue.values || []).map(parseFirestoreRestVal);
-    if ('mapValue' in v) {
-        const out = {};
-        const f = v.mapValue.fields || {};
-        for (const k in f) out[k] = parseFirestoreRestVal(f[k]);
-        return out;
-    }
-    return null;
-}
-
-async function fetchAccountViaRest(code) {
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/novahub_accounts/${encodeURIComponent(code)}?key=${firebaseConfig.apiKey}`;
-    const res = await withTimeout(fetch(url, { method: 'GET', cache: 'no-store' }), 10000);
-    if (res.status === 404) return { exists: false, data: null };
-    if (!res.ok) {
-        const bodyTxt = await res.text().catch(() => '');
-        throw new Error(`REST HTTP ${res.status}: ${bodyTxt.slice(0, 120)}`);
-    }
-    const json = await res.json();
-    const out = {};
-    const fields = json.fields || {};
-    for (const k in fields) out[k] = parseFirestoreRestVal(fields[k]);
-    return { exists: true, data: out };
 }
 
 // ============================================================================
@@ -456,7 +424,6 @@ function listenToMessages(roomId) {
         isInitialLoad = false;
     }, (err) => {
         console.error("Chat sync error:", err);
-        showQuickToast(`⚠️ [${err?.code || 'ERR'}] ${err?.message || 'Chat sync failed'}`);
         setTimeout(() => {
             if (state.currentRoom === roomId) listenToMessages(roomId);
         }, 3000);
@@ -605,7 +572,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners (With REST Backup + Detailed Error Box)
+// Auth Listeners (Instant Cloud REST Save + Fast Login)
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login')?.classList.add('active');
@@ -649,18 +616,15 @@ bindClick('btn-auth-submit', async () => {
         const accRef = doc(db, "novahub_accounts", code);
         let docExists = false;
         let data = null;
-        let usedRestBackup = false;
 
         try {
-            const snap = await withTimeout(getDoc(accRef), 10000);
+            const snap = await withTimeout(getDoc(accRef), 3500);
             docExists = snap.exists();
             data = docExists ? snap.data() : null;
         } catch (sdkErr) {
-            // Automatic HTTPS REST Fallback if mobile ISP blocks WebChannel
             const restRes = await fetchAccountViaRest(code);
             docExists = restRes.exists;
             data = restRes.data;
-            usedRestBackup = true;
         }
 
         const hashedPass = await hashPassword(code, pass);
@@ -671,11 +635,16 @@ bindClick('btn-auth-submit', async () => {
             wipeLocalSessionData();
             state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
             state.myDp = ""; state.myLockPin = ""; state.appLockEnabled = false; state.appLockPin = ""; state.savedRooms = [];
-            await withTimeout(setDoc(accRef, {
+
+            const newAccObj = {
                 accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
                 dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
                 savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
-            }), 12000);
+            };
+
+            // Save directly to Firestore Cloud via HTTPS REST so it never times out on 4G
+            await saveAccountViaRest(code, newAccObj);
+            setDoc(accRef, newAccObj).catch(() => {});
         } else {
             if (!docExists || !data) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
             let passwordOk = false;
@@ -684,10 +653,12 @@ bindClick('btn-auth-submit', async () => {
             } else if (data.password) {
                 if (data.password === pass) {
                     passwordOk = true;
+                    saveAccountViaRest(code, { passwordHash: hashedPass }, ['passwordHash']).catch(() => {});
                     updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
                 }
             } else {
                 passwordOk = true;
+                saveAccountViaRest(code, { passwordHash: hashedPass }, ['passwordHash']).catch(() => {});
                 updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
             }
             if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
@@ -709,7 +680,6 @@ bindClick('btn-auth-submit', async () => {
         state.isAppUnlocked = true;
         saveSessionToLocal();
         closeLayer(authScreen);
-        if (usedRestBackup) showQuickToast("🌐 Connected via backup route");
         startAuthenticatedSession(false);
     } catch (err) {
         console.error("Auth error:", err);
@@ -767,7 +737,8 @@ bindClick('btn-save-lock-settings', async () => {
     localStorage.setItem('nova_app_lock_enabled', String(state.appLockEnabled));
     localStorage.setItem('nova_app_lock_pin', state.appLockPin);
     if (state.myAccountCode) {
-        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
+        saveAccountViaRest(state.myAccountCode, { appLockEnabled: state.appLockEnabled, appLockPin: state.appLockPin }, ['appLockEnabled', 'appLockPin']).catch(() => {});
+        setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
             appLockEnabled: state.appLockEnabled, appLockPin: state.appLockPin
         }, { merge: true }).catch(() => {});
     }
@@ -1036,7 +1007,8 @@ bindClick('di-notif', async () => {
     if ($('di-notif-val')) $('di-notif-val').innerText = state.stealthNotifEnabled ? "ON" : "OFF";
 
     if (state.myAccountCode) {
-        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
+        saveAccountViaRest(state.myAccountCode, { notifEnabled: state.stealthNotifEnabled }, ['notifEnabled']).catch(() => {});
+        setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
             notifEnabled: state.stealthNotifEnabled
         }, { merge: true }).catch(() => {});
     }
@@ -1247,4 +1219,3 @@ try {
 } catch (err) {
     console.error("NovaInit error:", err);
 }
-
