@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // ============================================================================
-// 1. FIREBASE & WEBRTC CONFIGURATION (iOS 4G/5G XHR LONG-POLLING FIX)
+// 1. FIREBASE & WEBRTC CONFIGURATION
 // ============================================================================
 export const firebaseConfig = {
     apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
@@ -39,8 +39,7 @@ export const app = initializeApp(firebaseConfig);
 let _db;
 try {
     _db = initializeFirestore(app, {
-        experimentalForceLongPolling: true,
-        useFetchStreams: false
+        experimentalAutoDetectLongPolling: true
     });
 } catch (e) {
     _db = getFirestore(app);
@@ -55,7 +54,97 @@ export {
 };
 
 // ============================================================================
-// 2. SHARED REACTIVE APPLICATION STATE & CROSS-MODULE HOOKS
+// 2. DIRECT FIRESTORE HTTPS REST HELPERS (BYPASSES 4G SDK STREAM TIMEOUTS)
+// ============================================================================
+function toFirestoreRestVal(val) {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === 'string') return { stringValue: val };
+    if (typeof val === 'boolean') return { booleanValue: val };
+    if (typeof val === 'number') {
+        return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    }
+    if (Array.isArray(val)) {
+        return { arrayValue: val.length ? { values: val.map(toFirestoreRestVal) } : {} };
+    }
+    if (typeof val === 'object') {
+        const fields = {};
+        for (const k in val) {
+            if (val[k] !== undefined) fields[k] = toFirestoreRestVal(val[k]);
+        }
+        return { mapValue: { fields } };
+    }
+    return { stringValue: String(val) };
+}
+
+export function parseFirestoreRestVal(v) {
+    if (!v || typeof v !== 'object') return null;
+    if ('stringValue' in v) return v.stringValue;
+    if ('integerValue' in v) return Number(v.integerValue);
+    if ('doubleValue' in v) return Number(v.doubleValue);
+    if ('booleanValue' in v) return Boolean(v.booleanValue);
+    if ('nullValue' in v) return null;
+    if ('arrayValue' in v) return (v.arrayValue.values || []).map(parseFirestoreRestVal);
+    if ('mapValue' in v) {
+        const out = {};
+        const f = v.mapValue.fields || {};
+        for (const k in f) out[k] = parseFirestoreRestVal(f[k]);
+        return out;
+    }
+    return null;
+}
+
+export async function fetchAccountViaRest(code) {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/novahub_accounts/${encodeURIComponent(code)}?key=${firebaseConfig.apiKey}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+        const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
+        if (res.status === 404) return { exists: false, data: null };
+        if (!res.ok) {
+            const bodyTxt = await res.text().catch(() => '');
+            throw new Error(`REST HTTP ${res.status}: ${bodyTxt.slice(0, 120)}`);
+        }
+        const json = await res.json();
+        const out = {};
+        const fields = json.fields || {};
+        for (const k in fields) out[k] = parseFirestoreRestVal(fields[k]);
+        return { exists: true, data: out };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+export async function saveAccountViaRest(code, dataObj, maskFields = null) {
+    let url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/novahub_accounts/${encodeURIComponent(code)}?key=${firebaseConfig.apiKey}`;
+    if (Array.isArray(maskFields) && maskFields.length > 0) {
+        const params = maskFields.map(f => `updateMask.fieldPaths=${encodeURIComponent(f)}`).join('&');
+        url += `&${params}`;
+    }
+    const fields = {};
+    for (const k in dataObj) {
+        if (dataObj[k] !== undefined) fields[k] = toFirestoreRestVal(dataObj[k]);
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields }),
+            signal: ctrl.signal
+        });
+        if (!res.ok) {
+            const bodyTxt = await res.text().catch(() => '');
+            throw new Error(`Save HTTP ${res.status}: ${bodyTxt.slice(0, 120)}`);
+        }
+        return true;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// ============================================================================
+// 3. SHARED REACTIVE APPLICATION STATE & CROSS-MODULE HOOKS
 // ============================================================================
 export const state = {
     myAccountCode: localStorage.getItem('nova_account_code') || "",
@@ -127,7 +216,7 @@ export const timerMs = {
 };
 
 // ============================================================================
-// 3. DOM, UI, AUDIO, CRYPTO & SESSION HELPERS
+// 4. DOM, UI, AUDIO, CRYPTO & SESSION HELPERS
 // ============================================================================
 export const $ = (id) => document.getElementById(id);
 
@@ -426,21 +515,25 @@ export async function syncAccountToCloud() {
     localStorage.setItem('nova_saved_rooms', JSON.stringify(state.savedRooms));
     localStorage.setItem('nova_muted_rooms', JSON.stringify(state.mutedRooms));
     if (!state.myAccountCode) return;
+
+    const patchData = {
+        accountCode: state.myAccountCode,
+        uid: state.myUid,
+        name: state.myName,
+        dp: state.myDp,
+        lockPin: state.myLockPin,
+        appLockEnabled: state.appLockEnabled,
+        appLockPin: state.appLockPin,
+        savedRooms: state.savedRooms,
+        mutedRooms: state.mutedRooms,
+        notifEnabled: state.stealthNotifEnabled,
+        updatedAt: new Date().toLocaleString()
+    };
+
     try {
-        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
-            accountCode: state.myAccountCode,
-            uid: state.myUid,
-            name: state.myName,
-            dp: state.myDp,
-            lockPin: state.myLockPin,
-            appLockEnabled: state.appLockEnabled,
-            appLockPin: state.appLockPin,
-            savedRooms: state.savedRooms,
-            mutedRooms: state.mutedRooms,
-            notifEnabled: state.stealthNotifEnabled,
-            updatedAt: new Date().toLocaleString()
-        }, { merge: true });
+        await saveAccountViaRest(state.myAccountCode, patchData, Object.keys(patchData));
     } catch (e) {}
+    setDoc(doc(db, "novahub_accounts", state.myAccountCode), patchData, { merge: true }).catch(() => {});
 }
 
 if (localStorage.getItem('nova_theme_mode') === 'light') {
