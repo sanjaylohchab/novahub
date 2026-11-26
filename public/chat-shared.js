@@ -15,12 +15,12 @@ import {
 // 1. FIREBASE CONFIGURATION & INITIALIZATION (OFFLINE CACHE + 4G AUTO-POLL)
 // ============================================================================
 export const firebaseConfig = {
-    apiKey: "AIzaSyA2u0R4vH78K-p_EXAMPLE_KEY_REPLACE_ME",
+    apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
     authDomain: "novahub-201e5.firebaseapp.com",
     projectId: "novahub-201e5",
     storageBucket: "novahub-201e5.firebasestorage.app",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abcdef1234567890"
+    messagingSenderId: "188612451279",
+    appId: "1:188612451279:web:02895aafeab4fcef7ad0ba"
 };
 
 // Optional Web Push keys (leave empty if not configured)
