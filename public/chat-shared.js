@@ -3,7 +3,7 @@
 // ============================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import {
-    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+    getFirestore,
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
     onSnapshot, collection, addDoc, query, orderBy, limit, limitToLast, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // ============================================================================
-// 1. FIREBASE & WEBRTC CONFIGURATION (OFFLINE CACHE + 4G AUTO-POLL)
+// 1. FIREBASE & WEBRTC CONFIGURATION
 // ============================================================================
 export const firebaseConfig = {
     apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
@@ -35,17 +35,7 @@ export const FCM_VAPID_KEY = "";
 export const PUSH_RELAY_URL = "";
 
 export const app = initializeApp(firebaseConfig);
-
-let _db;
-try {
-    _db = initializeFirestore(app, {
-        experimentalAutoDetectLongPolling: true,
-        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    });
-} catch (e) {
-    _db = getFirestore(app);
-}
-export const db = _db;
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 export {
