@@ -3,7 +3,7 @@
 // Clean Modular Engine: Auth, App Lock, Messaging, Drawer & Admin Dashboard
 // ============================================================================
 import {
-    db, storage, state, hooks, timerLabels, timerMs, $, bindClick, escapeHtml,
+    firebaseConfig, db, storage, state, hooks, timerLabels, timerMs, $, bindClick, escapeHtml,
     openLayer, closeLayer, postToGame, showQuickToast, playAlertBeep,
     hashPassword, verifyAdminCode, encryptText, decryptText,
     isMyMessage, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
@@ -66,11 +66,43 @@ const passInp = $('auth-pass');
 const voBtn = $('btn-vo-toggle');
 const vnBtn = $('btn-vn-rec');
 
-function withTimeout(promise, ms = 15000) {
+function withTimeout(promise, ms = 12000) {
     return Promise.race([
         promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout (15s) — internet ya Firebase slow hai")), ms))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout (12s) — Firebase backend slow")), ms))
     ]);
+}
+
+function parseFirestoreRestVal(v) {
+    if (!v || typeof v !== 'object') return null;
+    if ('stringValue' in v) return v.stringValue;
+    if ('integerValue' in v) return Number(v.integerValue);
+    if ('doubleValue' in v) return Number(v.doubleValue);
+    if ('booleanValue' in v) return Boolean(v.booleanValue);
+    if ('nullValue' in v) return null;
+    if ('arrayValue' in v) return (v.arrayValue.values || []).map(parseFirestoreRestVal);
+    if ('mapValue' in v) {
+        const out = {};
+        const f = v.mapValue.fields || {};
+        for (const k in f) out[k] = parseFirestoreRestVal(f[k]);
+        return out;
+    }
+    return null;
+}
+
+async function fetchAccountViaRest(code) {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/novahub_accounts/${encodeURIComponent(code)}?key=${firebaseConfig.apiKey}`;
+    const res = await withTimeout(fetch(url, { method: 'GET', cache: 'no-store' }), 10000);
+    if (res.status === 404) return { exists: false, data: null };
+    if (!res.ok) {
+        const bodyTxt = await res.text().catch(() => '');
+        throw new Error(`REST HTTP ${res.status}: ${bodyTxt.slice(0, 120)}`);
+    }
+    const json = await res.json();
+    const out = {};
+    const fields = json.fields || {};
+    for (const k in fields) out[k] = parseFirestoreRestVal(fields[k]);
+    return { exists: true, data: out };
 }
 
 // ============================================================================
@@ -573,7 +605,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners (Displays Full Error Code + Message on Screen)
+// Auth Listeners (With REST Backup + Detailed Error Box)
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login')?.classList.add('active');
@@ -615,11 +647,26 @@ bindClick('btn-auth-submit', async () => {
         if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
 
         const accRef = doc(db, "novahub_accounts", code);
-        const snap = await withTimeout(getDoc(accRef), 15000);
+        let docExists = false;
+        let data = null;
+        let usedRestBackup = false;
+
+        try {
+            const snap = await withTimeout(getDoc(accRef), 10000);
+            docExists = snap.exists();
+            data = docExists ? snap.data() : null;
+        } catch (sdkErr) {
+            // Automatic HTTPS REST Fallback if mobile ISP blocks WebChannel
+            const restRes = await fetchAccountViaRest(code);
+            docExists = restRes.exists;
+            data = restRes.data;
+            usedRestBackup = true;
+        }
+
         const hashedPass = await hashPassword(code, pass);
 
         if (authMode === 'signup') {
-            if (snap.exists()) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
+            if (docExists) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
             if (!name) { if (errEl) errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
             wipeLocalSessionData();
             state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
@@ -628,21 +675,20 @@ bindClick('btn-auth-submit', async () => {
                 accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
                 dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
                 savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
-            }), 15000);
+            }), 12000);
         } else {
-            if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
-            const data = snap.data();
+            if (!docExists || !data) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
             let passwordOk = false;
             if (data.passwordHash) {
                 passwordOk = (data.passwordHash === hashedPass);
             } else if (data.password) {
                 if (data.password === pass) {
                     passwordOk = true;
-                    await updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
+                    updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
                 }
             } else {
                 passwordOk = true;
-                await updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
+                updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
             }
             if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
 
@@ -663,13 +709,15 @@ bindClick('btn-auth-submit', async () => {
         state.isAppUnlocked = true;
         saveSessionToLocal();
         closeLayer(authScreen);
+        if (usedRestBackup) showQuickToast("🌐 Connected via backup route");
         startAuthenticatedSession(false);
     } catch (err) {
         console.error("Auth error:", err);
         if (errEl) {
+            const onlineFlag = navigator.onLine ? 'Online' : 'Offline';
             const codeTxt = err?.code ? `[${err.code}] ` : '';
             const msgTxt = err?.message || String(err) || 'Unknown error';
-            errEl.innerText = `⚠️ ${codeTxt}${msgTxt}`;
+            errEl.innerText = `⚠️ (${onlineFlag}) ${codeTxt}${msgTxt}`;
         }
     } finally {
         if (submitBtn) {
