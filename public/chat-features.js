@@ -141,13 +141,9 @@ export async function sendStealthPushToPeer(roomId, kind = "text") {
 }
 
 export async function triggerStealthAlert(type, roomId = state.currentRoom) {
-    // 1. Block completely if user is logged out
     if (!state.myAccountCode) return;
-    // 2. Block if global notifications are OFF
     if (!isGlobalNotifOn()) return;
-    // 3. Block if this specific person/chat is muted
     if (isChatMutedStrict(roomId)) return;
-    // 4. Block if this exact chat is already open on screen
     if (type !== 'call' && roomId === state.currentRoom && isChatActivelyVisible()) return;
 
     if (state.vibrationEnabled && type !== 'call') {
@@ -1343,7 +1339,7 @@ function initWhatsAppRedesign() {
         new MutationObserver(() => decorateChatListItems()).observe(chatListEl, { childList: true });
     }
     setTimeout(refreshStoryRings, 1200);
-    setInterval(refreshStoryRings, 30000);
+    setInterval(refreshStoryRings, 300000);
 }
 initWhatsAppRedesign();
 
@@ -1351,4 +1347,3 @@ import "./chat-filters.js";
 import "./chat-extras.js";
 import "./chat-premium-ui.js";
 import "./themes/chat-themes.js";
-
