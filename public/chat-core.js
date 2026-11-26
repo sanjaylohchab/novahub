@@ -66,10 +66,10 @@ const passInp = $('auth-pass');
 const voBtn = $('btn-vo-toggle');
 const vnBtn = $('btn-vn-rec');
 
-function withTimeout(promise, ms = 12000) {
+function withTimeout(promise, ms = 15000) {
     return Promise.race([
         promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout — internet ya Firebase slow hai")), ms))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout (15s) — internet ya Firebase slow hai")), ms))
     ]);
 }
 
@@ -424,14 +424,10 @@ function listenToMessages(roomId) {
         isInitialLoad = false;
     }, (err) => {
         console.error("Chat sync error:", err);
-        if (err && err.code === 'resource-exhausted') {
-            showQuickToast("⚠️ Firebase daily free limit full!");
-        } else {
-            showQuickToast("⚠️ Reconnecting chat...");
-            setTimeout(() => {
-                if (state.currentRoom === roomId) listenToMessages(roomId);
-            }, 2500);
-        }
+        showQuickToast(`⚠️ [${err?.code || 'ERR'}] ${err?.message || 'Chat sync failed'}`);
+        setTimeout(() => {
+            if (state.currentRoom === roomId) listenToMessages(roomId);
+        }, 3000);
     });
 }
 
@@ -577,7 +573,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners (With Loading Feedback & Error Catching)
+// Auth Listeners (Displays Full Error Code + Message on Screen)
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login')?.classList.add('active');
@@ -600,7 +596,11 @@ bindClick('btn-auth-submit', async () => {
     const code = (codeInp?.value || '').trim();
     const pass = (passInp?.value || '').trim();
     const name = (nameInp?.value || '').trim();
-    if (errEl) errEl.innerText = '';
+    if (errEl) {
+        errEl.innerText = '';
+        errEl.style.whiteSpace = 'normal';
+        errEl.style.wordBreak = 'break-word';
+    }
     if (!code) { if (errEl) errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
 
     const prevBtnTxt = submitBtn ? submitBtn.innerText : '';
@@ -615,7 +615,7 @@ bindClick('btn-auth-submit', async () => {
         if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
 
         const accRef = doc(db, "novahub_accounts", code);
-        const snap = await withTimeout(getDoc(accRef), 12000);
+        const snap = await withTimeout(getDoc(accRef), 15000);
         const hashedPass = await hashPassword(code, pass);
 
         if (authMode === 'signup') {
@@ -628,7 +628,7 @@ bindClick('btn-auth-submit', async () => {
                 accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
                 dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
                 savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
-            }), 12000);
+            }), 15000);
         } else {
             if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
             const data = snap.data();
@@ -667,7 +667,9 @@ bindClick('btn-auth-submit', async () => {
     } catch (err) {
         console.error("Auth error:", err);
         if (errEl) {
-            errEl.innerText = `⚠️ ${err?.code || err?.message || 'Login failed. Check internet!'}`;
+            const codeTxt = err?.code ? `[${err.code}] ` : '';
+            const msgTxt = err?.message || String(err) || 'Unknown error';
+            errEl.innerText = `⚠️ ${codeTxt}${msgTxt}`;
         }
     } finally {
         if (submitBtn) {
