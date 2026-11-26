@@ -8,7 +8,7 @@ import {
     hashPassword, verifyAdminCode, encryptText, decryptText,
     isMyMessage, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
     getShortTime, compressImg, uploadWithTimeout, wipeLocalSessionData,
-    saveSessionToLocal, syncAccountToCloud, fetchAccountViaRest, saveAccountViaRest,
+    saveSessionToLocal, syncAccountToCloud,
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
     onSnapshot, collection, addDoc, query, orderBy, limitToLast,
     serverTimestamp, sRef
@@ -45,9 +45,9 @@ let typTimer = null;
 let mediaRec = null, vnChunks = [], isRec = false;
 let emojiPickerLoaded = false;
 let godRoom = "";
-let hiddenAtMs = 0;
 state.replyTarget = null;
 
+// Sync global notification boolean properly from localStorage
 state.stealthNotifEnabled = (localStorage.getItem('nova_stealth_notif') !== 'false');
 
 const authScreen = $('auth-screen');
@@ -65,13 +65,6 @@ const nameInp = $('auth-name');
 const passInp = $('auth-pass');
 const voBtn = $('btn-vo-toggle');
 const vnBtn = $('btn-vn-rec');
-
-function withTimeout(promise, ms = 4000) {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("SDK fast-fallback")), ms))
-    ]);
-}
 
 // ============================================================================
 // 1. APP ENTRY PIN LOCK
@@ -109,10 +102,6 @@ function unlockAppWithPin() {
         if ($('lock-error-msg')) $('lock-error-msg').innerText = '';
         closeLayer(appLockScreen);
         window.scrollTo(0, 0);
-        if (state.currentRoom) {
-            listenToPresence(state.currentRoom);
-            listenToMessages(state.currentRoom);
-        }
     } else {
         if ($('lock-pin-input')) $('lock-pin-input').value = '';
         window.location.href = 'decoy-chat.html';
@@ -179,12 +168,11 @@ function selectRoom(roomId, openUI = true) {
     refreshLiveBanner();
     renderSidebarList();
 
-    if (!isSameRoom || !unsubscribeChat || state.domMap.size === 0) {
+    if (!isSameRoom || !unsubscribeChat) {
         listenToPresence(roomId);
         listenToMessages(roomId);
         listenToCalls(roomId);
     } else if (openUI) {
-        listenToPresence(roomId);
         markVisibleMessagesSeen();
         const box = $('msgs-container');
         if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 30);
@@ -422,11 +410,6 @@ function listenToMessages(roomId) {
             if (isInitialLoad || (addedNewNode && wasNearBottom)) box.scrollTop = box.scrollHeight;
         }
         isInitialLoad = false;
-    }, (err) => {
-        console.error("Chat sync error:", err);
-        setTimeout(() => {
-            if (state.currentRoom === roomId) listenToMessages(roomId);
-        }, 3000);
     });
 }
 
@@ -572,7 +555,7 @@ bindClick('btn-mobile-back', goBackToList);
 bindClick('open-contact-info', () => { if (state.currentRoom) openLayer(drawer); });
 bindClick('btn-close-drawer', () => closeLayer(drawer));
 
-// Auth Listeners (Instant Cloud REST Save + Fast Login)
+// Auth Listeners
 bindClick('tab-btn-login', () => {
     authMode = 'login';
     $('tab-btn-login')?.classList.add('active');
@@ -589,115 +572,73 @@ bindClick('tab-btn-signup', () => {
     if ($('btn-auth-submit')) $('btn-auth-submit').innerText = 'CREATE NEW PERMANENT ID';
     if (errEl) errEl.innerText = '';
 });
-
 bindClick('btn-auth-submit', async () => {
-    const submitBtn = $('btn-auth-submit');
     const code = (codeInp?.value || '').trim();
     const pass = (passInp?.value || '').trim();
     const name = (nameInp?.value || '').trim();
-    if (errEl) {
-        errEl.innerText = '';
-        errEl.style.whiteSpace = 'normal';
-        errEl.style.wordBreak = 'break-word';
-    }
+    if (errEl) errEl.innerText = '';
     if (!code) { if (errEl) errEl.innerText = '⚠️ Please enter your ID Number / Code!'; return; }
 
-    const prevBtnTxt = submitBtn ? submitBtn.innerText : '';
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = '⏳ CONNECTING...'; }
-
-    try {
-        if (await verifyAdminCode(code)) {
-            closeLayer(authScreen);
-            openGodDashboard();
-            return;
-        }
-        if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
-
-        const accRef = doc(db, "novahub_accounts", code);
-        let docExists = false;
-        let data = null;
-
-        try {
-            const snap = await withTimeout(getDoc(accRef), 3500);
-            docExists = snap.exists();
-            data = docExists ? snap.data() : null;
-        } catch (sdkErr) {
-            const restRes = await fetchAccountViaRest(code);
-            docExists = restRes.exists;
-            data = restRes.data;
-        }
-
-        const hashedPass = await hashPassword(code, pass);
-
-        if (authMode === 'signup') {
-            if (docExists) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
-            if (!name) { if (errEl) errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
-            wipeLocalSessionData();
-            state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
-            state.myDp = ""; state.myLockPin = ""; state.appLockEnabled = false; state.appLockPin = ""; state.savedRooms = [];
-
-            const newAccObj = {
-                accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
-                dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
-                savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
-            };
-
-            // Save directly to Firestore Cloud via HTTPS REST so it never times out on 4G
-            await saveAccountViaRest(code, newAccObj);
-            setDoc(accRef, newAccObj).catch(() => {});
-        } else {
-            if (!docExists || !data) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
-            let passwordOk = false;
-            if (data.passwordHash) {
-                passwordOk = (data.passwordHash === hashedPass);
-            } else if (data.password) {
-                if (data.password === pass) {
-                    passwordOk = true;
-                    saveAccountViaRest(code, { passwordHash: hashedPass }, ['passwordHash']).catch(() => {});
-                    updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
-                }
-            } else {
-                passwordOk = true;
-                saveAccountViaRest(code, { passwordHash: hashedPass }, ['passwordHash']).catch(() => {});
-                updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
-            }
-            if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
-
-            wipeLocalSessionData();
-            state.myAccountCode = code; state.myUid = 'uid_' + code;
-            state.myName = data.name || ("User_" + code);
-            state.myDp = data.dp || ""; state.myLockPin = data.lockPin || "";
-            state.appLockEnabled = !!data.appLockEnabled;
-            state.appLockPin = data.appLockPin || "";
-            state.savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
-            state.mutedRooms = Array.isArray(data.mutedRooms) ? data.mutedRooms : [];
-            if (typeof data.notifEnabled === 'boolean') {
-                state.stealthNotifEnabled = data.notifEnabled;
-                localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
-            }
-        }
-
-        state.isAppUnlocked = true;
-        saveSessionToLocal();
+    if (await verifyAdminCode(code)) {
         closeLayer(authScreen);
-        startAuthenticatedSession(false);
-    } catch (err) {
-        console.error("Auth error:", err);
-        if (errEl) {
-            const onlineFlag = navigator.onLine ? 'Online' : 'Offline';
-            const codeTxt = err?.code ? `[${err.code}] ` : '';
-            const msgTxt = err?.message || String(err) || 'Unknown error';
-            errEl.innerText = `⚠️ (${onlineFlag}) ${codeTxt}${msgTxt}`;
+        openGodDashboard();
+        return;
+    }
+    if (!pass) { if (errEl) errEl.innerText = '⚠️ Please enter your secret password!'; return; }
+
+    const accRef = doc(db, "novahub_accounts", code);
+    const snap = await getDoc(accRef);
+    const hashedPass = await hashPassword(code, pass);
+
+    if (authMode === 'signup') {
+        if (snap.exists()) { if (errEl) errEl.innerText = `❌ ID "${code}" already exists! Use LOGIN.`; return; }
+        if (!name) { if (errEl) errEl.innerText = '⚠️ Please enter your Display Name!'; return; }
+        wipeLocalSessionData();
+        state.myAccountCode = code; state.myUid = 'uid_' + code; state.myName = name;
+        state.myDp = ""; state.myLockPin = ""; state.appLockEnabled = false; state.appLockPin = ""; state.savedRooms = [];
+        await setDoc(accRef, {
+            accountCode: code, passwordHash: hashedPass, uid: state.myUid, name: state.myName,
+            dp: "", lockPin: "", appLockEnabled: false, appLockPin: "",
+            savedRooms: [], mutedRooms: [], notifEnabled: true, createdAt: new Date().toLocaleString()
+        });
+    } else {
+        if (!snap.exists()) { if (errEl) errEl.innerText = `❌ No account found for ID "${code}"!`; return; }
+        const data = snap.data();
+        let passwordOk = false;
+        if (data.passwordHash) {
+            passwordOk = (data.passwordHash === hashedPass);
+        } else if (data.password) {
+            if (data.password === pass) {
+                passwordOk = true;
+                await updateDoc(accRef, { passwordHash: hashedPass, password: deleteField() }).catch(() => {});
+            }
+        } else {
+            passwordOk = true;
+            await updateDoc(accRef, { passwordHash: hashedPass }).catch(() => {});
         }
-    } finally {
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerText = prevBtnTxt || (authMode === 'signup' ? 'CREATE NEW PERMANENT ID' : 'LOGIN TO MY ACCOUNT');
+        if (!passwordOk) { if (errEl) errEl.innerText = `❌ Wrong Password for ID "${code}"!`; return; }
+
+        wipeLocalSessionData();
+        state.myAccountCode = code; state.myUid = 'uid_' + code;
+        state.myName = data.name || ("User_" + code);
+        state.myDp = data.dp || ""; state.myLockPin = data.lockPin || "";
+        state.appLockEnabled = !!data.appLockEnabled;
+        state.appLockPin = data.appLockPin || "";
+        state.savedRooms = (data.savedRooms || []).filter(r => r.id !== 'global_novahub_chat');
+        state.mutedRooms = Array.isArray(data.mutedRooms) ? data.mutedRooms : [];
+        if (typeof data.notifEnabled === 'boolean') {
+            state.stealthNotifEnabled = data.notifEnabled;
+            localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
         }
     }
+
+    state.isAppUnlocked = true;
+    saveSessionToLocal();
+    closeLayer(authScreen);
+    startAuthenticatedSession(false);
 });
 
-// CLEAN LOGOUT
+// CLEAN LOGOUT: Removes FCM Token from Firestore so logged-out ID never sends pushes!
 bindClick('btn-logout-now', async () => {
     if (!confirm(`Logout from ID "${state.myAccountCode}" (${state.myName})?`)) return;
     const oldCode = state.myAccountCode;
@@ -737,8 +678,7 @@ bindClick('btn-save-lock-settings', async () => {
     localStorage.setItem('nova_app_lock_enabled', String(state.appLockEnabled));
     localStorage.setItem('nova_app_lock_pin', state.appLockPin);
     if (state.myAccountCode) {
-        saveAccountViaRest(state.myAccountCode, { appLockEnabled: state.appLockEnabled, appLockPin: state.appLockPin }, ['appLockEnabled', 'appLockPin']).catch(() => {});
-        setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
+        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
             appLockEnabled: state.appLockEnabled, appLockPin: state.appLockPin
         }, { merge: true }).catch(() => {});
     }
@@ -1001,14 +941,14 @@ bindClick('di-vib', () => {
     if (state.vibrationEnabled) playAlertBeep();
 });
 
+// GLOBAL NOTIFICATION TOGGLE (Syncs to LocalStorage + Firestore Cloud)
 bindClick('di-notif', async () => {
     state.stealthNotifEnabled = !state.stealthNotifEnabled;
     localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
     if ($('di-notif-val')) $('di-notif-val').innerText = state.stealthNotifEnabled ? "ON" : "OFF";
 
     if (state.myAccountCode) {
-        saveAccountViaRest(state.myAccountCode, { notifEnabled: state.stealthNotifEnabled }, ['notifEnabled']).catch(() => {});
-        setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
+        await setDoc(doc(db, "novahub_accounts", state.myAccountCode), {
             notifEnabled: state.stealthNotifEnabled
         }, { merge: true }).catch(() => {});
     }
@@ -1076,7 +1016,7 @@ bindClick('god-wipe-btn', async () => {
     window.inspectGod(godRoom);
 });
 
-// Widget, Online & Visibility Auto-Reconnect Sync
+// Widget & Visibility Sync
 window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
@@ -1088,40 +1028,21 @@ window.addEventListener('message', (e) => {
         updatePresence("offline", true);
         lockAppIfEnabled();
     } else if (isChatActivelyVisible()) {
-        listenToPresence(state.currentRoom);
-        listenToMessages(state.currentRoom);
         updatePresence("online", true);
         markVisibleMessagesSeen();
         const box = $('msgs-container');
         if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
     }
 });
-
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-        hiddenAtMs = Date.now();
         updatePresence("offline", true);
         lockAppIfEnabled();
-    } else if (state.myAccountCode) {
-        const wasAwayLong = hiddenAtMs > 0 && (Date.now() - hiddenAtMs) > 15000;
-        if (state.currentRoom && (wasAwayLong || state.domMap.size === 0)) {
-            listenToPresence(state.currentRoom);
-            listenToMessages(state.currentRoom);
-        }
-        if (isChatActivelyVisible()) {
-            updatePresence("online", true);
-            markVisibleMessagesSeen();
-        }
+    } else if (isChatActivelyVisible()) {
+        updatePresence("online", true);
+        markVisibleMessagesSeen();
     }
 });
-
-window.addEventListener('online', () => {
-    if (state.myAccountCode && state.currentRoom) {
-        listenToPresence(state.currentRoom);
-        listenToMessages(state.currentRoom);
-    }
-});
-
 window.addEventListener('blur', () => {
     if (state.currentRoom) updatePresence("offline", true);
 });
