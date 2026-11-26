@@ -45,9 +45,9 @@ let typTimer = null;
 let mediaRec = null, vnChunks = [], isRec = false;
 let emojiPickerLoaded = false;
 let godRoom = "";
+let hiddenAtMs = 0;
 state.replyTarget = null;
 
-// Sync global notification boolean properly from localStorage
 state.stealthNotifEnabled = (localStorage.getItem('nova_stealth_notif') !== 'false');
 
 const authScreen = $('auth-screen');
@@ -102,6 +102,10 @@ function unlockAppWithPin() {
         if ($('lock-error-msg')) $('lock-error-msg').innerText = '';
         closeLayer(appLockScreen);
         window.scrollTo(0, 0);
+        if (state.currentRoom) {
+            listenToPresence(state.currentRoom);
+            listenToMessages(state.currentRoom);
+        }
     } else {
         if ($('lock-pin-input')) $('lock-pin-input').value = '';
         window.location.href = 'decoy-chat.html';
@@ -168,11 +172,12 @@ function selectRoom(roomId, openUI = true) {
     refreshLiveBanner();
     renderSidebarList();
 
-    if (!isSameRoom || !unsubscribeChat) {
+    if (!isSameRoom || !unsubscribeChat || state.domMap.size === 0) {
         listenToPresence(roomId);
         listenToMessages(roomId);
         listenToCalls(roomId);
     } else if (openUI) {
+        listenToPresence(roomId);
         markVisibleMessagesSeen();
         const box = $('msgs-container');
         if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 30);
@@ -410,6 +415,16 @@ function listenToMessages(roomId) {
             if (isInitialLoad || (addedNewNode && wasNearBottom)) box.scrollTop = box.scrollHeight;
         }
         isInitialLoad = false;
+    }, (err) => {
+        console.error("Chat sync error:", err);
+        if (err && err.code === 'resource-exhausted') {
+            showQuickToast("⚠️ Firebase daily free limit full!");
+        } else {
+            showQuickToast("⚠️ Reconnecting chat...");
+            setTimeout(() => {
+                if (state.currentRoom === roomId) listenToMessages(roomId);
+            }, 2500);
+        }
     });
 }
 
@@ -638,7 +653,7 @@ bindClick('btn-auth-submit', async () => {
     startAuthenticatedSession(false);
 });
 
-// CLEAN LOGOUT: Removes FCM Token from Firestore so logged-out ID never sends pushes!
+// CLEAN LOGOUT
 bindClick('btn-logout-now', async () => {
     if (!confirm(`Logout from ID "${state.myAccountCode}" (${state.myName})?`)) return;
     const oldCode = state.myAccountCode;
@@ -941,7 +956,6 @@ bindClick('di-vib', () => {
     if (state.vibrationEnabled) playAlertBeep();
 });
 
-// GLOBAL NOTIFICATION TOGGLE (Syncs to LocalStorage + Firestore Cloud)
 bindClick('di-notif', async () => {
     state.stealthNotifEnabled = !state.stealthNotifEnabled;
     localStorage.setItem('nova_stealth_notif', String(state.stealthNotifEnabled));
@@ -1016,7 +1030,7 @@ bindClick('god-wipe-btn', async () => {
     window.inspectGod(godRoom);
 });
 
-// Widget & Visibility Sync
+// Widget, Online & Visibility Auto-Reconnect Sync
 window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || d.type !== 'NOVA_WIDGET_STATE') return;
@@ -1028,21 +1042,40 @@ window.addEventListener('message', (e) => {
         updatePresence("offline", true);
         lockAppIfEnabled();
     } else if (isChatActivelyVisible()) {
+        listenToPresence(state.currentRoom);
+        listenToMessages(state.currentRoom);
         updatePresence("online", true);
         markVisibleMessagesSeen();
         const box = $('msgs-container');
         if (box) setTimeout(() => { box.scrollTop = box.scrollHeight; }, 40);
     }
 });
+
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+        hiddenAtMs = Date.now();
         updatePresence("offline", true);
         lockAppIfEnabled();
-    } else if (isChatActivelyVisible()) {
-        updatePresence("online", true);
-        markVisibleMessagesSeen();
+    } else if (state.myAccountCode) {
+        const wasAwayLong = hiddenAtMs > 0 && (Date.now() - hiddenAtMs) > 15000;
+        if (state.currentRoom && (wasAwayLong || state.domMap.size === 0)) {
+            listenToPresence(state.currentRoom);
+            listenToMessages(state.currentRoom);
+        }
+        if (isChatActivelyVisible()) {
+            updatePresence("online", true);
+            markVisibleMessagesSeen();
+        }
     }
 });
+
+window.addEventListener('online', () => {
+    if (state.myAccountCode && state.currentRoom) {
+        listenToPresence(state.currentRoom);
+        listenToMessages(state.currentRoom);
+    }
+});
+
 window.addEventListener('blur', () => {
     if (state.currentRoom) updatePresence("offline", true);
 });
