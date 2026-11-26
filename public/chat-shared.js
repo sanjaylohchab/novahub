@@ -3,7 +3,7 @@
 // ============================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import {
-    getFirestore,
+    getFirestore, initializeFirestore,
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
     onSnapshot, collection, addDoc, query, orderBy, limit, limitToLast, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // ============================================================================
-// 1. FIREBASE & WEBRTC CONFIGURATION
+// 1. FIREBASE & WEBRTC CONFIGURATION (4G/5G FORCE LONG POLLING)
 // ============================================================================
 export const firebaseConfig = {
     apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
@@ -35,7 +35,16 @@ export const FCM_VAPID_KEY = "";
 export const PUSH_RELAY_URL = "";
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+
+let _db;
+try {
+    _db = initializeFirestore(app, {
+        experimentalForceLongPolling: true
+    });
+} catch (e) {
+    _db = getFirestore(app);
+}
+export const db = _db;
 export const storage = getStorage(app);
 
 export {
@@ -177,7 +186,7 @@ export function showQuickToast(text) {
     t.innerText = text;
     t.style.opacity = '1';
     clearTimeout(t._hideTimer);
-    t._hideTimer = setTimeout(() => { t.style.opacity = '0'; }, 2800);
+    t._hideTimer = setTimeout(() => { t.style.opacity = '0'; }, 3200);
 }
 
 let _sharedAudioCtx = null;
