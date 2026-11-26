@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // ============================================================================
-// 1. FIREBASE & WEBRTC CONFIGURATION (4G/5G FORCE LONG POLLING)
+// 1. FIREBASE & WEBRTC CONFIGURATION (iOS 4G/5G XHR LONG-POLLING FIX)
 // ============================================================================
 export const firebaseConfig = {
     apiKey: "AIzaSyCxlPiB7gOAnpkTG60a2LpyJt1Nfn8m3g8",
@@ -39,7 +39,8 @@ export const app = initializeApp(firebaseConfig);
 let _db;
 try {
     _db = initializeFirestore(app, {
-        experimentalForceLongPolling: true
+        experimentalForceLongPolling: true,
+        useFetchStreams: false
     });
 } catch (e) {
     _db = getFirestore(app);
