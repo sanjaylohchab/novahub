@@ -1,13 +1,13 @@
 // ============================================================================
-// NOVAMESSENGER MODULE 3: PUSH, PRESENCE, LIVE LOCATION, STORIES & UI
+// NOVAMESSENGER MODULE 3: PUSH, PRESENCE, LIVE LOCATION, SMART CLEAR & UI
 // ============================================================================
 import {
     app, db, FCM_VAPID_KEY, PUSH_RELAY_URL, state, hooks, $, bindClick,
     escapeHtml, openLayer, closeLayer, postToGame, showQuickToast, playAlertBeep,
     isRoomMuted, getRoomMeta, isChatActivelyVisible, getDateGroupLabel,
-    getShortTime, formatLastSeen, compressImg,
+    getShortTime, formatLastSeen,
     doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, deleteField,
-    onSnapshot, collection, addDoc, query, orderBy, serverTimestamp
+    onSnapshot, collection, addDoc, query, orderBy, limitToLast, serverTimestamp
 } from "./chat-shared.js";
 
 let unsubscribePresence = null;
@@ -141,13 +141,9 @@ export async function sendStealthPushToPeer(roomId, kind = "text") {
 }
 
 export async function triggerStealthAlert(type, roomId = state.currentRoom) {
-    // 1. Block completely if user is logged out
     if (!state.myAccountCode) return;
-    // 2. Block if global notifications are OFF
     if (!isGlobalNotifOn()) return;
-    // 3. Block if this specific person/chat is muted
     if (isChatMutedStrict(roomId)) return;
-    // 4. Block if this exact chat is already open on screen
     if (type !== 'call' && roomId === state.currentRoom && isChatActivelyVisible()) return;
 
     if (state.vibrationEnabled && type !== 'call') {
@@ -256,7 +252,7 @@ export function listenToPresence(roomId) {
 }
 
 // ============================================================================
-// 3. CROSS-DEVICE LIVE LOCATION (NO TOP BANNER + GREEN/RED ICON INDICATOR)
+// 3. CROSS-DEVICE LIVE LOCATION
 // ============================================================================
 export function refreshLiveBanner() {
     const liveBanner = $('active-live-banner');
@@ -446,122 +442,19 @@ export function initLocationControls() {
 }
 
 // ============================================================================
-// 4. STORIES FEED (24-HOUR AUTO-EXPIRE + MANUAL DELETE)
+// 4. STORIES REMOVED (ZERO FIRESTORE READS)
 // ============================================================================
-const STORY_TTL_MS = 24 * 60 * 60 * 1000;
-
-async function deleteStoryById(storyId) {
-    if (!storyId) return;
-    if (!confirm("Delete this story?")) return;
-    try {
-        await deleteDoc(doc(db, "novahub_stories", storyId));
-        closeLayer($('generic-modal'));
-        showQuickToast("🗑️ Story deleted!");
-        loadStories();
-    } catch (e) {
-        showQuickToast("⚠️ Failed to delete story.");
-    }
-}
-
 export async function loadStories() {
     const feed = $('stories-feed');
-    if (!feed) return;
-    feed.innerHTML = 'Loading stories...';
-    const snap = await getDocs(query(collection(db, "novahub_stories"), orderBy("timestamp", "desc")));
-    feed.innerHTML = '';
-    const myFriendCodes = state.savedRooms.filter(r => !r.locked).map(r => r.peerCode);
-    const nowMs = Date.now();
-    let shownCount = 0;
-
-    snap.forEach(d => {
-        const s = d.data();
-        const storyMs = s.createdAtMs || (s.timestamp && typeof s.timestamp.toMillis === 'function' ? s.timestamp.toMillis() : 0);
-
-        if (storyMs > 0 && (nowMs - storyMs) > STORY_TTL_MS) {
-            deleteDoc(doc(db, "novahub_stories", d.id)).catch(() => {});
-            return;
-        }
-
-        if (s.accountCode !== state.myAccountCode && !myFriendCodes.includes(s.accountCode)) return;
-        shownCount++;
-        const isMine = (s.accountCode === state.myAccountCode);
-
-        const item = document.createElement('div');
-        item.className = 'chat-item';
-        item.innerHTML = `
-            <div class="avatar" style="border:2px solid #00f2fe;">${s.type === 'image' ? '📷' : '✍️'}</div>
-            <div class="chat-item-info">
-                <div class="chat-item-name">${escapeHtml(s.name)} ${isMine ? '<span style="font-size:10px; color:#10b981;">(You)</span>' : ''}</div>
-                <div class="chat-item-sub">${escapeHtml(s.timeStr)} • 👀 ${s.views ? s.views.length : 0} views</div>
-            </div>
-            ${isMine ? `<button type="button" class="story-del-btn" title="Delete Story" style="background:rgba(239,68,68,0.15); color:#f87171; border:none; border-radius:8px; width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><span class="material-icons" style="font-size:18px;">delete</span></button>` : ''}
-        `;
-
-        if (isMine) {
-            item.querySelector('.story-del-btn')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteStoryById(d.id);
-            });
-        }
-
-        item.addEventListener('click', async () => {
-            let vList = s.views || [];
-            if (!vList.includes(state.myName)) {
-                vList.push(state.myName);
-                await updateDoc(doc(db, "novahub_stories", d.id), { views: vList });
-            }
-            $('modal-title').innerText = `${s.name}'s Story`;
-            $('modal-body').innerHTML = `
-                ${s.type === 'image'
-                    ? `<img src="${s.mediaUrl}" style="width:100%; border-radius:10px;">`
-                    : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(s.text)}</div>`}
-                <div style="margin-top:12px; font-size:12px; color:var(--text-sub);">👀 Viewed by: ${escapeHtml(vList.join(', ') || 'None')}</div>
-                ${isMine ? `<button id="btn-modal-del-story" type="button" class="loc-action-btn" style="background:#dc2626; color:#fff; width:100%; margin-top:12px;">🗑️ Delete My Story</button>` : ''}
-            `;
-            openLayer($('generic-modal'));
-            if (isMine) bindClick('btn-modal-del-story', () => deleteStoryById(d.id));
-            loadStories();
-        });
-        feed.appendChild(item);
-    });
-
-    if (shownCount === 0) {
-        feed.innerHTML = `<div class="empty-inbox">✨ No active stories (stories auto-delete after 24 hours).</div>`;
+    if (feed) {
+        feed.innerHTML = `<div class="empty-inbox">Stories turned off to save database reads.</div>`;
     }
 }
 
 export function initStoryControls() {
-    bindClick('btn-add-status', async () => {
-        let typeChoice = prompt("Post Story:\n1. Text Story\n2. Photo Story");
-        if (typeChoice === "1") {
-            let txt = prompt("Enter Story Text:");
-            if (!txt) return;
-            await addDoc(collection(db, "novahub_stories"), {
-                uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
-                type: "text", text: txt, createdAtMs: Date.now(),
-                timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }),
-                views: [], timestamp: serverTimestamp()
-            });
-            loadStories();
-        } else if (typeChoice === "2") {
-            $('status-file-input')?.click();
-        }
+    bindClick('btn-add-status', () => {
+        showQuickToast("Stories disabled to save quota");
     });
-
-    const stInp = $('status-file-input');
-    if (stInp) {
-        stInp.addEventListener('change', async function() {
-            const file = this.files[0]; if (!file) return;
-            const url = await compressImg(file);
-            await addDoc(collection(db, "novahub_stories"), {
-                uid: state.myUid, accountCode: state.myAccountCode, name: state.myName,
-                type: "image", mediaUrl: url, text: "📷 Story", createdAtMs: Date.now(),
-                timeStr: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }),
-                views: [], timestamp: serverTimestamp()
-            });
-            loadStories();
-        });
-    }
 }
 
 // ============================================================================
@@ -931,7 +824,7 @@ function initSleepGuard() {
 initSleepGuard();
 
 // ============================================================================
-// 7. SMART CLEAR CHAT (KEEP STARRED VS DELETE ALL - SKIPS PREVIOUSLY DELETED)
+// 7. SMART CLEAR CHAT (USES IN-MEMORY CACHE FIRST - ZERO EXTRA READS!)
 // ============================================================================
 function initSmartClearChat() {
     const clearModal = $('clear-chat-modal');
@@ -1013,28 +906,34 @@ function initSmartClearChat() {
         showQuickToast("🧹 Clearing chat...");
 
         try {
-            const snap = await getDocs(collection(db, roomId));
+            let entries = [];
+            if (roomId === state.currentRoom && state.cachedMessages && Object.keys(state.cachedMessages).length > 0) {
+                entries = Object.entries(state.cachedMessages);
+            } else {
+                const snap = await getDocs(query(collection(db, roomId), orderBy("timestamp", "asc"), limitToLast(60)));
+                snap.forEach(d => entries.push([d.id, d.data()]));
+            }
+
             let count = 0;
             const jobs = [];
 
-            snap.forEach(d => {
-                const m = d.data();
-                if (m.isDeletedEveryone) return;
-                if (Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) return;
-                if (keepStarred && Array.isArray(m.starredBy) && m.starredBy.includes(state.myUid)) return;
+            for (const [id, m] of entries) {
+                if (!m || m.isDeletedEveryone) continue;
+                if (Array.isArray(m.deletedFor) && m.deletedFor.includes(state.myUid)) continue;
+                if (keepStarred && Array.isArray(m.starredBy) && m.starredBy.includes(state.myUid)) continue;
 
                 count++;
                 if (forEveryone) {
-                    jobs.push(updateDoc(doc(db, roomId, d.id), {
+                    jobs.push(updateDoc(doc(db, roomId, id), {
                         isDeletedEveryone: true,
                         deletedByAudit: state.myName
                     }).catch(() => {}));
                 } else {
                     const delArr = Array.isArray(m.deletedFor) ? [...m.deletedFor] : [];
                     if (!delArr.includes(state.myUid)) delArr.push(state.myUid);
-                    jobs.push(updateDoc(doc(db, roomId, d.id), { deletedFor: delArr }).catch(() => {}));
+                    jobs.push(updateDoc(doc(db, roomId, id), { deletedFor: delArr }).catch(() => {}));
                 }
-            });
+            }
 
             await Promise.all(jobs);
             showQuickToast(
@@ -1057,7 +956,7 @@ function initSmartClearChat() {
 initSmartClearChat();
 
 // ============================================================================
-// 8. WHATSAPP-STYLE REDESIGN (4 TABS + WORKING + BUTTON + STORY RING)
+// 8. WHATSAPP-STYLE REDESIGN (4 TABS + WORKING + BUTTON - NO STORY POLLING)
 // ============================================================================
 function initWhatsAppRedesign() {
     if (document.getElementById('nova-wa-redesign-styles')) return;
@@ -1128,11 +1027,6 @@ function initWhatsAppRedesign() {
             cursor: pointer; font-size: 14px; font-weight: 600;
         }
         .wa-you-row:last-child { border-bottom: none; }
-        .avatar.has-story-ring {
-            border: 2.5px solid #10b981 !important;
-            box-shadow: 0 0 0 2px rgba(16,185,129,0.28);
-            cursor: pointer;
-        }
         .wa-list-presence {
             font-size: 10.5px; color: #94a3b8; margin-top: 2px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1226,10 +1120,8 @@ function initWhatsAppRedesign() {
         const titleMap = { updates: 'Updates', calls: 'Calls', chats: 'Chats', you: 'You' };
         if ($('wa-page-title')) $('wa-page-title').innerText = titleMap[tab] || 'Chats';
         if ($('wa-add-fab')) {
-            $('wa-add-fab').style.display = (tab === 'chats' || tab === 'updates') ? 'flex' : 'none';
-            $('wa-add-fab').onclick = (tab === 'updates')
-                ? () => $('btn-add-status')?.click()
-                : triggerAddFriend;
+            $('wa-add-fab').style.display = (tab === 'chats') ? 'flex' : 'none';
+            $('wa-add-fab').onclick = triggerAddFriend;
         }
 
         if (chatListEl) chatListEl.style.display = (tab === 'chats') ? '' : 'none';
@@ -1252,25 +1144,7 @@ function initWhatsAppRedesign() {
     });
     switchWaTab('chats');
 
-    const activeStoryByCode = {};
     const presenceByRoom = {};
-
-    async function refreshStoryRings() {
-        try {
-            const snap = await getDocs(query(collection(db, "novahub_stories"), orderBy("timestamp", "desc")));
-            const nowMs = Date.now();
-            Object.keys(activeStoryByCode).forEach(k => delete activeStoryByCode[k]);
-            snap.forEach(d => {
-                const s = d.data();
-                const ms = s.createdAtMs || (s.timestamp && typeof s.timestamp.toMillis === 'function' ? s.timestamp.toMillis() : 0);
-                if (ms > 0 && (nowMs - ms) > 86400000) return;
-                if (s.accountCode && !activeStoryByCode[s.accountCode]) {
-                    activeStoryByCode[s.accountCode] = { id: d.id, ...s };
-                }
-            });
-            decorateChatListItems();
-        } catch (e) {}
-    }
 
     function decorateChatListItems() {
         if (!chatListEl) return;
@@ -1278,20 +1152,6 @@ function initWhatsAppRedesign() {
         items.forEach((item, idx) => {
             const room = state.savedRooms.filter(r => !r.locked)[idx];
             if (!room) return;
-
-            const ava = item.querySelector('.avatar');
-            const stObj = activeStoryByCode[room.peerCode];
-            if (ava) {
-                ava.classList.toggle('has-story-ring', !!stObj);
-                ava.onclick = stObj ? (e) => {
-                    e.stopPropagation();
-                    $('modal-title').innerText = `${stObj.name}'s Story`;
-                    $('modal-body').innerHTML = stObj.type === 'image'
-                        ? `<img src="${stObj.mediaUrl}" style="width:100%; border-radius:10px;">`
-                        : `<div style="padding:26px; background:var(--bg-nav); border-radius:12px; text-align:center; font-size:17px; font-weight:bold;">${escapeHtml(stObj.text)}</div>`;
-                    openLayer($('generic-modal'));
-                } : null;
-            }
 
             const info = item.querySelector('.chat-item-info');
             if (info && presenceByRoom[room.id]) {
@@ -1342,12 +1202,10 @@ function initWhatsAppRedesign() {
     if (chatListEl) {
         new MutationObserver(() => decorateChatListItems()).observe(chatListEl, { childList: true });
     }
-    setTimeout(refreshStoryRings, 1200);
-    setInterval(refreshStoryRings, 30000);
 }
 initWhatsAppRedesign();
 
-import "./chat-filters.js";
-import "./chat-extras.js";
-import "./chat-premium-ui.js";
+import("./chat-filters.js").catch(() => {});
+import("./chat-extras.js").catch(() => {});
+import("./chat-premium-ui.js").catch(() => {});
 import("./themes/chat-themes.js").catch(() => {});
